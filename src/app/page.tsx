@@ -21,7 +21,7 @@ export default function HomePage() {
       </Link>
 
       <footer className="mt-20 text-slate-400 text-xs uppercase tracking-widest">
-        Desarrollado con ❤️ en Venezuela
+        Desarrollado con ❤️ por <a href="https://grigerdev.com" target="about_blanck">Grigerdev</a>
       </footer>
     </main>
   );

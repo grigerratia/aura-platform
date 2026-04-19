@@ -1,54 +1,44 @@
-// src/app/[shop]/page.tsx
-import { ProductCard } from "../../components/ProductCart";
-import { CartFloating } from "../../components/CartFloating";
-import { Product } from "../../types";
+import { supabase } from "@/lib/supabase";
+import { ProductCard } from "@/components/ProductCard";
+import { CartFloating } from "@/components/CartFloating";
 
-// Datos de ejemplo (Luego los traeremos de Supabase)
-const MOCK_PRODUCTS: Product[] = [
-  {
-    id: "1",
-    name: "Zapato Deportivo Ultra",
-    description: "Ideales para el día a día en Cumaná.",
-    price: 45,
-    imageUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff",
-    category: "Calzado",
-    storeId: "1",
+async function getDolarTasa() {
+  try {
+    const res = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo", { cache: 'no-store' });
+    const data = await res.json();
+    return data.promedio || 35.0;
+  } catch {
+    return 35.0;
   }
-];
-
-// Definimos el tipo de los parámetros que recibe la página
-interface Props {
-  params: Promise<{ shop: string }>;
 }
 
-export default async function ShopPage({ params }: Props) {
-  // En Next.js 15, los parámetros de la URL se reciben como una Promesa
+export default async function ShopPage({ params }: { params: Promise<{ shop: string }> }) {
   const { shop } = await params;
+
+  const [tasa, { data: products }] = await Promise.all([
+    getDolarTasa(),
+    supabase.from('products').select('*')
+  ]);
 
   return (
     <main className="min-h-screen bg-slate-50/50">
-      {/* Encabezado dinámico */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-black text-brand-primary tracking-tighter uppercase">
-            {/* Reemplazamos los guiones por espacios para que se vea bien */}
-            {shop.replace(/-/g, ' ')}
-          </h1>
-          <div className="bg-slate-100 px-4 py-2 rounded-full text-sm font-bold text-slate-600">
-            📍 Cumaná
-          </div>
-        </div>
+        <h1 className="text-2xl font-black text-brand-primary uppercase">
+          {shop.replace(/-/g, ' ')}
+        </h1>
       </header>
 
-      {/* Listado de productos */}
       <section className="max-w-6xl mx-auto p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-        {MOCK_PRODUCTS.map((product) => (
-          <ProductCard key={product.id} product={product} />
+        {products?.map((product) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            tasa={tasa}
+          />
         ))}
       </section>
 
-      {/* Componente flotante del carrito */}
-      <CartFloating />
+      <CartFloating initialTasa={tasa} />
     </main>
   );
 }

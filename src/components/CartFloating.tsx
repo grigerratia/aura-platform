@@ -1,96 +1,106 @@
-// 1. Indicamos que es un Client Component porque usa interactividad (clics y estado)
 "use client";
 
 import { useState } from "react";
-// 2. Importamos el hook del carrito usando ruta relativa
 import { useCart } from "../store/useCart";
-// 3. Iconos necesarios (asegúrate de tener lucide-react instalado)
-import { ShoppingBag, X, MessageCircle } from "lucide-react";
+import { ShoppingBag, X, Trash2, ChevronRight, Plus, Minus } from "lucide-react";
 
-export function CartFloating() {
-  // 4. Extraemos las funciones y datos del store de Zustand
-  const { items, getTotal, generateWhatsAppLink, removeItem } = useCart();
-
-  // 5. Estado local para abrir o cerrar el resumen del carrito
+export function CartFloating({ initialTasa }: { initialTasa: number }) {
+  // Importamos los nuevos métodos del store
+  const { items, addItem, removeItem, increaseItem, decreaseItem, getTotal } = useCart();
   const [isOpen, setIsOpen] = useState(false);
 
-  // 6. Si el carrito está vacío, no renderizamos nada para mantener la interfaz limpia
-  if (items.length === 0) return null;
+  const totalUSD = getTotal();
+  const totalVES = (totalUSD * initialTasa).toLocaleString("es-VE", { minimumFractionDigits: 2 });
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100]">
-      {/* Botón flotante principal (Círculo con cantidad) */}
+    <>
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="bg-brand-primary text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-all flex items-center gap-2 active:scale-95"
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-8 right-8 z-50 bg-black text-white p-4 rounded-full shadow-2xl hover:scale-105 transition-transform"
       >
         <ShoppingBag size={24} />
-        <span className="font-bold">{items.length}</span>
+        {items.length > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full">
+            {items.reduce((acc, item) => acc + item.quantity, 0)}
+          </span>
+        )}
       </button>
 
-      {/* Panel de resumen (Se muestra solo si isOpen es true) */}
-      {isOpen && (
-        <div className="absolute bottom-20 right-0 w-80 bg-white rounded-aura shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+      {isOpen && <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setIsOpen(false)} />}
 
-          {/* Cabecera del carrito */}
-          <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-slate-50">
-            <h3 className="font-bold text-slate-800">Tu Pedido</h3>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-slate-400 hover:text-slate-600"
-            >
-              <X size={18} />
+      <div className={`fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="flex flex-col h-full">
+          <div className="p-6 border-b flex justify-between items-center bg-white">
+            <h2 className="text-xl font-bold text-gray-900">Tu Pedido</h2>
+            <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-900">
+              <X size={20} />
             </button>
           </div>
 
-          {/* Lista de productos agregados */}
-          <div className="max-h-60 overflow-y-auto p-4 space-y-3">
-            {items.map((item) => (
-              <div key={item.id} className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
-                <div className="flex flex-col max-w-[180px]">
-                  <span className="text-slate-800 font-medium truncate">{item.name}</span>
-                  <span className="text-xs text-slate-400">Cant: {item.quantity}</span>
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {items.length === 0 ? (
+              <p className="text-gray-600 text-center mt-10">Tu carrito está vacío.</p>
+            ) : (
+              items.map((item) => (
+                <div key={item.id} className="flex gap-4 items-center">
+                  <div className="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                    <img src={item.imageUrl || '/placeholder.png'} alt={item.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900">{item.name}</h3>
+                    <p className="font-bold text-gray-900">${(item.price * item.quantity).toFixed(2)}</p>
+
+                    <div className="flex items-center gap-3 mt-2">
+                      {/* Usamos decreaseItem y increaseItem */}
+                      <button
+                        onClick={() => decreaseItem(item.id)}
+                        className="p-1 border border-gray-300 rounded hover:bg-gray-100 text-gray-700"
+                      >
+                        <Minus size={14} />
+                      </button>
+
+                      <span className="text-sm font-medium text-gray-900 w-6 text-center">{item.quantity}</span>
+
+                      <button
+                        onClick={() => increaseItem(item.id)}
+                        className="p-1 border border-gray-300 rounded hover:bg-gray-100 text-gray-700"
+                      >
+                        <Plus size={14} />
+                      </button>
+
+                      <button
+                        onClick={() => removeItem(item.id)}
+                        className="text-red-500 ml-4 hover:text-red-700 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-slate-900">${item.price * item.quantity}</span>
-                  <button
-                    onClick={() => removeItem(item.id)}
-                    className="text-red-400 hover:text-red-600 transition-colors"
-                    title="Eliminar producto"
-                  >
-                    <X size={14} strokeWidth={3} />
-                  </button>
-                </div>
+              ))
+            )}
+          </div>
+
+          {items.length > 0 && (
+            <div className="p-6 border-t bg-white space-y-4">
+              <div className="flex justify-between text-lg">
+                <span className="font-medium text-gray-900">Subtotal:</span>
+                <span className="font-bold text-gray-900">${totalUSD.toFixed(2)}</span>
               </div>
-            ))}
-          </div>
-
-          {/* Pie del carrito con Total y botón de WhatsApp */}
-          <div className="p-4 bg-slate-50">
-            <div className="flex justify-between mb-4 items-center">
-              <span className="text-slate-500 font-medium">Subtotal:</span>
-              <span className="text-2xl font-black text-brand-primary">${getTotal()}</span>
+              <div className="flex justify-between text-sm text-gray-600">
+                <span className="text-gray-600">Total en Bolívares:</span>
+                <span className="font-semibold text-gray-800">Bs. {totalVES}</span>
+              </div>
+              <button
+                onClick={() => window.open(useCart.getState().generateWhatsAppLink("584120000000", "Nombre de Tienda"), "_blank")}
+                className="w-full bg-black text-white py-4 rounded-xl font-bold hover:bg-gray-800 transition flex items-center justify-center gap-2"
+              >
+                Proceder al Pago <ChevronRight size={20} />
+              </button>
             </div>
-
-            {/* Este enlace genera el mensaje automático para el vendedor.
-                Por ahora el teléfono es estático ("584120000000"), luego lo haremos dinámico.
-            */}
-            <a
-              href={generateWhatsAppLink("584120000000", "Tienda Aura")}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full bg-green-500 text-white py-4 rounded-xl font-bold hover:bg-green-600 transition-all shadow-lg shadow-green-200 active:scale-95"
-            >
-              <MessageCircle size={20} />
-              Enviar Pedido
-            </a>
-
-            <p className="text-[10px] text-center text-slate-400 mt-3 uppercase tracking-widest font-bold">
-              Finaliza tu compra por WhatsApp
-            </p>
-          </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
