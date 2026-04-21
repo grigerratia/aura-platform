@@ -1,103 +1,127 @@
-import { createClient } from '@/lib/server'; // Verifica que la ruta coincida con tu archivo
+import { createClient } from '@/lib/server';
 import { notFound } from 'next/navigation';
-import { Star, Truck, ShieldCheck, Zap } from 'lucide-react';
+import { Star, Truck, ShieldCheck } from 'lucide-react';
+import ProductActions from './ProductActions';
+import getDolarTasa from '@/util/getDolarTasa';
 
-// IMPORTANTE: params ahora es una Promesa en las versiones nuevas
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
-  // 1. Esperamos a que lleguen los parámetros de la URL y extraemos el ID
   const { id } = await params;
   const productId = id.trim();
 
-  // 2. Esperamos a que se cree el cliente (porque ahora es asíncrono)
+  // Ejecutamos en paralelo la consulta a Supabase y la obtención de la tasa
   const supabase = await createClient();
 
-  // 3. Hacemos la consulta a Supabase
-  const { data: product, error } = await supabase
-    .from('products')
-    .select('*')
-    .eq('id', productId)
-    .single();
+  const [tasa, { data: product, error }] = await Promise.all([
+    getDolarTasa(),
+    supabase
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .single()
+  ]);
 
-  if (error) {
-    console.error("Error al buscar en Supabase:", error);
+  if (!product || error) return notFound();
+
+  // === LÓGICA DE PRECIOS ===
+  const hasDbDiscountPercent = typeof product.discount_percentage === 'number' && product.discount_percentage > 0;
+  const hasDbSalePrice = typeof product.sale_price === 'number' && product.sale_price < product.price;
+  const hasDiscount = hasDbDiscountPercent || hasDbSalePrice;
+
+  let currentUSD = product.price;
+
+  if (hasDbDiscountPercent) {
+    currentUSD = product.price * (1 - product.discount_percentage / 100);
+  } else if (hasDbSalePrice) {
+    currentUSD = product.sale_price;
   }
 
-  if (!product) {
-    return notFound();
-  }
+  const displayDiscount = hasDbDiscountPercent
+    ? product.discount_percentage
+    : (hasDiscount ? Math.round(((product.price - currentUSD) / product.price) * 100) : 0);
 
-  // Lógica de cálculo de precio
-  const finalPrice = product.sale_price && product.sale_price < product.price
-    ? product.sale_price
-    : product.price * (1 - (product.discount_percentage || 0) / 100);
+  // Cálculo usando la tasa dinámica obtenida de getDolarTasa
+  const priceVES = (currentUSD * tasa).toLocaleString("es-VE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
   return (
-    <main className="max-w-7xl mx-auto px-4 py-8 grid md:grid-cols-2 gap-12">
+    <main className="max-w-7xl mx-auto px-4 py-8 grid md:grid-cols-2 gap-12 font-sans">
       {/* Columna Izquierda: Imagen */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center overflow-hidden">
-        {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className="w-full h-auto object-contain max-h-[500px]"
-          />
-        ) : (
-          <div className="w-full h-64 bg-slate-50 flex items-center justify-center text-slate-400 rounded-xl">
-            Imagen no disponible
-          </div>
-        )}
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center relative">
+        <img
+          src={product.imageUrl || '/placeholder.png'}
+          alt={product.name}
+          className="w-full h-auto object-contain max-h-[500px]"
+        />
       </div>
 
       {/* Columna Derecha: Información */}
       <div className="space-y-6">
         <div>
-          <span className="text-brand-primary font-bold text-sm tracking-wide uppercase">
-            {product.brand || "Marca"}
+          <span className="text-brand-primary font-bold text-sm uppercase tracking-wider">
+            {product.brand || "Sin marca"}
           </span>
-          <h1 className="text-3xl font-bold text-slate-900 mt-1">{product.name}</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900 mt-1 leading-snug text-white">{product.name}</h1>
         </div>
 
         {/* Rating */}
         <div className="flex items-center gap-2">
           <div className="flex text-amber-400">
-            {[...Array(5)].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
+            {[...Array(5)].map((_, i) => <Star key={i} size={16} fill="currentColor" strokeWidth={0} />)}
           </div>
-          <span className="text-sm text-slate-500">{product.reviews_count || 0} valoraciones</span>
+          <span className="text-sm font-bold text-slate-700">{product.rating || "5.0"}</span>
+          <span className="text-sm text-slate-500 text-white">({product.reviews_count || "0"} valoraciones)</span>
         </div>
 
-        {/* Precio */}
+        {/* Precios y Descuentos */}
         <div className="bg-slate-50 p-6 rounded-xl border border-slate-100">
-          <div className="text-4xl font-black text-slate-900">US$ {finalPrice.toFixed(2)}</div>
+          {hasDiscount && (
+            <span className="bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-md uppercase tracking-wide">
+              {displayDiscount}% OFF
+            </span>
+          )}
+
+          <div className="mt-3">
+            <div className="flex items-baseline gap-1">
+              <span className="text-xl font-bold text-slate-900">US$</span>
+              <span className="text-5xl font-black text-slate-900">{currentUSD.toFixed(2)}</span>
+            </div>
+
+            {hasDiscount && (
+              <div className="text-sm text-slate-400 line-through decoration-slate-400/70 mt-1">
+                US$ {product.price.toFixed(2)}
+              </div>
+            )}
+
+            <div className="text-lg font-semibold text-emerald-600 mt-2">Bs. {priceVES}</div>
+          </div>
+
           {product.free_shipping && (
-            <div className="flex items-center gap-2 text-emerald-600 mt-3 bg-emerald-50 w-fit px-3 py-1 rounded-full">
-              <Truck size={16} /> <span className="font-bold text-sm">Envío gratis</span>
+            <div className="flex items-center gap-2 text-emerald-600 mt-4 bg-emerald-100/50 w-fit px-3 py-1.5 rounded-lg">
+              <Truck size={18} /> <span className="font-bold text-sm">Envío gratis</span>
             </div>
           )}
         </div>
 
-        {/* Botones de acción */}
-        <div className="space-y-3 pt-2">
-          <button className="w-full bg-brand-primary text-white py-4 rounded-xl font-bold hover:bg-opacity-90 transition shadow-lg flex items-center justify-center gap-2">
-            <Zap size={20} /> Comprar ahora
-          </button>
-          <button className="w-full border-2 border-slate-200 text-slate-700 py-4 rounded-xl font-bold hover:bg-slate-50 transition">
-            Agregar al carrito
-          </button>
-        </div>
+        {/* Componente cliente con los botones */}
+        <ProductActions product={product} />
 
         {/* Garantía */}
-        <div className="flex items-start gap-3 text-sm text-slate-600 bg-slate-50 p-4 rounded-lg">
-          <ShieldCheck className="text-brand-primary shrink-0 mt-0.5" size={20} />
-          <p>Compra protegida, recibe el producto que esperabas o te devolvemos tu dinero.</p>
+        <div className="flex items-start gap-3 text-sm text-slate-600 border-t border-slate-200 pt-6 mt-6">
+          <ShieldCheck className="text-brand-primary shrink-0 mt-0.5" size={24} />
+          <p>Compra protegida con Aura. Recibe el producto exacto que pediste o te devolvemos tu dinero.</p>
         </div>
 
         {/* Descripción larga */}
-        <div className="prose prose-slate max-w-none border-t pt-6">
-          <h3 className="font-bold text-lg mb-3">Descripción del producto</h3>
-          <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">
-            {product.description || "No hay descripción disponible por el momento."}
-          </p>
-        </div>
+        {product.description && (
+          <div className="prose prose-slate max-w-none pt-2">
+            <h3 className="font-bold text-lg mb-2">Descripción del producto</h3>
+            <p className="text-slate-600 leading-relaxed whitespace-pre-wrap text-white">
+              {product.description}
+            </p>
+          </div>
+        )}
       </div>
     </main>
   );
