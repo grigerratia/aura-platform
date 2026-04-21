@@ -9,7 +9,7 @@ export default function HomePage() {
         AURA
       </h1>
       <p className="text-slate-600 max-w-md mb-8 font-medium">
-        La plataforma para que los negocios de Cumaná vendan de forma ética, justa y profesional.
+        Tu Centro Comercial Online
       </p>
 
       {/* Botón de acceso rápido para que pruebes tu ruta dinámica */}

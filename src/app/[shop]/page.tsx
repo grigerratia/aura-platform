@@ -23,7 +23,7 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
       </header>
 
       {/* SECCIÓN DE PRODUCTOS DE LA STORE */}
-      <section className="max-w-6xl mx-auto p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+      <section className="max-w-6xl mx-auto p-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
         {products?.map((product) => (
           <ProductCard
             key={product.id}
