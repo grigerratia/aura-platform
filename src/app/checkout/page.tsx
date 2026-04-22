@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useCart } from '@/store/useCart';
 import { MessageCircle, ShieldCheck, User, Phone, MapPin, CreditCard } from 'lucide-react';
-import BackButton from '@/components/ui/BackButton';
+import { generatePDF } from '@/lib/pdfGenerator';
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -85,33 +85,34 @@ export default function CheckoutPage() {
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
 
-                {/* <button
-                  onClick={() => window.open(useCart.getState().generateWhatsAppLink("584120000000", "Nombre de Tienda"), "_blank")}
-                  className="w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-green-200 mt-4"
-                >
-                  <MessageCircle size={20} />
-                  Facturar vía WhatsApp
-                </button> */}
                 <button
                   onClick={() => {
-                    // Validación simple
-                    if (!formData.name || !formData.phone || !formData.idDocument) {
+                    // A. Validar campos
+                    if (!formData.name || !formData.phone || !formData.address) {
                       alert("Por favor, completa los campos obligatorios.");
                       return;
                     }
 
-                    // Aquí le pasamos el objeto formData completo
-                    const link = useCart.getState().generateWhatsAppLink(
+                    // B. Generar y descargar el PDF automáticamente
+                    const pdfBlob = generatePDF(items, formData, subtotal);
+                    const url = URL.createObjectURL(pdfBlob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `Factura_Aura_${formData.name}.pdf`;
+                    link.click(); // Esto inicia la descarga en la PC del cliente
+
+                    // C. Generar link de WhatsApp y abrirlo
+                    const waLink = useCart.getState().generateWhatsAppLink(
                       "584248037379",
-                      "Tu Tienda Aura",
-                      formData // TypeScript ahora sabrá que esto coincide con ClientData
+                      "Aura",
+                      formData
                     );
-                    window.open(link, "_blank");
+                    window.open(waLink, "_blank");
                   }}
-                  className="w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-green-200 mt-4"
+                  className="cursor-pointer w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-green-200 mt-4"
                 >
                   <MessageCircle size={20} />
-                  Enviar Pedido por WhatsApp
+                  Enviar pedido por WhatsApp
                 </button>
 
                 <div className="flex items-start gap-3 text-sm text-slate-600 border-t border-slate-200 pt-6 mt-6">
