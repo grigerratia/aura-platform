@@ -16,10 +16,19 @@ interface CartStore {
   increaseItem: (id: string) => void;
   decreaseItem: (id: string) => void;
   getTotal: () => number;
-  // --- AGREGAMOS ESTA LÍNEA PARA SOLUCIONAR EL ERROR ---
+
   getItemFinalPrice: (item: CartItem) => number;
   // -----------------------------------------------------
-  generateWhatsAppLink: (shopPhone: string, shopName: string) => string;
+  generateWhatsAppLink: (shopPhone: string, shopName: string, clientData: ClientData) => string;
+}
+
+//Interfaz de datos del cliente
+interface ClientData {
+  name: string;
+  phone: string;
+  address: string;
+  idDocument: string;
+  email: string;
 }
 
 export const useCart = create<CartStore>((set, get) => ({
@@ -71,26 +80,31 @@ export const useCart = create<CartStore>((set, get) => ({
     return get().items.reduce((acc, item) => acc + (get().getItemFinalPrice(item) * item.quantity), 0);
   },
 
-  generateWhatsAppLink: (shopPhone, shopName) => {
-    const totalUSD = get().getTotal();
-    const tasa = get().tasa;
-    const totalVES = (totalUSD * tasa).toLocaleString('es-VE', { minimumFractionDigits: 2 });
-
-    const itemsList = get().items
-      .map(i => {
-        const finalPrice = get().getItemFinalPrice(i);
-        return `• ${i.name} (x${i.quantity}) - $${(finalPrice * i.quantity).toFixed(2)}`;
-      })
+  // En tu archivo src/store/useCart.ts
+  generateWhatsAppLink: (shopPhone, shopName, clientData) => {
+    const state = get();
+    const itemsList = state.items
+      .map(i => `- ${i.name} (x${i.quantity}) - $${(state.getItemFinalPrice(i) * i.quantity).toFixed(2)}`)
       .join('\n');
 
-    const rawMessage =
-      `Hola! Vengo de *Aura* ✨\n\n` +
-      `🛍️ *Pedido para: ${shopName}*\n\n` +
-      `${itemsList}\n\n` +
-      `💰 *TOTAL USD: $${totalUSD.toFixed(2)}*\n` +
-      `💵 *TOTAL Bs: Bs. ${totalVES}*\n\n` +
-      `¿Me confirman disponibilidad para concretar el pago?`;
+    const total = state.items.reduce((acc, i) => acc + (state.getItemFinalPrice(i) * i.quantity), 0).toFixed(2);
 
-    return `https://wa.me/${shopPhone}?text=${encodeURIComponent(rawMessage)}`;
+    const message = `*Nuevo Pedido - ${shopName}*
+--------------------------
+*Datos del Cliente:*
+👤 Nombre: ${clientData.name}
+🆔 Documento: ${clientData.idDocument}
+📧 Email: ${clientData.email}
+📱 Teléfono: ${clientData.phone}
+📍 Dirección: ${clientData.address}
+
+*Detalle del Pedido:*
+${itemsList}
+
+💰 *Total a pagar: $${total}*
+--------------------------
+¿Podrían confirmarme la disponibilidad?`;
+
+    return `https://wa.me/${shopPhone}?text=${encodeURIComponent(message)}`;
   }
 }));

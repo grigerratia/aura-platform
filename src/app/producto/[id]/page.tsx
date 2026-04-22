@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Star, Truck, ShieldCheck } from 'lucide-react';
 import ProductActions from './ProductActions';
 import getDolarTasa from '@/util/getDolarTasa';
+import BackButton from '@/components/ui/BackButton';
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -49,6 +50,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
     <main className="max-w-7xl mx-auto px-4 py-8 grid md:grid-cols-2 gap-12 font-sans">
       {/* Columna Izquierda: Imagen */}
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center relative">
+        <BackButton />
         <img
           src={product.imageUrl || '/placeholder.png'}
           alt={product.name}
@@ -70,7 +72,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           <div className="flex text-amber-400">
             {[...Array(5)].map((_, i) => <Star key={i} size={16} fill="currentColor" strokeWidth={0} />)}
           </div>
-          <span className="text-sm font-bold text-slate-700">{product.rating || "5.0"}</span>
+          <span className="text-sm font-bold text-slate-700 text-white">{product.rating || "5.0"}</span>
           <span className="text-sm text-slate-500 text-white">({product.reviews_count || "0"} valoraciones)</span>
         </div>
 

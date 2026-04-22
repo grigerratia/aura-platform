@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { useState } from "react";
 import { useCart } from "../store/useCart";
 import { ShoppingBag, X, Trash2, Plus, Minus, MessageCircle } from "lucide-react";
@@ -133,14 +134,21 @@ export function CartFloating({ initialTasa }: { initialTasa: number }) {
                 <span>Total en Bolívares:</span>
                 <span className="font-semibold text-gray-800">Bs. {totalVES}</span>
               </div>
-              {/* Botón de pago */}
+              {/* Botón de pago
               <button
                 onClick={() => window.open(useCart.getState().generateWhatsAppLink("584120000000", "Nombre de Tienda"), "_blank")}
                 className="w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
               >
                 <MessageCircle size={20} />
                 Enviar Pedido por WhatsApp
-              </button>
+              </button> */}
+
+              {/*Botón para ir a Checkout*/}
+              <Link href="/checkout">
+                <button className="bg-violet-600 text-white py-4 rounded-xl w-full font-bold hover:bg-violet-700 transition flex items-center justify-center gap-2 cursor-pointer shadow-md">
+                  Ir a pagar
+                </button>
+              </Link>
             </div>
           )}
         </div>
