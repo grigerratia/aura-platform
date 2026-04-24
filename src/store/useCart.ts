@@ -29,6 +29,7 @@ interface ClientData {
   address: string;
   idDocument: string;
   email: string;
+  pdfUrl?: string;
 }
 
 export const useCart = create<CartStore>((set, get) => ({
@@ -97,6 +98,7 @@ export const useCart = create<CartStore>((set, get) => ({
 📧 Email: ${clientData.email}
 📱 Teléfono: ${clientData.phone}
 📍 Dirección: ${clientData.address}
+FACTURA DEÑ CÑIENTE: 
 
 *Detalle del Pedido:*
 ${itemsList}
