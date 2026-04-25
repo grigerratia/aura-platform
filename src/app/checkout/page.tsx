@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
 import { useCart } from '@/store/useCart';
-import { MessageCircle, ShieldCheck, User, Loader2, Tag } from 'lucide-react';
+import { MessageCircle, ShieldCheck, User, Loader2, Tag, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { generatePDF } from '@/lib/pdfGenerator';
 import { uploadOrderPDF, saveOrderToDb } from '@/lib/orders';
 import getDolarTasa from '@/util/getDolarTasa';
@@ -12,6 +12,7 @@ function CheckoutContent() {
   const router = useRouter();
   const { items } = useCart();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false); // Nuevo estado para controlar la vista de éxito
   const [tasa, setTasa] = useState<number | null>(null);
 
   // Cargamos la tasa de forma asíncrona segura
@@ -74,6 +75,8 @@ function CheckoutContent() {
       );
 
       window.open(waLink, "_blank");
+      useCart.getState().clearCart();
+      setIsSuccess(true); // Cambiamos el estado para mostrar la pantalla de éxito
     } catch (error) {
       console.error("Error al procesar el pedido:", error);
       alert("Hubo un problema al procesar tu pedido. Intenta de nuevo.");
@@ -82,6 +85,52 @@ function CheckoutContent() {
     }
   };
 
+  // Si el pedido fue exitoso, mostramos únicamente esta pantalla
+  if (isSuccess) {
+    return (
+      <main className="min-h-screen bg-slate-50 flex items-center justify-center py-12 px-4 sm:px-6">
+        <div className="max-w-2xl w-full bg-white p-8 sm:p-12 rounded-3xl shadow-sm border border-slate-200 text-center">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-6">
+            <CheckCircle className="w-10 h-10 text-green-600" />
+          </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-4">Pedido generado exitosamente</h1>
+          <p className="text-lg text-slate-600 mb-8">
+            Se ha abierto una ventana de WhatsApp para que envíes tu solicitud.
+          </p>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-left mb-10">
+            <h3 className="text-lg font-bold text-amber-900 flex items-center gap-2 mb-4">
+              <AlertCircle size={22} className="text-amber-600" />
+              Aviso Importante sobre su Pedido
+            </h3>
+            <p className="text-sm text-amber-800 mb-4">
+              Para garantizar que nuestro sistema procese su compra de manera eficiente, por favor lea atentamente:
+            </p>
+            <ul className="text-sm text-amber-800 space-y-3 list-disc pl-5 marker:text-amber-500">
+              <li>
+                <strong>NO modifique ni borre el mensaje de WhatsApp:</strong> El texto generado contiene la estructura y los enlaces exactos que nuestro sistema automatizado requiere. Alterarlo causará que su pedido no sea detectado.
+              </li>
+              <li>
+                <strong>Tiempos de respuesta:</strong> La verificación de pagos y coordinación de entregas no son automáticas; dependen enteramente de la disponibilidad de nuestros agentes en turno.
+              </li>
+              <li>
+                <strong>Respaldo de compra:</strong> El enlace PDF incluido en su mensaje es el único comprobante formal de los precios y productos solicitados en este momento.
+              </li>
+            </ul>
+          </div>
+
+          <button
+            onClick={() => { router.push('/aura'); useCart.getState().clearCart(); }}
+            className="cursor-pointer inline-flex items-center justify-center gap-2 bg-slate-900 text-white px-8 py-4 rounded-xl font-bold hover:bg-slate-800 transition shadow-md w-full sm:w-auto"
+          >
+            <ArrowLeft size={20} /> Volver a la página de productos
+          </button>
+        </div>
+      </main >
+    );
+  }
+
+  // Si no ha sido exitoso, mostramos el checkout normal
   return (
     <main className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto">

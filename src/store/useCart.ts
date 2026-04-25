@@ -20,6 +20,7 @@ interface CartStore {
   getItemFinalPrice: (item: CartItem) => number;
   // -----------------------------------------------------
   generateWhatsAppLink: (shopPhone: string, shopName: string, clientData: ClientData) => string;
+  clearCart: () => void;
 }
 
 //Interfaz de datos del cliente
@@ -64,6 +65,8 @@ export const useCart = create<CartStore>((set, get) => ({
     items: state.items.filter((i) => i.id !== id),
   })),
 
+  clearCart: () => set({ items: [] }),
+
   increaseItem: (id: string) => set((state) => ({
     items: state.items.map((i) =>
       i.id === id ? { ...i, quantity: i.quantity + 1 } : i
@@ -81,31 +84,38 @@ export const useCart = create<CartStore>((set, get) => ({
     return get().items.reduce((acc, item) => acc + (get().getItemFinalPrice(item) * item.quantity), 0);
   },
 
-  // En tu archivo src/store/useCart.ts
   generateWhatsAppLink: (shopPhone, shopName, clientData) => {
     const state = get();
+
+    // Lista de items con un formato más limpio
     const itemsList = state.items
-      .map(i => `- ${i.name} (x${i.quantity}) - $${(state.getItemFinalPrice(i) * i.quantity).toFixed(2)}`)
+      .map(i => `🔸 ${i.quantity}x ${i.name} - $${(state.getItemFinalPrice(i) * i.quantity).toFixed(2)}`)
       .join('\n');
 
     const total = state.items.reduce((acc, i) => acc + (state.getItemFinalPrice(i) * i.quantity), 0).toFixed(2);
 
-    const message = `*Nuevo Pedido - ${shopName}*
---------------------------
-*Datos del Cliente:*
-👤 Nombre: ${clientData.name}
-🆔 Documento: ${clientData.idDocument}
-📧 Email: ${clientData.email}
-📱 Teléfono: ${clientData.phone}
-📍 Dirección: ${clientData.address}
-FACTURA DEÑ CÑIENTE: 
+    // Mensaje estructurado, profesional y con advertencia
+    const message = `⚠️ *SISTEMA DE PEDIDOS - NO MODIFICAR ESTE MENSAJE* ⚠️
+Para garantizar el procesamiento rápido y exacto de su compra, por favor envíe este mensaje tal cual.
 
-*Detalle del Pedido:*
+Hola, equipo de *${shopName}*. Deseo procesar el siguiente pedido:
+
+🧾 *FACTURA DIGITAL (PDF):*
+${clientData.pdfUrl ? clientData.pdfUrl : '(Documento no disponible)'}
+
+📦 *RESUMEN DEL PEDIDO:*
 ${itemsList}
+-----------------------------------
+💰 *TOTAL A PAGAR: $${total} USD*
 
-💰 *Total a pagar: $${total}*
---------------------------
-¿Podrían confirmarme la disponibilidad?`;
+🚚 *DATOS DE FACTURACIÓN Y ENVÍO:*
+👤 Cliente: ${clientData.name}
+🆔 CI/RIF: ${clientData.idDocument}
+📱 Contacto: ${clientData.phone}
+📍 Dirección: ${clientData.address}
+📧 Email: ${clientData.email}
+
+Quedo atento a las instrucciones para realizar el pago. ¡Muchas gracias!`;
 
     return `https://wa.me/${shopPhone}?text=${encodeURIComponent(message)}`;
   }
