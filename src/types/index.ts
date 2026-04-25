@@ -20,4 +20,5 @@ export interface Store {
   primaryColor: string;
   whatsapp: string;
   description: string;
+  logo_url?: string;
 }
