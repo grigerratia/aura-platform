@@ -18,8 +18,12 @@ export function QuickViewModal({ product, tasa, isOpen, onClose }: QuickViewModa
   // Si no está abierto, no renderizamos nada en el DOM
   if (!isOpen) return null;
 
-  // --- Lógica de Precios Sincronizada ---
-  const hasDbDiscountPercent = typeof product.discount_percentage === 'number' && product.discount_percentage > 0;
+  // --- Lógica de Stock ---
+  const isOutOfStock = typeof product.stock === 'number' && product.stock <= 0;
+  const isLowStock = typeof product.stock === 'number' && product.stock > 0 && product.stock < 5;
+
+  // --- Lógica de Precios Sincronizada (Priorizando tabla intermedia) ---
+  const hasDbDiscountPercent = typeof (product.discount_percent ?? product.discount_percentage) === 'number' && (product.discount_percent ?? product.discount_percentage)! > 0;
   const hasDbSalePrice = typeof product.sale_price === 'number' && product.sale_price < product.price;
 
   const hasDiscount = hasDbDiscountPercent || hasDbSalePrice;
@@ -27,14 +31,14 @@ export function QuickViewModal({ product, tasa, isOpen, onClose }: QuickViewModa
   // Calculamos el precio final en USD
   let currentUSD = product.price;
   if (hasDbDiscountPercent) {
-    currentUSD = product.price * (1 - product.discount_percentage! / 100);
+    currentUSD = product.price * (1 - (product.discount_percent ?? product.discount_percentage!) / 100);
   } else if (hasDbSalePrice) {
     currentUSD = product.sale_price!;
   }
 
   // Calculamos el porcentaje a mostrar
-  const discountPercent = hasDbDiscountPercent
-    ? product.discount_percentage!
+  const displayDiscount = hasDbDiscountPercent
+    ? (product.discount_percent ?? product.discount_percentage!)
     : (hasDiscount ? Math.round(((product.price - currentUSD) / product.price) * 100) : 0);
 
   const priceVES = (currentUSD * tasa).toLocaleString("es-VE", {
@@ -60,11 +64,11 @@ export function QuickViewModal({ product, tasa, isOpen, onClose }: QuickViewModa
         </button>
 
         {/* Mitad Izquierda: Imagen Grande */}
-        <div className="relative w-full md:w-1/2 bg-slate-50 p-8 flex items-center justify-center min-h-[300px]">
+        <div className={`relative w-full md:w-1/2 bg-slate-50 p-8 flex items-center justify-center min-h-[300px] ${isOutOfStock ? 'opacity-70 grayscale-[0.5]' : ''}`}>
           {/* Etiqueta de Oferta en el Modal */}
           {hasDiscount && (
             <div className="absolute top-4 left-4 z-10 bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wide shadow-sm">
-              {discountPercent}% OFF
+              {displayDiscount}% OFF
             </div>
           )}
           <img
@@ -98,6 +102,18 @@ export function QuickViewModal({ product, tasa, isOpen, onClose }: QuickViewModa
             <div className="text-lg font-bold text-emerald-600 mt-1">
               Bs. {priceVES}
             </div>
+
+            {/* Indicador de Disponibilidad */}
+            <div className="mt-2 text-sm font-medium">
+              {isOutOfStock ? (
+                <span className="text-red-500">Producto agotado temporalmente</span>
+              ) : isLowStock ? (
+                <span className="text-amber-600">¡Solo quedan {product.stock} disponibles!</span>
+              ) : typeof product.stock === 'number' ? (
+                <span className="text-emerald-600">{product.stock} unidades disponibles</span>
+              ) : null}
+            </div>
+
             {product.free_shipping && (
               <div className="flex items-center gap-1 text-emerald-600 mt-2">
                 <Truck size={16} />
@@ -113,14 +129,18 @@ export function QuickViewModal({ product, tasa, isOpen, onClose }: QuickViewModa
           {/* Botones de acción en el Modal */}
           <div className="mt-8 space-y-3">
             <button
+              disabled={isOutOfStock}
               onClick={() => {
-                addItem(product as any);
-                onClose();
+                if (!isOutOfStock) {
+                  addItem(product as any);
+                  onClose();
+                }
               }}
-              className="cursor-pointer w-full bg-brand-primary hover:bg-brand-primary/90 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg"
+              className={`cursor-pointer w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg ${isOutOfStock ? 'bg-slate-400 text-white cursor-not-allowed hover:bg-slate-400' : 'bg-brand-primary hover:bg-brand-primary/90 text-white'
+                }`}
             >
               <Plus size={20} strokeWidth={2.5} />
-              Agregar al Carrito
+              {isOutOfStock ? 'Agotado' : 'Agregar al Carrito'}
             </button>
 
             <Link
