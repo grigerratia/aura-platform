@@ -12,11 +12,13 @@ export interface ExtendedProduct {
   price: number;
   sale_price?: number | null;
   discount_percentage?: number | null;
+  discount_percent?: number | null; // Agregado para tabla intermedia
   imageUrl?: string;
   rating?: number;
   reviews_count?: number;
   shortDescription?: string;
   free_shipping?: boolean;
+  stock?: number; // Agregado para tabla intermedia
 }
 
 interface Props {
@@ -28,9 +30,11 @@ export function ProductCard({ product, tasa }: Props) {
   const addItem = useCart((state) => state.addItem);
   const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
 
+  // Lógica de Stock
+  const isOutOfStock = typeof product.stock === 'number' && product.stock <= 0;
 
   // 1. Verificamos si hay un descuento porcentual válido de Supabase
-  const hasDbDiscountPercent = typeof product.discount_percentage === 'number' && product.discount_percentage > 0;
+  const hasDbDiscountPercent = typeof (product.discount_percent ?? product.discount_percentage) === 'number' && (product.discount_percent ?? product.discount_percentage)! > 0;
 
   // 2. Verificamos si hay un precio de oferta específico de Supabase
   const hasDbSalePrice = typeof product.sale_price === 'number' && product.sale_price < product.price;
@@ -43,7 +47,7 @@ export function ProductCard({ product, tasa }: Props) {
 
   if (hasDbDiscountPercent) {
     // Si hay %, calculamos el precio reducido: Precio * (1 - % / 100)
-    currentUSD = product.price * (1 - product.discount_percentage! / 100);
+    currentUSD = product.price * (1 - (product.discount_percent ?? product.discount_percentage!) / 100);
   } else if (hasDbSalePrice) {
     // Si no hay %, pero sí precio directo, usamos el precio directo
     currentUSD = product.sale_price!;
@@ -51,7 +55,7 @@ export function ProductCard({ product, tasa }: Props) {
 
   // 5. Calculamos el porcentaje a mostrar
   const displayDiscount = hasDbDiscountPercent
-    ? product.discount_percentage!
+    ? (product.discount_percent ?? product.discount_percentage!)
     : (hasDiscount ? Math.round(((product.price - currentUSD) / product.price) * 100) : 0);
 
   // 6. Formato VES basado en el currentUSD calculado
@@ -62,7 +66,7 @@ export function ProductCard({ product, tasa }: Props) {
 
   return (
     <>
-      <div className="group relative flex flex-row sm:flex-col bg-white rounded-xl sm:rounded-2xl p-2 sm:p-4 shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-200 gap-3 sm:gap-0">
+      <div className={`group relative flex flex-row sm:flex-col bg-white rounded-xl sm:rounded-2xl p-2 sm:p-4 shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-200 gap-3 sm:gap-0 ${isOutOfStock ? 'opacity-70' : ''}`}>
 
         {/* Etiqueta de Oferta */}
         {hasDiscount && (
@@ -131,11 +135,13 @@ export function ProductCard({ product, tasa }: Props) {
           </Link>
 
           <button
+            disabled={isOutOfStock}
             onClick={(e) => { e.preventDefault(); addItem(product as any); }}
-            className="cursor-pointer mt-2 sm:mt-4 w-full bg-brand-primary hover:bg-brand-primary/90 text-white py-2 sm:py-2.5 rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-2 transition-all active:scale-95 shadow-md"
+            className={`cursor-pointer mt-2 sm:mt-4 w-full py-2 sm:py-2.5 rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-2 transition-all active:scale-95 shadow-md ${isOutOfStock ? 'bg-slate-400 cursor-not-allowed' : 'bg-brand-primary hover:bg-brand-primary/90 text-white'
+              }`}
           >
             <Plus size={15} className="sm:w-[18px] sm:h-[18px]" strokeWidth={2.5} />
-            <span className="font-bold text-[11px] sm:text-sm">Agregar</span>
+            <span className="font-bold text-[11px] sm:text-sm">{isOutOfStock ? 'Agotado' : 'Agregar'}</span>
           </button>
         </div>
       </div>

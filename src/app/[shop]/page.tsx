@@ -23,6 +23,8 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
     .from('store_products')
     .select(`
       price,
+      stock,
+      discount_percent,
       products (*)
     `)
     .eq('store_id', store.id)
@@ -45,7 +47,9 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
             // Aquí pasamos el producto real, pero sobrescribimos el precio con el de la tienda
             product={{
               ...item.products,
-              price: item.price
+              price: item.price,
+              stock: item.stock,
+              discount_percent: item.discount_percent
             }}
             tasa={tasa}
           />
