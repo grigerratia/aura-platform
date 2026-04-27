@@ -12,10 +12,9 @@ function CheckoutContent() {
   const router = useRouter();
   const { items } = useCart();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false); // Nuevo estado para controlar la vista de éxito
+  const [isSuccess, setIsSuccess] = useState(false);
   const [tasa, setTasa] = useState<number | null>(null);
 
-  // Cargamos la tasa de forma asíncrona segura
   useEffect(() => {
     getDolarTasa().then((valor) => setTasa(valor));
   }, []);
@@ -28,12 +27,20 @@ function CheckoutContent() {
     email: ''
   });
 
-  const getFinalPrice = (item: any) => useCart.getState().getItemFinalPrice(item);
+  // Lógica local para calcular el precio final asegurando el uso de discount_percent
+  const getFinalPrice = (item: any) => {
+    const activeDiscount = (item as any).discount_percent;
+    const hasDbDiscountPercent = typeof activeDiscount === 'number' && activeDiscount > 0;
+    const hasDbSalePrice = typeof item.sale_price === 'number' && item.sale_price < item.price;
+
+    if (hasDbDiscountPercent) return item.price * (1 - activeDiscount / 100);
+    if (hasDbSalePrice) return item.sale_price;
+    return item.price;
+  };
 
   const subtotal = items.reduce((acc, item) => acc + (getFinalPrice(item) * item.quantity), 0);
   const totalSinDescuento = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const ahorroTotal = totalSinDescuento - subtotal;
-  // Calculamos en Bs solo si la tasa ya cargó
   const totalBs = tasa ? subtotal * tasa : 0;
 
   const inputClass = "w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition text-slate-900 placeholder:text-slate-400";
@@ -76,7 +83,7 @@ function CheckoutContent() {
 
       window.open(waLink, "_blank");
       useCart.getState().clearCart();
-      setIsSuccess(true); // Cambiamos el estado para mostrar la pantalla de éxito
+      setIsSuccess(true);
     } catch (error) {
       console.error("Error al procesar el pedido:", error);
       alert("Hubo un problema al procesar tu pedido. Intenta de nuevo.");
@@ -85,7 +92,6 @@ function CheckoutContent() {
     }
   };
 
-  // Si el pedido fue exitoso, mostramos únicamente esta pantalla
   if (isSuccess) {
     return (
       <main className="min-h-screen bg-slate-50 flex items-center justify-center py-12 px-4 sm:px-6">
@@ -108,13 +114,13 @@ function CheckoutContent() {
             </p>
             <ul className="text-sm text-amber-800 space-y-3 list-disc pl-5 marker:text-amber-500">
               <li>
-                <strong>NO modifique ni borre el mensaje de WhatsApp:</strong> El texto generado contiene la estructura y los enlaces exactos que nuestro sistema automatizado requiere. Alterarlo causará que su pedido no sea detectado.
+                <strong>NO modifique ni borre el mensaje de WhatsApp:</strong> El texto generado contiene la estructura y los enlaces exactos que nuestro sistema automatizado requiere.
               </li>
               <li>
-                <strong>Tiempos de respuesta:</strong> La verificación de pagos y coordinación de entregas no son automáticas; dependen enteramente de la disponibilidad de nuestros agentes en turno.
+                <strong>Tiempos de respuesta:</strong> La verificación de pagos depende de la disponibilidad de nuestros agentes.
               </li>
               <li>
-                <strong>Respaldo de compra:</strong> El enlace PDF incluido en su mensaje es el único comprobante formal de los precios y productos solicitados en este momento.
+                <strong>Respaldo de compra:</strong> El enlace PDF incluido en su mensaje es el único comprobante formal de los precios solicitados.
               </li>
             </ul>
           </div>
@@ -130,7 +136,6 @@ function CheckoutContent() {
     );
   }
 
-  // Si no ha sido exitoso, mostramos el checkout normal
   return (
     <main className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto">
@@ -138,7 +143,6 @@ function CheckoutContent() {
           <button
             onClick={() => router.back()}
             className="cursor-pointer group flex items-center justify-center w-10 h-10 rounded-full border border-slate-200 bg-white hover:bg-slate-100 transition-colors shadow-sm"
-            aria-label="Volver"
           >
             <svg className="w-5 h-5 text-slate-600 group-hover:text-slate-900 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
@@ -172,17 +176,20 @@ function CheckoutContent() {
               <h2 className="text-lg font-bold text-slate-900 mb-4">Resumen del pedido</h2>
               <div className="space-y-4 mb-6">
                 {items.map((item: any) => {
-                  const hasDiscount = item.discount && item.discount > 0;
+                  const finalPrice = getFinalPrice(item);
+                  const activeDiscount = (item as any).discount_percent;
+                  const hasDiscount = typeof activeDiscount === 'number' && activeDiscount > 0;
+
                   return (
                     <div key={item.id} className="space-y-1">
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-600">{item.quantity}x {item.name}</span>
-                        <span className="font-semibold text-slate-900">${(getFinalPrice(item) * item.quantity).toFixed(2)}</span>
+                        <span className="font-semibold text-slate-900">${(finalPrice * item.quantity).toFixed(2)}</span>
                       </div>
                       {hasDiscount && (
                         <div className="flex items-center gap-1 text-[10px] font-bold text-green-600 uppercase">
                           <Tag size={10} />
-                          Descuento aplicado (-{item.discount}%)
+                          Descuento aplicado (-{activeDiscount}%)
                         </div>
                       )}
                     </div>

@@ -9,12 +9,14 @@ export function CartFloating({ initialTasa }: { initialTasa: number }) {
   const { items, removeItem, increaseItem, decreaseItem } = useCart();
   const [isOpen, setIsOpen] = useState(false);
 
-  // 1. Calculamos los precios reales con descuento aplicado
+  // 1. Calculamos los precios reales con el descuento de la tienda
   const calculateItemPrice = (item: any) => {
-    const hasDbDiscountPercent = typeof item.discount_percentage === 'number' && item.discount_percentage > 0;
+    // Usamos únicamente discount_percent de store_products
+    const activeDiscount = (item as any).discount_percent;
+    const hasDbDiscountPercent = typeof activeDiscount === 'number' && activeDiscount > 0;
     const hasDbSalePrice = typeof item.sale_price === 'number' && item.sale_price < item.price;
 
-    if (hasDbDiscountPercent) return item.price * (1 - item.discount_percentage / 100);
+    if (hasDbDiscountPercent) return item.price * (1 - activeDiscount / 100);
     if (hasDbSalePrice) return item.sale_price;
     return item.price;
   };
@@ -67,7 +69,9 @@ export function CartFloating({ initialTasa }: { initialTasa: number }) {
               items.map((item) => {
                 const finalPrice = calculateItemPrice(item);
                 const hasDiscount = finalPrice < item.price;
-                const discountPercent = item.discount_percentage || Math.round(((item.price - finalPrice) / item.price) * 100);
+                // Usamos únicamente discount_percent de store_products para la etiqueta
+                const activeDiscount = (item as any).discount_percent;
+                const discountPercent = activeDiscount || Math.round(((item.price - finalPrice) / item.price) * 100);
 
                 return (
                   <div key={item.id} className="flex gap-4 items-center">
@@ -121,7 +125,7 @@ export function CartFloating({ initialTasa }: { initialTasa: number }) {
           {items.length > 0 && (
             <div className="p-6 border-t bg-white space-y-4">
               <div className="flex justify-between text-lg">
-                <span className="font-medium text-gray-900">Subtotal:</span>
+                <span className="font-medium text-gray-900">Total:</span>
                 <span className="font-bold text-gray-900">${totalUSD.toFixed(2)}</span>
               </div>
               {ahorro > 0 && (

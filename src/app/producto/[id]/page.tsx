@@ -4,6 +4,7 @@ import { Star, Truck, ShieldCheck } from 'lucide-react';
 import ProductActions from './ProductActions';
 import getDolarTasa from '@/util/getDolarTasa';
 import BackButton from '@/components/ui/BackButton';
+import { CartFloating } from '@/components/CartFloating';
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -12,32 +13,50 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   // Ejecutamos en paralelo la consulta a Supabase y la obtención de la tasa
   const supabase = await createClient();
 
-  const [tasa, { data: product, error }] = await Promise.all([
+  const [tasa, { data: storeProduct, error }] = await Promise.all([
     getDolarTasa(),
+    // Buscamos en store_products y traemos la información relacionada de products
     supabase
-      .from('products')
-      .select('*')
-      .eq('id', productId)
+      .from('store_products')
+      .select(`
+        price,
+        stock,
+        discount_percent,
+        products (*)
+      `)
+      .eq('product_id', productId)
       .single()
   ]);
 
-  if (!product || error) return notFound();
+  if (!storeProduct || error) return notFound();
+
+  // Fusionamos los datos para crear el objeto de producto correcto
+  const product = {
+    ...(storeProduct.products as any),
+    price: storeProduct.price,
+    stock: storeProduct.stock,
+    discount_percent: storeProduct.discount_percent
+  };
+
+  // === LÓGICA DE STOCK ===
+  const isOutOfStock = typeof product.stock === 'number' && product.stock <= 0;
+  const isLowStock = typeof product.stock === 'number' && product.stock > 0 && product.stock < 5;
 
   // === LÓGICA DE PRECIOS ===
-  const hasDbDiscountPercent = typeof product.discount_percentage === 'number' && product.discount_percentage > 0;
+  const hasDbDiscountPercent = typeof (product.discount_percent ?? product.discount_percentage) === 'number' && (product.discount_percent ?? product.discount_percentage) > 0;
   const hasDbSalePrice = typeof product.sale_price === 'number' && product.sale_price < product.price;
   const hasDiscount = hasDbDiscountPercent || hasDbSalePrice;
 
   let currentUSD = product.price;
 
   if (hasDbDiscountPercent) {
-    currentUSD = product.price * (1 - product.discount_percentage / 100);
+    currentUSD = product.price * (1 - (product.discount_percent ?? product.discount_percentage) / 100);
   } else if (hasDbSalePrice) {
     currentUSD = product.sale_price;
   }
 
   const displayDiscount = hasDbDiscountPercent
-    ? product.discount_percentage
+    ? (product.discount_percent ?? product.discount_percentage)
     : (hasDiscount ? Math.round(((product.price - currentUSD) / product.price) * 100) : 0);
 
   // Cálculo usando la tasa dinámica obtenida de getDolarTasa
@@ -49,7 +68,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   return (
     <main className="max-w-7xl mx-auto px-4 py-8 grid md:grid-cols-2 gap-12 font-sans">
       {/* Columna Izquierda: Imagen */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center relative">
+      <div className={`bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center relative ${isOutOfStock ? 'opacity-70 grayscale-[0.5]' : ''}`}>
         <BackButton />
         <img
           src={product.imageUrl || '/placeholder.png'}
@@ -97,6 +116,17 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             )}
 
             <div className="text-lg font-semibold text-emerald-600 mt-2">Bs. {priceVES}</div>
+
+            {/* Indicador de Disponibilidad */}
+            <div className="mt-1 text-sm font-medium">
+              {isOutOfStock ? (
+                <span className="text-red-500">Producto agotado temporalmente</span>
+              ) : isLowStock ? (
+                <span className="text-amber-600">¡Solo quedan {product.stock} unidades!</span>
+              ) : typeof product.stock === 'number' ? (
+                <span className="text-emerald-600">Stock disponible: {product.stock}</span>
+              ) : null}
+            </div>
           </div>
 
           {product.free_shipping && (
@@ -125,6 +155,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
+      <CartFloating initialTasa={tasa} />
     </main>
   );
 }
