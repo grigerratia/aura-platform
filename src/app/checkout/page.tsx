@@ -1,23 +1,68 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, Suspense, use } from 'react';
 import { useCart } from '@/store/useCart';
 import { MessageCircle, ShieldCheck, User, Loader2, Tag, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { generatePDF } from '@/lib/pdfGenerator';
 import { uploadOrderPDF, saveOrderToDb } from '@/lib/orders';
 import getDolarTasa from '@/util/getDolarTasa';
+import { supabase } from '@/lib/supabase';
+
+// --- SISTEMA DE CACHÉ PARA REACT 19 ---
+let cachedTasaPromise: Promise<number> | null = null;
+const fetchTasa = () => {
+  if (!cachedTasaPromise) cachedTasaPromise = getDolarTasa();
+  return cachedTasaPromise;
+};
+
+// Definimos una interfaz para evitar errores de tipo "any" o "unknown"
+interface StoreData {
+  error: boolean;
+  id: string;
+  name: string;
+  whatsapp: string;
+}
+
+const storePromiseCache = new Map<string, Promise<StoreData>>();
+
+const fetchStoreInfo = (id: string): Promise<StoreData> => {
+  if (!storePromiseCache.has(id)) {
+    const promise = (async (): Promise<StoreData> => {
+      try {
+        const { data, error } = await supabase
+          .from('stores')
+          .select('id, name, owner_whatsapp')
+          .eq('id', id)
+          .single();
+
+        if (error || !data) {
+          return { error: true, id: '', name: '', whatsapp: '' };
+        }
+
+        return {
+          error: false,
+          id: data.id,
+          name: data.name,
+          whatsapp: data.owner_whatsapp,
+        };
+      } catch (err) {
+        return { error: true, id: '', name: '', whatsapp: '' };
+      }
+    })();
+
+    storePromiseCache.set(id, promise);
+  }
+  return storePromiseCache.get(id)!;
+};
 
 function CheckoutContent() {
   const router = useRouter();
-  const { items } = useCart();
+  const { items, store_id, clearCart, getTotal, generateWhatsAppLink } = useCart();
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [tasa, setTasa] = useState<number | null>(null);
-
-  useEffect(() => {
-    getDolarTasa().then((valor) => setTasa(valor));
-  }, []);
+  const [confirmedStoreName, setConfirmedStoreName] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -27,24 +72,70 @@ function CheckoutContent() {
     email: ''
   });
 
-  // Lógica local para calcular el precio final asegurando el uso de discount_percent
-  const getFinalPrice = (item: any) => {
-    const activeDiscount = (item as any).discount_percent;
-    const hasDbDiscountPercent = typeof activeDiscount === 'number' && activeDiscount > 0;
-    const hasDbSalePrice = typeof item.sale_price === 'number' && item.sale_price < item.price;
+  const targetStoreId = store_id || (items[0] as { store_id?: string })?.store_id;
 
-    if (hasDbDiscountPercent) return item.price * (1 - activeDiscount / 100);
-    if (hasDbSalePrice) return item.sale_price;
-    return item.price;
-  };
+  const tasa = use(fetchTasa());
+  const storeInfo = targetStoreId
+    ? use(fetchStoreInfo(targetStoreId))
+    : { error: true, id: '', name: '', whatsapp: '' };
 
-  const subtotal = items.reduce((acc, item) => acc + (getFinalPrice(item) * item.quantity), 0);
+  const storeError = !targetStoreId || storeInfo.error;
+
+  const subtotal = getTotal();
   const totalSinDescuento = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const ahorroTotal = totalSinDescuento - subtotal;
-  const totalBs = tasa ? subtotal * tasa : 0;
+  const totalBs = subtotal * tasa;
 
   const inputClass = "w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition text-slate-900 placeholder:text-slate-400";
 
+  // const handleFinalizeOrder = async () => {
+  //   if (!formData.name || !formData.phone || !formData.address) {
+  //     alert("Por favor, completa los campos obligatorios.");
+  //     return;
+  //   }
+
+  //   setIsProcessing(true);
+  //   try {
+  //     const safeName = formData.name.replace(/[^a-zA-Z0-9]/g, '_');
+
+  //     // CORRECCIÓN: Ahora pasamos la 'tasa' como 5to argumento para que el PDF muestre los Bolívares
+  //     const pdfBlob = generatePDF(items, formData, subtotal, storeInfo.name, tasa);
+  //     const fileName = `Factura_${Date.now()}_${safeName}.pdf`;
+
+  //     const pdfUrl = await uploadOrderPDF(pdfBlob, fileName);
+
+  //     await saveOrderToDb({
+  //       store_id: storeInfo.id,
+  //       customer_info: {
+  //         name: formData.name,
+  //         email: formData.email,
+  //         phone: formData.phone,
+  //         idDocument: formData.idDocument,
+  //         address: formData.address
+  //       },
+  //       total_usd: subtotal,
+  //       total_ves: totalBs,
+  //       pdf_url: pdfUrl,
+  //       items: items,
+  //       status: 'pendiente'
+  //     });
+
+  //     const waLink = generateWhatsAppLink(
+  //       storeInfo.whatsapp,
+  //       storeInfo.name,
+  //       { ...formData, pdfUrl }
+  //     );
+
+  //     window.open(waLink, "_blank");
+  //     clearCart();
+  //     setIsSuccess(true);
+  //   } catch (error) {
+  //     console.error("Error al procesar el pedido:", error);
+  //     alert("Hubo un problema al procesar tu pedido. Intenta de nuevo.");
+  //   } finally {
+  //     setIsProcessing(false);
+  //   }
+  // };
   const handleFinalizeOrder = async () => {
     if (!formData.name || !formData.phone || !formData.address) {
       alert("Por favor, completa los campos obligatorios.");
@@ -53,21 +144,20 @@ function CheckoutContent() {
 
     setIsProcessing(true);
     try {
+      // Guardamos el nombre antes de que desaparezca al vaciar el carrito
+      if (storeInfo.name) {
+        setConfirmedStoreName(storeInfo.name);
+      }
+
       const safeName = formData.name.replace(/[^a-zA-Z0-9]/g, '_');
-      const pdfBlob = generatePDF(items, formData, subtotal);
+      const pdfBlob = generatePDF(items, formData, subtotal, storeInfo.name, tasa);
       const fileName = `Factura_${Date.now()}_${safeName}.pdf`;
 
       const pdfUrl = await uploadOrderPDF(pdfBlob, fileName);
 
       await saveOrderToDb({
-        store_id: '8a6cedda-2d76-4c48-bb83-ad474b67f6d1',
-        customer_info: {
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          idDocument: formData.idDocument,
-          address: formData.address
-        },
+        store_id: storeInfo.id,
+        customer_info: formData,
         total_usd: subtotal,
         total_ves: totalBs,
         pdf_url: pdfUrl,
@@ -75,18 +165,16 @@ function CheckoutContent() {
         status: 'pendiente'
       });
 
-      const waLink = useCart.getState().generateWhatsAppLink(
-        "584248037379",
-        "Aura",
-        { ...formData, pdfUrl }
-      );
+      const waLink = generateWhatsAppLink(storeInfo.whatsapp, storeInfo.name, { ...formData, pdfUrl });
 
       window.open(waLink, "_blank");
-      useCart.getState().clearCart();
+
+      // Aquí es donde el carrito se limpia y se perdía la referencia original
+      clearCart();
       setIsSuccess(true);
     } catch (error) {
-      console.error("Error al procesar el pedido:", error);
-      alert("Hubo un problema al procesar tu pedido. Intenta de nuevo.");
+      console.error("Error:", error);
+      alert("Hubo un problema al procesar tu pedido.");
     } finally {
       setIsProcessing(false);
     }
@@ -101,7 +189,7 @@ function CheckoutContent() {
           </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-4">Pedido generado exitosamente</h1>
           <p className="text-lg text-slate-600 mb-8">
-            Se ha abierto una ventana de WhatsApp para que envíes tu solicitud.
+            Se ha abierto una ventana de WhatsApp para que envíes tu solicitud {confirmedStoreName ? `a ${confirmedStoreName}` : 'a la tienda'}.
           </p>
 
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-left mb-10">
@@ -126,10 +214,10 @@ function CheckoutContent() {
           </div>
 
           <button
-            onClick={() => { router.push('/aura'); useCart.getState().clearCart(); }}
+            onClick={() => { router.back(); }}
             className="cursor-pointer inline-flex items-center justify-center gap-2 bg-slate-900 text-white px-8 py-4 rounded-xl font-bold hover:bg-slate-800 transition shadow-md w-full sm:w-auto"
           >
-            <ArrowLeft size={20} /> Volver a la página de productos
+            <ArrowLeft size={20} /> Volver {confirmedStoreName ? `a ${confirmedStoreName}` : 'a la tienda'}
           </button>
         </div>
       </main >
@@ -176,7 +264,7 @@ function CheckoutContent() {
               <h2 className="text-lg font-bold text-slate-900 mb-4">Resumen del pedido</h2>
               <div className="space-y-4 mb-6">
                 {items.map((item: any) => {
-                  const finalPrice = getFinalPrice(item);
+                  const finalPrice = useCart.getState().getItemFinalPrice(item);
                   const activeDiscount = (item as any).discount_percent;
                   const hasDiscount = typeof activeDiscount === 'number' && activeDiscount > 0;
 
@@ -210,17 +298,34 @@ function CheckoutContent() {
                 </div>
                 <div className="flex justify-between text-md font-medium text-slate-500 italic">
                   <span>Total en Bs.</span>
-                  <span>{tasa !== null ? totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2 }) : '...'} Bs.</span>
+                  <span>{totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs.</span>
                 </div>
+
+                {storeError && (
+                  <div className="mt-4 p-4 bg-red-50 rounded-xl border border-red-200 text-sm text-red-700">
+                    <p className="font-bold flex items-center gap-2 mb-2">
+                      <AlertCircle size={18} /> Error de sincronización
+                    </p>
+                    <p className="mb-3 text-xs">Los productos en tu carrito tienen datos antiguos o la tienda no existe.</p>
+                    <button
+                      onClick={() => { clearCart(); router.push('/'); }}
+                      className="w-full bg-red-600 text-white py-2 rounded-lg font-bold hover:bg-red-700 transition shadow-sm"
+                    >
+                      Vaciar carrito y volver
+                    </button>
+                  </div>
+                )}
+
                 <button
                   onClick={handleFinalizeOrder}
-                  disabled={isProcessing || tasa === null}
-                  className="cursor-pointer w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2 shadow-md shadow-green-200 mt-4 disabled:opacity-70"
+                  disabled={isProcessing || storeError}
+                  className="cursor-pointer w-full bg-green-600 text-white py-4 rounded-xl font-bold hover:bg-green-700 transition flex items-center justify-center gap-2 shadow-md shadow-green-200 mt-4 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {isProcessing ? <Loader2 className="animate-spin" size={20} /> : (
-                    <> <MessageCircle size={20} /> Enviar pedido por WhatsApp </>
+                    <> <MessageCircle size={20} /> Enviar pedido {storeInfo.name ? `a ${storeInfo.name}` : ''} </>
                   )}
                 </button>
+
                 <div className="flex items-start gap-3 text-sm text-slate-600 border-t border-slate-200 pt-6 mt-6">
                   <ShieldCheck className="text-blue-600 shrink-0 mt-0.5" size={24} />
                   <p>Compra protegida. Recibe el producto exacto que pediste o te ayudamos con la devolución.</p>

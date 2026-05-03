@@ -49,7 +49,8 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
               ...item.products,
               price: item.price,
               stock: item.stock,
-              discount_percent: item.discount_percent
+              discount_percent: item.discount_percent,
+              store_id: store.id
             }}
             tasa={tasa}
           />
