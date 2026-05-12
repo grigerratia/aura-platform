@@ -11,7 +11,7 @@ export default function TabUsers({ profilesList }: any) {
       </div>
       <table className="w-full text-left">
         <thead>
-          <tr className="bg-slate-100 text-black text-sm font-bold">
+          <tr className="bg-slate-100 text-slate-700 text-sm font-bold">
             <th className="p-4">Nombre</th>
             <th className="p-4">Rol</th>
             <th className="p-4">Negocio</th>
@@ -19,8 +19,8 @@ export default function TabUsers({ profilesList }: any) {
         </thead>
         <tbody>
           {profilesList.map((p: any) => (
-            <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-              <td className="p-4 font-bold text-black">{p.full_name}</td>
+            <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50 text-slate-700">
+              <td className="p-4 font-bold text-slate-700">{p.full_name}</td>
               <td className="p-4 text-xs font-bold uppercase">
                 <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg">{p.role}</span>
               </td>

@@ -11,7 +11,7 @@ export default function TabStores({ storesList }: any) {
       </div>
       <table className="w-full text-left">
         <thead>
-          <tr className="bg-slate-100 text-black text-sm font-bold">
+          <tr className="bg-slate-100 text-slate-900 text-sm font-bold">
             <th className="p-4">Tienda</th>
             <th className="p-4">Slug</th>
             <th className="p-4">WhatsApp</th>
@@ -20,9 +20,9 @@ export default function TabStores({ storesList }: any) {
         <tbody>
           {storesList.map((s: any) => (
             <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
-              <td className="p-4 font-bold text-black">{s.name}</td>
-              <td className="p-4 font-mono text-xs text-black">{s.slug}</td>
-              <td className="p-4 text-black">{s.owner_whatsapp}</td>
+              <td className="p-4 font-bold text-slate-700">{s.name}</td>
+              <td className="p-4 font-mono text-xs text-slate-700">{s.slug}</td>
+              <td className="p-4 text-slate-700">{s.owner_whatsapp}</td>
             </tr>
           ))}
         </tbody>
