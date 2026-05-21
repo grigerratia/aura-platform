@@ -1,7 +1,7 @@
 import React from 'react';
 import { Store, UserCheck, ShieldCheck, Loader2, Plus } from 'lucide-react';
 
-export default function TabCreate({ formData, setFormData, handleCreateEverything, loading }: any) {
+export default function TabCreate({ formData, setFormData, handleCreateEverything, loading, plansList }: any) {
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
       <div className="text-center">
@@ -29,7 +29,21 @@ export default function TabCreate({ formData, setFormData, handleCreateEverythin
               <label className="text-xs font-bold text-slate-500 ml-1">WhatsApp de Ventas</label>
               <input type="number" required className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-900" placeholder="58412..." value={formData.owner_whatsapp} onChange={(e) => setFormData({ ...formData, owner_whatsapp: e.target.value })} />
             </div>
+
+            {/* NUEVO: SELECTOR DE PLANES DE AURA */}
             <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 ml-1">Plan de Aura (Suscripción)</label>
+              <select required className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 bg-white" value={formData.aura_plan_id} onChange={(e) => setFormData({ ...formData, aura_plan_id: e.target.value })}>
+                <option value="">Seleccionar paquete...</option>
+                {plansList?.map((plan: any) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} - ${plan.price}/mes
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1 md:col-span-2">
               <label className="text-xs font-bold text-slate-500 ml-1">Descripción Breve</label>
               <input type="text" className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-900" placeholder="Venta de víveres y licores" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
             </div>
@@ -52,7 +66,7 @@ export default function TabCreate({ formData, setFormData, handleCreateEverythin
 
         <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black text-lg hover:bg-blue-700 transition-all flex justify-center items-center gap-3 shadow-2xl shadow-blue-500/20">
           {loading ? <Loader2 className="animate-spin" /> : (
-            <> <Plus size={24} /> LANZAR NUEVO NEGOCIO EN KRAKEN </>
+            <> <Plus size={24} /> LANZAR NUEVO NEGOCIO EN AURA </>
           )}
         </button>
       </form>

@@ -13,7 +13,7 @@ export default function MasterSidebar({ activeTab, setActiveTab, handleLogout }:
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-xl z-10">
       <div className="p-6 border-b border-slate-800">
-        <h1 className="text-xl font-bold text-white tracking-tight">Servicios Kraken</h1>
+        <h1 className="text-xl font-bold text-white tracking-tight">Aura SaaS</h1>
         <p className="text-xs text-slate-500 mt-1">Cumaná, Venezuela</p>
       </div>
       <nav className="flex-1 p-4 space-y-2">
