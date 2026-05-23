@@ -21,13 +21,21 @@ export default function MasterDashboard() {
   const [profilesList, setProfilesList] = useState<any[]>([]);
   const [plansList, setPlansList] = useState<any[]>([]);
 
-  // ESTADO UNIFICADO (Ahora incluye el ID del plan de Aura)
+  // ESTADO UNIFICADO ACTUALIZADO
   const [formData, setFormData] = useState({
+    // Datos de la tienda
     store_name: '',
     slug: '',
     owner_whatsapp: '',
     description: '',
     aura_plan_id: '',
+    special_plan: '', // Cuota distinta
+    logo_url: '',
+    banner_url: '',
+    // Control de Dueño
+    owner_mode: 'existing', // 'existing' o 'new'
+    existing_owner_id: '',  // ID del dueño si ya existe
+    // Datos para dueño nuevo
     owner_full_name: '',
     owner_email: '',
     owner_password: '',
@@ -43,9 +51,10 @@ export default function MasterDashboard() {
       .order('created_at', { ascending: false });
 
     // 2. Obtener Usuarios
+    // AQUÍ ESTABA EL DETALLE: Agregamos { count: 'exact' }
     const { count: uCount, data: profilesData } = await supabase
       .from('profiles')
-      .select('*, stores(name)')
+      .select('*, stores(name)', { count: 'exact' })
       .order('created_at', { ascending: false });
 
     console.log("Conteo de perfiles:", uCount);
@@ -85,6 +94,34 @@ export default function MasterDashboard() {
     setLoading(true);
 
     try {
+      let finalOwnerId = formData.existing_owner_id;
+
+      // 1. Si eligió "Nuevo Dueño", creamos el usuario en Supabase Auth primero
+      if (formData.owner_mode === 'new') {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.owner_email,
+          password: formData.owner_password,
+          options: {
+            data: {
+              full_name: formData.owner_full_name,
+              phone: formData.owner_phone,
+              role: 'owner',
+              // No le pasamos store_id al perfil, porque el dueño puede tener múltiples
+            }
+          }
+        });
+
+        if (authError) throw authError;
+        if (!authData.user) throw new Error("No se pudo crear el usuario administrador.");
+
+        // Obtenemos el ID del usuario recién creado
+        finalOwnerId = authData.user.id;
+      } else {
+        // Validamos que haya seleccionado un dueño de la lista
+        if (!finalOwnerId) throw new Error("Debes seleccionar un dueño existente para la tienda.");
+      }
+
+      // 2. Creamos la tienda enlazándola al finalOwnerId
       const { data: storeData, error: storeError } = await supabase
         .from('stores')
         .insert([{
@@ -92,32 +129,24 @@ export default function MasterDashboard() {
           slug: formData.slug,
           owner_whatsapp: Number(formData.owner_whatsapp),
           description: formData.description,
-          aura_plan_id: formData.aura_plan_id // Se inserta el plan seleccionado
+          aura_plan_id: formData.aura_plan_id || null,
+          special_plan: formData.special_plan ? Number(formData.special_plan) : null,
+          logo_url: formData.logo_url || null,
+          banner_url: formData.banner_url || null,
+          owner_id: finalOwnerId // ¡Aquí ocurre la magia de la vinculación!
         }])
         .select()
         .single();
 
       if (storeError) throw storeError;
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.owner_email,
-        password: formData.owner_password,
-        options: {
-          data: {
-            full_name: formData.owner_full_name,
-            phone: formData.owner_phone,
-            role: 'owner',
-            store_id: storeData.id
-          }
-        }
-      });
-
-      if (authError) throw authError;
-
-      alert(`Éxito: Tienda "${formData.store_name}" creada y vinculada a ${formData.owner_full_name}`);
+      alert(`Éxito: Tienda "${formData.store_name}" registrada y vinculada correctamente.`);
 
       // Limpieza profunda del estado
-      setFormData({ store_name: '', slug: '', owner_whatsapp: '', description: '', aura_plan_id: '', owner_full_name: '', owner_email: '', owner_password: '', owner_phone: '' });
+      setFormData({
+        store_name: '', slug: '', owner_whatsapp: '', description: '', aura_plan_id: '', special_plan: '', logo_url: '', banner_url: '',
+        owner_mode: 'existing', existing_owner_id: '', owner_full_name: '', owner_email: '', owner_password: '', owner_phone: ''
+      });
       setActiveTab('dashboard');
 
     } catch (error: any) {
@@ -140,7 +169,8 @@ export default function MasterDashboard() {
             setFormData={setFormData}
             handleCreateEverything={handleCreateEverything}
             loading={loading}
-            plansList={plansList} // Pasamos los planes al componente
+            plansList={plansList}
+            profilesList={profilesList} // Pasamos los planes al componente
           />
         )}
 
