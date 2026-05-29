@@ -160,7 +160,7 @@ export default function MasterDashboard() {
     <div className="min-h-screen bg-slate-50 flex">
       <MasterSidebar activeTab={activeTab} setActiveTab={setActiveTab} handleLogout={handleLogout} />
 
-      <main className="flex-1 p-8 overflow-y-auto">
+      <main className="flex-1 p-8 w-full overflow-y-auto">
         {activeTab === 'dashboard' && <TabDashboard stats={stats} />}
 
         {activeTab === 'create' && (
