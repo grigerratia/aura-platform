@@ -1,12 +1,12 @@
 "use client";
 
 import { useCart } from "../store/useCart";
-import { Plus, Star, X, ChevronRight, Truck } from "lucide-react";
+import { Clock, Star, X, ChevronRight, Truck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { ExtendedProduct } from "./ProductCard";
+import { Product } from "@/types";
 
 interface QuickViewModalProps {
-  product: ExtendedProduct;
+  product: Product;
   tasa: number;
   isOpen: boolean;
   onClose: () => void;
@@ -128,27 +128,23 @@ export function QuickViewModal({ product, tasa, isOpen, onClose }: QuickViewModa
 
           {/* Botones de acción en el Modal */}
           <div className="mt-8 space-y-3">
-            <button
-              disabled={isOutOfStock}
-              onClick={() => {
-                if (!isOutOfStock) {
-                  addItem(product as any);
-                  onClose();
-                }
-              }}
-              className={`cursor-pointer w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg ${isOutOfStock ? 'bg-slate-400 text-white cursor-not-allowed hover:bg-slate-400' : 'bg-brand-primary hover:bg-brand-primary/90 text-white'
-                }`}
-            >
-              <Plus size={20} strokeWidth={2.5} />
-              {isOutOfStock ? 'Agotado' : 'Agregar al Carrito'}
-            </button>
-
             <Link
-              href={`/producto/${product.id}`}
-              className="cursor-pointer w-full bg-slate-100 hover:bg-slate-200 text-slate-800 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors"
+              href={`/producto/${product.id}${product.store_id ? `?store=${product.store_id}` : ''}`}
+              onClick={onClose}
+              className={`cursor-pointer w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 ${
+                isOutOfStock
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-indigo-700 to-teal-600 hover:from-indigo-600 hover:to-teal-500 text-white'
+              }`}
             >
-              Ver detalles completos <ChevronRight size={18} />
+              <Clock size={18} />
+              {isOutOfStock ? 'Agotado en Tienda' : 'Apartar y Congelar Precio'}
             </Link>
+
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-500 font-medium pt-1">
+              <ShieldCheck size={14} className="text-emerald-600" />
+              <span>Reserva gratis por 3 horas. Pagas al retirar en caja.</span>
+            </div>
           </div>
         </div>
       </div>

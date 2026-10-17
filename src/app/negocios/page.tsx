@@ -35,8 +35,18 @@ export default function OwnerLogin() {
         throw new Error('Acceso denegado. Esta área es solo para dueños de negocios.');
       }
 
+      // Si no tiene store_id directo en profiles, verificar si es owner en la tabla stores
       if (!profile.store_id) {
-        throw new Error('Tu usuario no tiene una tienda vinculada. Contacta al administrador.');
+        const { data: userStore } = await supabase
+          .from('stores')
+          .select('id')
+          .eq('owner_id', user?.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (!userStore) {
+          throw new Error('Tu usuario no tiene una tienda vinculada. Contacta al administrador.');
+        }
       }
 
       router.push('/negocios/dashboard');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
@@ -42,8 +42,8 @@ export default function MasterDashboard() {
     owner_phone: ''
   });
 
-  // Función asíncrona dedicada (estable y compatible con Next.js 14)
-  const fetchDashboardData = async () => {
+  // Función asíncrona dedicada
+  const fetchDashboardData = useCallback(async () => {
     // 1. Obtener Tiendas y cruzar con la tabla de planes para sumar el precio
     const { count: sCount, data: storesData } = await supabase
       .from('stores')
@@ -51,13 +51,10 @@ export default function MasterDashboard() {
       .order('created_at', { ascending: false });
 
     // 2. Obtener Usuarios
-    // AQUÍ ESTABA EL DETALLE: Agregamos { count: 'exact' }
     const { count: uCount, data: profilesData } = await supabase
       .from('profiles')
       .select('*, stores(name)', { count: 'exact' })
       .order('created_at', { ascending: false });
-
-    console.log("Conteo de perfiles:", uCount);
 
     // 3. Obtener Planes Disponibles para el formulario
     const { data: plansData } = await supabase
@@ -77,12 +74,11 @@ export default function MasterDashboard() {
     if (storesData) setStoresList(storesData);
     if (profilesData) setProfilesList(profilesData);
     if (plansData) setPlansList(plansData);
-  };
+  }, []);
 
-  // Volvemos al patrón estándar para evitar la caída del Turbopack
   useEffect(() => {
     fetchDashboardData();
-  }, [activeTab]);
+  }, [fetchDashboardData, activeTab]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

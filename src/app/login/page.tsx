@@ -35,7 +35,7 @@ export default function LoginPage() {
     if (profile?.role === 'admin') {
       router.push('/master'); // ¡Al panel de control!
     } else if (profile?.role === 'owner') {
-      router.push('/dashboard'); // Panel del cliente (tienda)
+      router.push('/negocios/dashboard'); // Panel del cliente (tienda)
     } else {
       router.push('/'); // Usuario normal
     }

@@ -46,7 +46,7 @@ const fetchStoreInfo = (id: string): Promise<StoreData> => {
           name: data.name,
           whatsapp: data.owner_whatsapp,
         };
-      } catch (err) {
+      } catch {
         return { error: true, id: '', name: '', whatsapp: '' };
       }
     })();
@@ -55,6 +55,11 @@ const fetchStoreInfo = (id: string): Promise<StoreData> => {
   }
   return storePromiseCache.get(id)!;
 };
+
+function createInvoiceFileName(name: string): string {
+  const safeName = name.replace(/[^a-zA-Z0-9]/g, '_');
+  return `Factura_${Date.now()}_${safeName}.pdf`;
+}
 
 function CheckoutContent() {
   const router = useRouter();
@@ -149,9 +154,8 @@ function CheckoutContent() {
         setConfirmedStoreName(storeInfo.name);
       }
 
-      const safeName = formData.name.replace(/[^a-zA-Z0-9]/g, '_');
       const pdfBlob = generatePDF(items, formData, subtotal, storeInfo.name, tasa);
-      const fileName = `Factura_${Date.now()}_${safeName}.pdf`;
+      const fileName = createInvoiceFileName(formData.name);
 
       const pdfUrl = await uploadOrderPDF(pdfBlob, fileName);
 
@@ -263,9 +267,9 @@ function CheckoutContent() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 sticky top-6">
               <h2 className="text-lg font-bold text-slate-900 mb-4">Resumen del pedido</h2>
               <div className="space-y-4 mb-6">
-                {items.map((item: any) => {
+                {items.map((item) => {
                   const finalPrice = useCart.getState().getItemFinalPrice(item);
-                  const activeDiscount = (item as any).discount_percent;
+                  const activeDiscount = item.discount_percent;
                   const hasDiscount = typeof activeDiscount === 'number' && activeDiscount > 0;
 
                   return (

@@ -1,48 +1,49 @@
 'use client';
 
-import { useCart } from '@/store/useCart';
-import { Plus, ShoppingBag } from 'lucide-react';
-import Link from 'next/link';
+import { useState } from 'react';
+import { Product, Store } from '@/types';
+import { Clock, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import ReserveProductModal from '@/components/ReserveProductModal';
 
-export default function ProductActions({ product }: { product: any }) {
-  const addItem = useCart((state: any) => state.addItem);
+interface Props {
+  product: Product;
+  store: Store;
+  tasa: number;
+}
 
-  // Extraemos el carrito
-  const cart = useCart((state: any) => state.cart || state.items || []);
-  const isInCart = cart.some((item: any) => item.id === product.id);
+export default function ProductActions({ product, store, tasa }: Props) {
+  const [isReserveModalOpen, setIsReserveModalOpen] = useState(false);
 
   // Validamos el stock
-  const isOutOfStock = typeof product.stock === 'number' && product.stock <= 0;
+  const isOutOfStock = product.stock_status === 'sold_out' || (typeof product.stock === 'number' && product.stock <= 0);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {isOutOfStock ? (
         <button
           disabled
-          className="w-full bg-slate-300 text-slate-500 py-4 rounded-xl font-bold flex items-center justify-center gap-2 cursor-not-allowed"
+          className="w-full bg-slate-200 text-slate-500 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 cursor-not-allowed"
         >
-          Agotado
-        </button>
-      ) : !isInCart ? (
-        <button
-          onClick={() => addItem(product)}
-          className="cursor-pointer w-full border-2 border-brand-primary text-brand-primary py-4 rounded-xl font-bold hover:bg-brand-primary/10 transition flex items-center justify-center gap-2"
-        >
-          <Plus size={20} /> Agregar al carrito
+          Agotado en Tienda
         </button>
       ) : (
-        // <Link
-        //   href="/checkout"
-        //   className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold hover:bg-emerald-600 transition flex items-center justify-center gap-2 shadow-md"
-        // >
-        //   <ShoppingBag size={20} /> Ir a Pagar
-        // </Link>
         <button
-          className="w-full border-2 border-brand-primary text-brand-primary py-4 rounded-xl font-bold hover:bg-brand-primary/10 transition flex items-center justify-center gap-2"
+          onClick={() => setIsReserveModalOpen(true)}
+          className="cursor-pointer w-full bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white py-4 rounded-2xl font-black text-base shadow-xl shadow-teal-500/25 transition-all transform active:scale-98 flex items-center justify-center gap-2"
         >
-          <ShoppingBag size={20} /> Agregado al carrito
+          <Clock size={20} />
+          Apartar por 3 Horas (Pago en Tienda)
         </button>
       )}
+
+      {/* Modal de Reserva */}
+      <ReserveProductModal
+        product={product}
+        store={store}
+        tasa={tasa}
+        isOpen={isReserveModalOpen}
+        onClose={() => setIsReserveModalOpen(false)}
+      />
     </div>
   );
 }
