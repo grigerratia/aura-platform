@@ -175,6 +175,9 @@ export default function BusinessRegisterPage() {
             id_doc: formData.pm_id.trim(),
             account_holder: formData.store_name.trim()
           },
+          verification_status: 'DRAFT_UNVERIFIED',
+          cashier_access_pin: '1234',
+          rif_or_id_number: formData.rif.trim() || formData.owner_id_doc.trim() || null,
           is_active: true
         }])
         .select()
@@ -899,3 +902,4 @@ export default function BusinessRegisterPage() {
     </div>
   );
 }
+

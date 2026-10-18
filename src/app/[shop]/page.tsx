@@ -86,9 +86,19 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
                   <h1 className="text-3xl font-black text-slate-900 tracking-tight">
                     {store.name}
                   </h1>
-                  <span className="text-[11px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                    Vitrina Verificada
-                  </span>
+                  {store.verification_status === 'PENDING_REVIEW' ? (
+                    <span className="text-[11px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-full border border-amber-200">
+                      En Revisión
+                    </span>
+                  ) : store.verification_status === 'DRAFT_UNVERIFIED' ? (
+                    <span className="text-[11px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-300">
+                      Borrador
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                      <ShieldCheck size={12} /> Vitrina Verificada
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-slate-600 text-sm mt-1 max-w-xl">

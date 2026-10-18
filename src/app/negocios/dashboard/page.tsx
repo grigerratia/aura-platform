@@ -10,7 +10,7 @@ import {
   CheckCircle2, AlertCircle, LogOut, ChevronRight,
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
-  DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles
+  DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -31,6 +31,20 @@ export default function OwnerDashboard() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [pinInput, setPinInput] = useState('');
   const [pinSuccessMessage, setPinSuccessMessage] = useState<string | null>(null);
+
+  // Verificación Rápida B2B
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [verifyForm, setVerifyForm] = useState({
+    storefront_photo_url: '',
+    rif_or_id_number: '',
+    instagram_handle: ''
+  });
+  const [verifyLoading, setVerifyLoading] = useState(false);
+
+  // Modo Mostrador (PIN)
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [cashierPin, setCashierPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
 
   // Formulario Adaptativo Multi-Rubro V3.0
   const [formData, setFormData] = useState<{
@@ -474,6 +488,66 @@ export default function OwnerDashboard() {
     }
   };
 
+  const handleRequestVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!storeId) return;
+    setVerifyLoading(true);
+    try {
+      const { error } = await supabase
+        .from('stores')
+        .update({
+          storefront_photo_url: verifyForm.storefront_photo_url.trim(),
+          rif_or_id_number: verifyForm.rif_or_id_number.trim(),
+          instagram_handle: verifyForm.instagram_handle.trim(),
+          verification_status: 'PENDING_REVIEW'
+        })
+        .eq('id', storeId);
+
+      if (error) throw error;
+      alert("✓ Solicitud enviada con éxito. El equipo de Aura revisará tu tienda en minutos.");
+      setShowVerifyModal(false);
+      if (store) {
+        setStore({
+          ...store,
+          verification_status: 'PENDING_REVIEW',
+          storefront_photo_url: verifyForm.storefront_photo_url.trim(),
+          rif_or_id_number: verifyForm.rif_or_id_number.trim(),
+          instagram_handle: verifyForm.instagram_handle.trim()
+        });
+      }
+    } catch (err: any) {
+      alert("Error al solicitar verificación: " + err.message);
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleUpdateCashierPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!storeId || !cashierPin.trim()) return;
+    setPinLoading(true);
+    try {
+      const cleanPin = cashierPin.trim();
+      const { error } = await supabase
+        .from('stores')
+        .update({
+          cashier_access_pin: cleanPin
+        })
+        .eq('id', storeId);
+
+      if (error) throw error;
+      alert(`✓ PIN de Mostrador actualizado a: ${cleanPin}`);
+      setShowPinModal(false);
+      if (store) {
+        setStore({ ...store, cashier_access_pin: cleanPin });
+      }
+    } catch (err: any) {
+      alert("Error al actualizar PIN: " + err.message);
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
   if (loading && !isAdding) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50">
@@ -568,6 +642,38 @@ export default function OwnerDashboard() {
             <QrCode size={18} />
             <span className="whitespace-nowrap">Hablador QR Vitrina</span>
           </button>
+
+          {/* MODO MOSTRADOR PARA EMPLEADOS */}
+          <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl mt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-teal-400 flex items-center gap-1">
+                <Lock size={12} /> Modo Mostrador
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCashierPin(store?.cashier_access_pin || '1234');
+                  setShowPinModal(true);
+                }}
+                className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
+              >
+                PIN: {store?.cashier_access_pin || '1234'}
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-tight">
+              Para empleados en caja. No expone tus ventas ni inventario.
+            </p>
+            {storeId && (
+              <Link
+                href={`/mostrador/${storeId}`}
+                target="_blank"
+                className="w-full bg-slate-800 hover:bg-slate-700 text-teal-300 font-bold py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition text-[11px]"
+              >
+                <span>Abrir en Caja</span>
+                <ArrowRight size={12} />
+              </Link>
+            )}
+          </div>
         </nav>
 
         {/* PIE DE SIDEBAR */}
@@ -593,6 +699,59 @@ export default function OwnerDashboard() {
 
       {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 p-4 sm:p-8 overflow-y-auto max-w-7xl space-y-6">
+
+        {/* BANNER DE ESTADO DE VERIFICACIÓN RÁPIDA B2B */}
+        {(!store?.verification_status || store.verification_status === 'DRAFT_UNVERIFIED') && (
+          <div className="bg-amber-950/50 border border-amber-600/70 p-5 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm text-white animate-in fade-in">
+            <div className="flex items-start sm:items-center gap-3">
+              <AlertCircle className="text-amber-400 shrink-0 mt-0.5 sm:mt-0" size={26} />
+              <div>
+                <h4 className="font-bold text-sm text-amber-200">
+                  Tu tienda está en Modo Borrador (No visible en el buscador público de Cumaná)
+                </h4>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Puedes subir productos de inmediato, pero se publicarán en el feed cuando verifiques tu local en 1 minuto.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setVerifyForm({
+                  storefront_photo_url: store?.storefront_photo_url || '',
+                  rif_or_id_number: store?.rif_or_id_number || store?.rif || '',
+                  instagram_handle: store?.instagram_handle || ''
+                });
+                setShowVerifyModal(true);
+              }}
+              className="cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-2.5 rounded-xl text-xs transition shadow-md whitespace-nowrap active:scale-95"
+            >
+              Verificar mi Tienda en 1 Minuto
+            </button>
+          </div>
+        )}
+
+        {store?.verification_status === 'PENDING_REVIEW' && (
+          <div className="bg-indigo-950/60 border border-indigo-700/80 p-5 rounded-3xl flex items-center gap-3 shadow-sm text-white animate-in fade-in">
+            <Clock className="text-teal-400 shrink-0" size={24} />
+            <div>
+              <h4 className="font-bold text-sm text-teal-300">
+                Verificación en Revisión por el Equipo Aura
+              </h4>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Hemos recibido tu foto de fachada, RIF e Instagram. Tu tienda se activará públicamente en menos de 15 minutos.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {store?.verification_status === 'VERIFIED' && (
+          <div className="bg-emerald-950/30 border border-emerald-800/60 px-4 py-2.5 rounded-2xl flex items-center justify-between text-xs text-emerald-300">
+            <span className="flex items-center gap-1.5 font-bold">
+              <ShieldCheck size={16} className="text-emerald-400" /> Tienda Verificada Oficialmente en Cumaná
+            </span>
+            <span className="text-[10px] text-slate-400 hidden sm:inline">Tus productos aparecen en el buscador y portada</span>
+          </div>
+        )}
         
         {/* PANEL DE IMPACTO Y DEMANDA PERDIDA */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1241,6 +1400,156 @@ export default function OwnerDashboard() {
                 <Printer size={16} /> Imprimir Cartel de Vitrina
               </button>
 
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 1: VERIFICACIÓN RÁPIDA EN 1 MINUTO */}
+        {showVerifyModal && (
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
+            <div className="bg-white max-w-md w-full rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] font-black uppercase text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                    Activación Inmediata
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 mt-1">
+                    Verificar Tienda en 1 Minuto
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Para proteger a los compradores y activar tu vitrina pública en el buscador de Cumaná.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowVerifyModal(false)}
+                  className="cursor-pointer p-2 text-slate-400 hover:text-slate-600 rounded-full"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleRequestVerification} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-500">
+                    Foto de Fachada o Mostrador (Enlace / URL) *
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://ejemplo.com/mifachada.jpg o link de post"
+                    value={verifyForm.storefront_photo_url}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, storefront_photo_url: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    Puedes pegar un enlace a una imagen de tu local o de tu cuenta comercial.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-500">
+                    RIF de la Empresa o Cédula del Titular *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: J-40123456-7 o V-18234567"
+                    value={verifyForm.rif_or_id_number}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, rif_or_id_number: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-500">
+                    Usuario de Instagram Comercial (@) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: @mitiendacumana"
+                    value={verifyForm.instagram_handle}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, instagram_handle: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={verifyLoading}
+                    className="cursor-pointer w-full bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-white font-black py-3.5 rounded-xl text-xs transition shadow-lg shadow-teal-500/20 flex items-center justify-center gap-2"
+                  >
+                    {verifyLoading ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Enviando Verificación...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={16} />
+                        <span>Enviar Solicitud de Verificación</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 2: CONFIGURAR PIN DE MOSTRADOR / CAJERO */}
+        {showPinModal && (
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
+            <div className="bg-white max-w-sm w-full rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-4 animate-in zoom-in-95">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center">
+                    <Lock size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">PIN de Mostrador</h3>
+                    <p className="text-[11px] text-slate-500">Para cajeros y empleados</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(false)}
+                  className="cursor-pointer p-1.5 text-slate-400 hover:text-slate-600 rounded-full"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateCashierPin} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block">
+                    Nuevo PIN de Mostrador (4 a 6 dígitos)
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    required
+                    placeholder="1234"
+                    value={cashierPin}
+                    onChange={(e) => setCashierPin(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center text-xl tracking-widest text-slate-900 outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    Tus empleados ingresarán este PIN en: <br />
+                    <code className="text-indigo-600 font-mono text-[10px]">/mostrador/{storeId}</code>
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={pinLoading}
+                  className="cursor-pointer w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl text-xs transition"
+                >
+                  {pinLoading ? "Guardando..." : "Guardar PIN de Mostrador"}
+                </button>
+              </form>
             </div>
           </div>
         )}

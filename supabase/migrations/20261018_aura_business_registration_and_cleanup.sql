@@ -78,3 +78,4 @@ CREATE TRIGGER on_auth_user_created
 -- TRUNCATE TABLE public.store_products CASCADE;
 -- TRUNCATE TABLE public.reservations CASCADE;
 -- DELETE FROM public.products;
+

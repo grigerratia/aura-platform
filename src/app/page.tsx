@@ -35,8 +35,19 @@ export default async function HomePage() {
 
   const stores: Store[] = storesData || [];
 
+  // Filtro de Tiendas Verificadas (Solo 'VERIFIED' aparece en vitrina pública)
+  const verifiedStoreIds = new Set(
+    stores
+      .filter((s) => !s.verification_status || s.verification_status === 'VERIFIED')
+      .map((s) => s.id)
+  );
+
+  const verifiedStoreProducts = (storeProductsData || []).filter((sp: any) =>
+    verifiedStoreIds.has(sp.store_id)
+  );
+
   // Mapeamos los productos de inventario a formato Product con arquetipos y variantes
-  const products: Product[] = (storeProductsData || []).map((sp: any) => {
+  const products: Product[] = verifiedStoreProducts.map((sp: any) => {
     const rawCat = (sp.products?.category || '').toLowerCase();
     const archetype = sp.products?.category_archetype || (
       rawCat.includes('comida') || rawCat.includes('restaurante') || rawCat.includes('café') ? 'GASTRO_FLASH' :
@@ -254,7 +265,7 @@ export default async function HomePage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {stores.map((store) => {
+          {stores.filter(s => !s.verification_status || s.verification_status === 'VERIFIED').map((store) => {
             const badges = store.badges || ['Acepta Cashea', 'Punto de Venta', 'Retiro Inmediato'];
             return (
               <Link

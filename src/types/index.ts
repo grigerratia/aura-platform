@@ -76,6 +76,7 @@ export interface Product {
 // ==============================================================================
 export type StorePlanTier = 'VITRINA_20' | 'ACELERADOR_45' | 'DOMINIO_80';
 export type StoreSubscriptionStatus = 'TRIAL' | 'ACTIVE' | 'PAST_DUE';
+export type StoreVerificationStatus = 'DRAFT_UNVERIFIED' | 'PENDING_REVIEW' | 'VERIFIED' | 'SUSPENDED';
 
 export interface Store {
   id: string;
@@ -91,8 +92,20 @@ export interface Store {
   owner_id?: string;
   zone?: string; // Zona en Cumaná: "Centro", "Av. Bermúdez", "Gran Mariscal", etc.
   address?: string; // Dirección física exacta para retiro
+  reference_point?: string;
+  rif?: string;
+  rif_or_id_number?: string;
+  schedule?: string;
   badges?: string[]; // ["Acepta Cashea", "Punto de Venta", "Delivery Cumaná"]
   is_verified?: boolean;
+
+  // Verificación Rápida B2B
+  verification_status?: StoreVerificationStatus;
+  storefront_photo_url?: string;
+  instagram_handle?: string;
+
+  // Modo Empleado / Mostrador
+  cashier_access_pin?: string;
 
   // Motor 1: Suscripciones B2B
   plan_tier?: StorePlanTier;
@@ -133,6 +146,7 @@ export type PaymentOption = 'reserva_3h' | 'reserva_48h' | 'delivery' | 'apartad
 // Ticket de Reserva Digital
 export interface Reservation {
   id: string;
+  user_id?: string;
   pin: string; // PIN de 4 dígitos para validar en caja (ej: "4821")
   pin_code?: string;
   store_id: string;
