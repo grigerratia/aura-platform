@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Store } from '@/types';
 import { useReservations } from '@/store/useReservations';
-import { Sparkles, Ticket, Store as StoreIcon, Flame, Clock } from 'lucide-react';
+import { Sparkles, Ticket, Store as StoreIcon, Flame, Clock, Wallet } from 'lucide-react';
 import ReservationTicketModal from './ReservationTicketModal';
+import WalletModal from './WalletModal';
 
 interface Props {
   stores?: Store[];
@@ -17,6 +18,7 @@ export default function Header({ stores, initialTasa = 500.0 }: Props) {
   const router = useRouter();
   const { activeReservation, setOpenTicketModal } = useReservations();
   const [tasa, setTasa] = useState(initialTasa);
+  const [isWalletOpen, setIsWalletOpen] = useState(false);
 
   return (
     <>
@@ -74,6 +76,16 @@ export default function Header({ stores, initialTasa = 500.0 }: Props) {
               <span className="hidden sm:inline">Liquidaciones</span>
             </Link>
 
+            {/* Billetera y Saldo */}
+            <button
+              onClick={() => setIsWalletOpen(true)}
+              className="cursor-pointer flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition"
+              title="Mi Saldo a Favor y Perfil"
+            >
+              <Wallet size={14} className="text-teal-600" />
+              <span className="hidden sm:inline">Billetera</span>
+            </button>
+
             {/* Botón Mi Ticket (Si hay reserva activa) */}
             {activeReservation && (
               <button
@@ -101,6 +113,9 @@ export default function Header({ stores, initialTasa = 500.0 }: Props) {
 
       {/* Modal Global del Ticket de Reserva */}
       <ReservationTicketModal />
+
+      {/* Modal de Billetera y Candado de Confianza */}
+      <WalletModal isOpen={isWalletOpen} onClose={() => setIsWalletOpen(false)} />
     </>
   );
 }

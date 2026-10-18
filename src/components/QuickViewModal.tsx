@@ -123,7 +123,7 @@ export function QuickViewModal({ product, tasa, isOpen, onClose }: QuickViewModa
           </div>
 
           <p className="text-slate-600 text-sm mt-4 leading-relaxed">
-            {product.shortDescription || "Un producto de excelente calidad, perfecto para tus necesidades diarias. Diseño moderno y gran durabilidad."}
+            {product.description || "Un producto de excelente calidad, perfecto para tus necesidades diarias. Diseño moderno y gran durabilidad."}
           </p>
 
           {/* Botones de acción en el Modal */}

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Header from '@/components/Header';
 import { ProductCard } from '@/components/ProductCard';
 import SizeHunterFilter from '@/components/SizeHunterFilter';
+import HomeMultiRubroSection from '@/components/HomeMultiRubroSection';
 import getDolarTasa from '@/util/getDolarTasa';
 import { 
   Sparkles, Clock, ShieldCheck, MapPin, 
@@ -29,24 +30,43 @@ export default async function HomePage() {
         products (*)
       `)
       .eq('is_active', true)
-      .limit(12)
+      .limit(16)
   ]);
 
   const stores: Store[] = storesData || [];
 
-  // Mapeamos los productos de inventario a formato Product
-  const products: Product[] = (storeProductsData || []).map((sp: any) => ({
-    ...sp.products,
-    id: sp.products?.id || sp.id,
-    store_id: sp.store_id,
-    store_product_id: sp.id,
-    price: sp.price,
-    stock: sp.stock,
-    discount_percent: sp.discount_percent,
-    sizes: sp.products?.sizes || ['37', '38', '39', '40'], // Tallas sugeridas
-    is_clearance: (sp.discount_percent && sp.discount_percent >= 20) || false,
-    clearance_badge: sp.discount_percent ? `${sp.discount_percent}% OFF` : undefined,
-  }));
+  // Mapeamos los productos de inventario a formato Product con arquetipos y variantes
+  const products: Product[] = (storeProductsData || []).map((sp: any) => {
+    const rawCat = (sp.products?.category || '').toLowerCase();
+    const archetype = sp.products?.category_archetype || (
+      rawCat.includes('comida') || rawCat.includes('restaurante') || rawCat.includes('café') ? 'GASTRO_FLASH' :
+      rawCat.includes('vehículo') || rawCat.includes('moto') || rawCat.includes('carro') ? 'VEHICLES_CLASSIFIED' :
+      rawCat.includes('electro') || rawCat.includes('mueble') || rawCat.includes('tecnología') ? 'HIGH_TICKET' :
+      rawCat.includes('ferretería') || rawCat.includes('farmacia') || rawCat.includes('repuesto') ? 'URGENT_SEARCH' : 'RETAIL_STANDARD'
+    );
+
+    return {
+      ...sp.products,
+      id: sp.products?.id || sp.id,
+      store_id: sp.store_id,
+      store_product_id: sp.id,
+      price: sp.price,
+      regular_price_usd: sp.products?.regular_price_usd || sp.price,
+      aura_price_usd: sp.products?.aura_price_usd || (sp.discount_percent ? Number((sp.price * (1 - sp.discount_percent / 100)).toFixed(2)) : sp.price),
+      unlock_fee_usd: sp.products?.unlock_fee_usd,
+      category_archetype: archetype,
+      variants: sp.products?.variants || (sp.products?.sizes ? [{ label: 'Talla', options: sp.products.sizes }] : []),
+      specs: sp.products?.specs || {},
+      auto_confirm_stock: sp.products?.auto_confirm_stock,
+      is_sponsored: Boolean(sp.products?.is_sponsored),
+      published_at: sp.products?.published_at || sp.created_at,
+      stock: sp.stock,
+      discount_percent: sp.discount_percent,
+      sizes: sp.products?.sizes || ['37', '38', '39', '40'],
+      is_clearance: (sp.discount_percent && sp.discount_percent >= 20) || false,
+      clearance_badge: sp.discount_percent ? `${sp.discount_percent}% OFF` : undefined,
+    };
+  });
 
   // Separamos remates / ofertas destacadas para la sección de dopamina
   const clearanceProducts = products.filter(p => p.is_clearance || (p.discount_percent && p.discount_percent > 0));
@@ -161,6 +181,9 @@ export default async function HomePage() {
 
         </div>
       </section>
+
+      {/* CATÁLOGO MULTI-RUBRO UNIVERSAL CON FILTRADO EN VIVO */}
+      <HomeMultiRubroSection initialProducts={products} tasa={tasa} stores={stores} />
 
       {/* FILTRO ESTRELLA: "Cazador de Últimos Pares por Talla" */}
       <SizeHunterFilter products={products} tasa={tasa} />

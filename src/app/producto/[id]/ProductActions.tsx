@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Product, Store } from '@/types';
-import { Clock, ShieldCheck, CheckCircle2, Users } from 'lucide-react';
+import { Clock, ShieldCheck, CheckCircle2, Users, Crown, Sparkles, Lock } from 'lucide-react';
+import { checkVipEarlyAccess, getProfileWalletCredit } from '@/lib/monetization';
+import { supabase } from '@/lib/supabase';
 import ReserveProductModal from '@/components/ReserveProductModal';
 import WaitlistModal from '@/components/WaitlistModal';
+import SplitPaymentBreakdownCard from '@/components/SplitPaymentBreakdownCard';
 
 interface Props {
   product: Product;
@@ -15,13 +18,49 @@ interface Props {
 export default function ProductActions({ product, store, tasa }: Props) {
   const [isReserveModalOpen, setIsReserveModalOpen] = useState(false);
   const [isWaitlistModalOpen, setIsWaitlistModalOpen] = useState(false);
+  const [isVipUser, setIsVipUser] = useState(false);
 
-  // Validamos el stock
+  useEffect(() => {
+    const checkVip = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const info = await getProfileWalletCredit(user.id);
+        setIsVipUser(info.isVip);
+      }
+    };
+    checkVip();
+  }, []);
+
+  const vipAccess = checkVipEarlyAccess(product, isVipUser);
   const isOutOfStock = product.stock_status === 'sold_out' || (typeof product.stock === 'number' && product.stock <= 0);
 
   return (
     <div className="space-y-4">
-      {isOutOfStock ? (
+      
+      {/* Tarjeta de Ecuación Split-Payment */}
+      <SplitPaymentBreakdownCard product={product} tasa={tasa} />
+
+      {/* Acceso Anticipado VIP (30 minutos de exclusividad en Remates) */}
+      {vipAccess.isLocked ? (
+        <div className="p-4 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-300 rounded-2xl text-xs space-y-2">
+          <div className="flex items-center gap-2 font-black text-amber-950">
+            <Crown size={18} className="text-amber-500 shrink-0" />
+            <span>Acceso Anticipado VIP (Remate Exclusivo)</span>
+          </div>
+          <p className="text-amber-900 leading-relaxed text-[11px]">
+            Este producto fue publicado hace menos de 30 minutos. Se desbloquea para todo público en{' '}
+            <strong className="font-mono text-amber-950 underline">{vipAccess.minutesRemaining} minutos</strong>.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => alert("Puedes activar tu membresía Aura VIP por $2/mes para apartar remates antes que nadie.")}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2.5 rounded-xl font-black text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <Crown size={14} /> Hazte VIP por $2/mes
+            </button>
+          </div>
+        </div>
+      ) : isOutOfStock ? (
         <div className="space-y-2">
           <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2">
             <Users size={16} className="text-amber-600 shrink-0" />
@@ -42,7 +81,7 @@ export default function ProductActions({ product, store, tasa }: Props) {
           className="cursor-pointer w-full bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white py-4 rounded-2xl font-black text-base shadow-xl shadow-teal-500/25 transition-all transform active:scale-98 flex items-center justify-center gap-2"
         >
           <Clock size={20} />
-          Apartar por 3 Horas (Pago en Tienda)
+          Apartar Producto (Reserva Garantizada)
         </button>
       )}
 
