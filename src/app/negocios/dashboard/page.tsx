@@ -458,6 +458,22 @@ export default function OwnerDashboard() {
     if (storeId) fetchInventory(storeId);
   };
 
+  const handleClearInventory = async () => {
+    if (!storeId) return;
+    if (!confirm("⚠️ ¿Estás seguro de que deseas eliminar TODOS los productos de tu vitrina para comenzar de cero? Esta acción no se puede deshacer.")) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('store_products').delete().eq('store_id', storeId);
+      if (error) throw error;
+      alert("✓ Tu inventario ha sido vaciado. Ya puedes comenzar a subir tus nuevos productos.");
+      await fetchInventory(storeId);
+    } catch (err: any) {
+      alert("Error al vaciar inventario: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading && !isAdding) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50">
@@ -841,16 +857,44 @@ export default function OwnerDashboard() {
                   Sube tus 15 a 40 productos clave con variantes dinámicas (Restaurantes, Retail, Tecnología, Vehículos).
                 </p>
               </div>
-              <button
-                onClick={() => setIsAdding(true)}
-                className="cursor-pointer bg-slate-900 hover:bg-indigo-600 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 text-sm transition shadow-lg shadow-slate-900/10"
-              >
-                <Plus size={18} /> Añadir Producto
-              </button>
+              <div className="flex items-center gap-2">
+                {products.length > 0 && (
+                  <button
+                    onClick={handleClearInventory}
+                    className="cursor-pointer bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-4 py-3 rounded-2xl font-bold flex items-center gap-1.5 text-xs sm:text-sm transition shadow-sm"
+                    title="Eliminar todos los productos de tu vitrina para comenzar de nuevo"
+                  >
+                    <Trash2 size={16} /> Vaciar Inventario
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsAdding(true)}
+                  className="cursor-pointer bg-slate-900 hover:bg-indigo-600 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 text-sm transition shadow-lg shadow-slate-900/10"
+                >
+                  <Plus size={18} /> Añadir Producto
+                </button>
+              </div>
             </header>
 
-            {/* GRID DE PRODUCTOS EN VITRINA */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* GRID O ESTADO VACÍO DE PRODUCTOS EN VITRINA */}
+            {products.length === 0 ? (
+              <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center max-w-lg mx-auto my-6">
+                <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Package size={32} />
+                </div>
+                <h3 className="text-lg font-black text-slate-900">Tu vitrina está lista para despegar</h3>
+                <p className="text-xs text-slate-500 mt-1 mb-6">
+                  Aún no tienes productos publicados. Agrega tus artículos o combos estrella para que los compradores de Cumaná puedan reservarlos hoy mismo.
+                </p>
+                <button
+                  onClick={() => setIsAdding(true)}
+                  className="cursor-pointer bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-white px-6 py-3.5 rounded-2xl font-black text-sm transition shadow-lg shadow-teal-500/20 inline-flex items-center gap-2"
+                >
+                  <Plus size={18} /> Publicar Mi Primer Producto
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {products.map((item) => {
                 const archetype = getArchetypeConfig(item.products?.category_archetype);
 
@@ -903,6 +947,7 @@ export default function OwnerDashboard() {
                 );
               })}
             </div>
+            )}
 
             {/* MODAL ADAPTATIVO MULTI-RUBRO V3.0 */}
             {isAdding && (

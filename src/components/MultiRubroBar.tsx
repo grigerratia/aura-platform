@@ -67,3 +67,4 @@ export default function MultiRubroBar({ activeId, onSelect }: Props) {
     </div>
   );
 }
+

@@ -120,3 +120,4 @@ export default function SplitPaymentBreakdownCard({ product, tasa }: Props) {
     </div>
   );
 }
+

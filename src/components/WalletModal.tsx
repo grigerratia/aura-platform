@@ -68,3 +68,4 @@ export default function WalletModal({ isOpen, onClose }: Props) {
     </div>
   );
 }
+

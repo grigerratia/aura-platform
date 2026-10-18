@@ -122,3 +122,4 @@ CREATE INDEX IF NOT EXISTS idx_products_archetype ON public.products(category_ar
 CREATE INDEX IF NOT EXISTS idx_reservations_status_v3 ON public.reservations(status);
 CREATE INDEX IF NOT EXISTS idx_wallet_user_id ON public.wallet_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_lost_demand_store ON public.lost_demand_logs(store_id);
+

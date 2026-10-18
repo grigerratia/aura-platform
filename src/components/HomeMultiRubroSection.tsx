@@ -103,3 +103,4 @@ export default function HomeMultiRubroSection({ initialProducts, tasa, stores }:
     </div>
   );
 }
+

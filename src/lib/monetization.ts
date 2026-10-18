@@ -321,3 +321,4 @@ export async function logLostDemand(params: {
     // No romper si la tabla aún no fue creada
   }
 }
+

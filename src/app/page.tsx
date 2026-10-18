@@ -215,11 +215,25 @@ export default async function HomePage() {
               <ProductCard key={prod.id} product={prod} tasa={tasa} />
             ))}
           </div>
-        ) : (
+        ) : regularProducts.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {regularProducts.slice(0, 4).map((prod) => (
               <ProductCard key={prod.id} product={{ ...prod, is_clearance: true }} tasa={tasa} />
             ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-8 text-center max-w-md mx-auto shadow-sm">
+            <Flame className="text-amber-500 mx-auto mb-2" size={32} />
+            <h3 className="font-bold text-slate-800 text-sm">Vitrinas renovando inventario</h3>
+            <p className="text-xs text-slate-500 mt-1 mb-4">
+              Los comercios de Cumaná están actualizando sus ofertas de hoy.
+            </p>
+            <Link
+              href="/negocios/registro"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-4 py-2 rounded-xl transition"
+            >
+              ¿Tienes una tienda? Publica tus productos aquí
+            </Link>
           </div>
         )}
       </section>
