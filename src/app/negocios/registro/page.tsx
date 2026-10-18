@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -33,6 +33,21 @@ export default function BusinessRegisterPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successPendingConfirm, setSuccessPendingConfirm] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setCurrentUser(user);
+        setFormData((prev) => ({
+          ...prev,
+          email: user.email || prev.email,
+          owner_name: user.user_metadata?.full_name || prev.owner_name,
+          owner_whatsapp: user.user_metadata?.phone || prev.owner_whatsapp
+        }));
+      }
+    });
+  }, []);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -112,9 +127,12 @@ export default function BusinessRegisterPage() {
 
     if (!formData.owner_name.trim()) return setErrorMsg('Ingresa el nombre del responsable.');
     if (!formData.owner_whatsapp.trim()) return setErrorMsg('Ingresa el número de WhatsApp comercial.');
-    if (!formData.email.trim()) return setErrorMsg('Ingresa el correo electrónico.');
-    if (!formData.password || formData.password.length < 6) {
-      return setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+
+    if (!currentUser) {
+      if (!formData.email.trim()) return setErrorMsg('Ingresa el correo electrónico.');
+      if (!formData.password || formData.password.length < 6) {
+        return setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+      }
     }
 
     setLoading(true);
@@ -123,47 +141,51 @@ export default function BusinessRegisterPage() {
       // 1. Limpieza de números de teléfono
       const cleanPhone = formData.owner_whatsapp.replace(/\D/g, '');
 
-      // 2. Crear o autenticar usuario en Supabase Auth
+      // 2. Obtener o crear usuario en Supabase Auth
       let userId = '';
       let hasActiveSession = false;
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email.trim(),
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.owner_name.trim(),
-            phone: cleanPhone,
-            role: 'owner',
-          }
-        }
-      });
-
-      if (authError) {
-        // Si el usuario ya fue creado en Supabase Auth en un intento previo
-        if (
-          authError.message.toLowerCase().includes('already registered') ||
-          authError.message.toLowerCase().includes('already exists') ||
-          authError.message.toLowerCase().includes('registered')
-        ) {
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-            email: formData.email.trim(),
-            password: formData.password
-          });
-          if (signInError) {
-            throw new Error(`Este correo ya está registrado. Por favor verifica tu contraseña: ${signInError.message}`);
-          }
-          userId = signInData.user.id;
-          hasActiveSession = !!signInData.session;
-        } else {
-          throw authError;
-        }
+      if (currentUser) {
+        userId = currentUser.id;
+        hasActiveSession = true;
       } else {
-        if (!authData.user) {
-          throw new Error('No se pudo crear la cuenta de usuario. Por favor intenta nuevamente.');
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email.trim(),
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.owner_name.trim(),
+              phone: cleanPhone,
+              role: 'owner',
+            }
+          }
+        });
+
+        if (authError) {
+          if (
+            authError.message.toLowerCase().includes('already registered') ||
+            authError.message.toLowerCase().includes('already exists') ||
+            authError.message.toLowerCase().includes('registered')
+          ) {
+            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+              email: formData.email.trim(),
+              password: formData.password
+            });
+            if (signInError) {
+              throw new Error(`Este correo ya está registrado. Por favor verifica tu contraseña: ${signInError.message}`);
+            }
+            userId = signInData.user.id;
+            hasActiveSession = !!signInData.session;
+          } else {
+            throw authError;
+          }
+        } else {
+          if (!authData.user) {
+            throw new Error('No se pudo crear la cuenta de usuario. Por favor intenta nuevamente.');
+          }
+          userId = authData.user.id;
+          hasActiveSession = !!authData.session;
         }
-        userId = authData.user.id;
-        hasActiveSession = !!authData.session;
       }
 
       // 3. Crear la Tienda en la tabla `stores` (solo con columnas existentes en el schema)
@@ -763,44 +785,61 @@ export default function BusinessRegisterPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Correo de Acceso */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Correo Electrónico de Acceso *
-                    </label>
-                    <div className="relative">
-                      <Mail size={16} className="absolute left-3.5 top-4 text-slate-500" />
-                      <input
-                        type="email"
-                        required
-                        placeholder="tu-tienda@gmail.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
-                      />
+                {currentUser ? (
+                  <div className="p-4 bg-teal-950/60 border border-teal-800/80 rounded-2xl flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 block">
+                        Cuenta de Usuario Activa
+                      </span>
+                      <p className="text-sm font-bold text-white truncate">{currentUser.email}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Esta nueva vitrina se asociará automáticamente a tu usuario sin pedir contraseña adicional.
+                      </p>
                     </div>
+                    <span className="shrink-0 text-xs font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 px-3 py-1.5 rounded-xl">
+                      Sesión Verificada
+                    </span>
                   </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Correo de Acceso */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Correo Electrónico de Acceso *
+                      </label>
+                      <div className="relative">
+                        <Mail size={16} className="absolute left-3.5 top-4 text-slate-500" />
+                        <input
+                          type="email"
+                          required
+                          placeholder="tu-tienda@gmail.com"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
+                        />
+                      </div>
+                    </div>
 
-                  {/* Contraseña */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Contraseña de Acceso (mínimo 6 car.) *
-                    </label>
-                    <div className="relative">
-                      <Lock size={16} className="absolute left-3.5 top-4 text-slate-500" />
-                      <input
-                        type="password"
-                        required
-                        minLength={6}
-                        placeholder="••••••••"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
-                      />
+                    {/* Contraseña */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Contraseña de Acceso (mínimo 6 car.) *
+                      </label>
+                      <div className="relative">
+                        <Lock size={16} className="absolute left-3.5 top-4 text-slate-500" />
+                        <input
+                          type="password"
+                          required
+                          minLength={6}
+                          placeholder="••••••••"
+                          value={formData.password}
+                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                          className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* SELECTOR DE PLAN B2B */}
                 <div className="space-y-3 pt-2">

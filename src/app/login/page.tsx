@@ -25,16 +25,23 @@ export default function LoginPage() {
       return;
     }
 
-    // Consultamos el perfil para saber a dónde mandarlo
+    // Consultamos si tiene tienda o es owner
+    const { data: store } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('owner_id', data.user.id)
+      .limit(1)
+      .maybeSingle();
+
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, store_id')
       .eq('id', data.user.id)
-      .single();
+      .maybeSingle();
 
     if (profile?.role === 'admin') {
       router.push('/master'); // ¡Al panel de control!
-    } else if (profile?.role === 'owner') {
+    } else if (profile?.role === 'owner' || store?.id || profile?.store_id) {
       router.push('/negocios/dashboard'); // Panel del cliente (tienda)
     } else {
       router.push('/'); // Usuario normal

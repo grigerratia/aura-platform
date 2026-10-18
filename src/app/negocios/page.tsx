@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Lock, Mail, Loader2, Store, Sparkles,
   ArrowRight, CheckCircle2, AlertCircle, HelpCircle,
-  TrendingUp, ShieldCheck, Clock
+  TrendingUp, ShieldCheck, Clock, UserCheck, Plus
 } from 'lucide-react';
 
 export default function OwnerLogin() {
@@ -17,6 +17,76 @@ export default function OwnerLogin() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emailConfirmHelp, setEmailConfirmHelp] = useState(false);
+  const [unlinkedData, setUnlinkedData] = useState<{
+    user: any;
+    orphanStores: any[];
+  } | null>(null);
+
+  // Detección automática si el usuario ya tiene sesión iniciada en el navegador
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, store_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const { data: userStore } = await supabase
+        .from('stores')
+        .select('id')
+        .eq('owner_id', user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (userStore?.id || profile?.store_id) {
+        router.push('/negocios/dashboard');
+      } else {
+        const { data: orphans } = await supabase
+          .from('stores')
+          .select('id, name, slug, description, owner_whatsapp')
+          .is('owner_id', null);
+
+        setUnlinkedData({
+          user,
+          orphanStores: orphans || []
+        });
+      }
+    });
+  }, [router]);
+
+  const handleClaimStore = async (storeId: string) => {
+    if (!unlinkedData?.user) return;
+    setLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const user = unlinkedData.user;
+
+      // 1. Guardar en profiles
+      await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          role: 'owner',
+          store_id: storeId,
+          full_name: user.user_metadata?.full_name || 'Comerciante Aura'
+        });
+
+      // 2. Intentar actualizar stores.owner_id
+      await supabase
+        .from('stores')
+        .update({ owner_id: user.id })
+        .eq('id', storeId);
+
+      router.push('/negocios/dashboard');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Error al vincular tienda.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +101,6 @@ export default function OwnerLogin() {
       });
 
       if (authError) {
-        // Detectar si el fallo es por confirmación de correo pendiente en Supabase
         if (
           authError.message.toLowerCase().includes('email not confirmed') ||
           authError.message.toLowerCase().includes('email_not_confirmed') ||
@@ -47,7 +116,7 @@ export default function OwnerLogin() {
       if (!user) throw new Error('No se pudo autenticar el usuario.');
 
       // 1. Consultar rol en profiles
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('role, store_id')
         .eq('id', user.id)
@@ -66,7 +135,6 @@ export default function OwnerLogin() {
 
         if (userStore) {
           userStoreId = userStore.id;
-          // Auto-reparar el perfil en profiles para que quede consistente
           await supabase.from('profiles').upsert({
             id: user.id,
             role: 'owner',
@@ -86,12 +154,16 @@ export default function OwnerLogin() {
         return router.push('/negocios/dashboard');
       }
 
-      // 5. Si el usuario existe en Supabase pero aún no ha creado su tienda, ofrecer registrarla
-      setErrorMessage('Tu usuario está activo pero aún no tiene una tienda vinculada.');
-      // Lo dejamos en sesión para que complete su afiliación
-      setTimeout(() => {
-        router.push('/negocios/registro');
-      }, 1500);
+      // 5. Si el usuario no tiene tienda vinculada todavía, buscar tiendas disponibles o permitir registro
+      const { data: orphans } = await supabase
+        .from('stores')
+        .select('id, name, slug, description, owner_whatsapp')
+        .is('owner_id', null);
+
+      setUnlinkedData({
+        user,
+        orphanStores: orphans || []
+      });
 
     } catch (error: any) {
       setErrorMessage(error.message || 'Error al iniciar sesión.');
@@ -176,95 +248,174 @@ export default function OwnerLogin() {
             <p className="text-slate-400 text-xs mt-1">Ingresa con tu correo y contraseña asignados</p>
           </div>
 
-          {/* ALERTA DE ERROR */}
-          {errorMessage && (
-            <div className="mb-4 p-4 bg-red-950/60 border border-red-800 rounded-2xl flex items-start gap-3 text-red-200 text-xs">
-              <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-bold block">{errorMessage}</span>
-                {emailConfirmHelp && (
-                  <div className="text-[11px] text-amber-300 mt-2 p-2 bg-amber-950/50 rounded-xl border border-amber-800/60">
-                    <p className="font-bold flex items-center gap-1">
-                      <HelpCircle size={13} /> Solución en Supabase:
-                    </p>
-                    <ol className="list-decimal list-inside space-y-1 mt-1 text-slate-200">
-                      <li>Entra a tu consola de Supabase &gt; <strong>Authentication &gt; Users</strong>.</li>
-                      <li>Haz clic en los tres puntos de tu usuario y selecciona <strong>&quot;Confirm email&quot;</strong>.</li>
-                      <li>O desactiva <em>&quot;Confirm email&quot;</em> en <strong>Authentication &gt; Providers &gt; Email</strong> para evitar confirmaciones en desarrollo.</li>
-                    </ol>
+          {/* TARJETA INTERACTIVA DE VINCULACIÓN CUANDO EL USUARIO YA INICIÓ SESIÓN PERO NO TIENE TIENDA */}
+          {unlinkedData ? (
+            <div className="space-y-5">
+              <div className="p-4 bg-teal-950/60 border border-teal-800/80 rounded-2xl flex items-start gap-3">
+                <UserCheck className="text-teal-400 shrink-0 mt-0.5" size={20} />
+                <div className="text-xs space-y-1">
+                  <p className="font-bold text-white text-sm">Sesión Activa: {unlinkedData.user.email}</p>
+                  <p className="text-teal-200">
+                    Tu usuario está autenticado en Aura. Para acceder al panel de control, vincula una de las tiendas disponibles o registra una nueva.
+                  </p>
+                </div>
+              </div>
+
+              {unlinkedData.orphanStores && unlinkedData.orphanStores.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Vitrinas Detectadas sin Dueño Asignado:
+                  </p>
+                  <div className="space-y-2">
+                    {unlinkedData.orphanStores.map((st) => (
+                      <div
+                        key={st.id}
+                        className="bg-slate-950 border border-slate-800 p-3.5 rounded-2xl flex items-center justify-between gap-3 hover:border-teal-500/50 transition"
+                      >
+                        <div className="min-w-0">
+                          <h4 className="font-black text-white text-sm truncate">{st.name}</h4>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {st.description || `Vitrina de ${st.name} en Cumaná`}
+                          </p>
+                          {st.owner_whatsapp && (
+                            <p className="text-[10px] text-teal-400 font-mono mt-0.5">
+                              WhatsApp: +{st.owner_whatsapp}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleClaimStore(st.id)}
+                          disabled={loading}
+                          className="cursor-pointer shrink-0 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs px-3 py-2 rounded-xl transition flex items-center gap-1 shadow-md shadow-teal-500/20 active:scale-95 disabled:opacity-50"
+                        >
+                          {loading ? <Loader2 className="animate-spin" size={13} /> : <CheckCircle2 size={13} />}
+                          <span>Vincular</span>
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">
-                Correo Electrónico
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
-                <input
-                  type="email"
-                  required
-                  className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-white text-sm font-medium"
-                  placeholder="dueño@tu-tienda.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center ml-1">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Contraseña
-                </label>
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
-                <input
-                  type="password"
-                  required
-                  className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-white text-sm font-medium"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="cursor-pointer w-full bg-teal-500 hover:bg-teal-400 text-slate-950 py-4 rounded-xl font-black transition flex justify-center items-center gap-2 shadow-lg shadow-teal-500/20 active:scale-98 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin" size={18} />
-                  <span>Verificando Credenciales...</span>
-                </>
+                </div>
               ) : (
-                <>
-                  <Store size={18} />
-                  <span>Entrar a mi Tienda</span>
-                </>
+                <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl text-xs text-slate-400 text-center">
+                  No hay tiendas huérfanas pendientes por asignar en el sistema.
+                </div>
               )}
-            </button>
-          </form>
 
-          {/* ENLACE DESTACADO PARA AFILIAR COMERCIO */}
-          <div className="mt-6 pt-5 border-t border-slate-800/80 text-center space-y-2">
-            <p className="text-xs text-slate-400">¿Todavía no has registrado tu tienda física?</p>
-            <Link
-              href="/negocios/registro"
-              className="inline-flex items-center gap-1.5 text-xs font-black text-teal-400 hover:text-teal-300 underline underline-offset-4 transition"
-            >
-              <span>Afiliar mi comercio con 15 días gratis</span>
-              <ArrowRight size={13} />
-            </Link>
-          </div>
+              <div className="pt-2 flex flex-col gap-2">
+                <Link
+                  href="/negocios/registro"
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+                >
+                  <Plus size={15} />
+                  <span>Crear y Registrar una Nueva Tienda</span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    setUnlinkedData(null);
+                  }}
+                  className="cursor-pointer text-xs text-slate-500 hover:text-slate-300 py-1 transition"
+                >
+                  Cerrar sesión de {unlinkedData.user.email}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* ALERTA DE ERROR */}
+              {errorMessage && (
+                <div className="mb-4 p-4 bg-red-950/60 border border-red-800 rounded-2xl flex items-start gap-3 text-red-200 text-xs">
+                  <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-bold block">{errorMessage}</span>
+                    {emailConfirmHelp && (
+                      <div className="text-[11px] text-amber-300 mt-2 p-2 bg-amber-950/50 rounded-xl border border-amber-800/60">
+                        <p className="font-bold flex items-center gap-1">
+                          <HelpCircle size={13} /> Solución en Supabase:
+                        </p>
+                        <ol className="list-decimal list-inside space-y-1 mt-1 text-slate-200">
+                          <li>Entra a tu consola de Supabase &gt; <strong>Authentication &gt; Users</strong>.</li>
+                          <li>Haz clic en los tres puntos de tu usuario y selecciona <strong>&quot;Confirm email&quot;</strong>.</li>
+                          <li>O desactiva <em>&quot;Confirm email&quot;</em> en <strong>Authentication &gt; Providers &gt; Email</strong> para evitar confirmaciones en desarrollo.</li>
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">
+                    Correo Electrónico
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
+                    <input
+                      type="email"
+                      required
+                      className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-white text-sm font-medium"
+                      placeholder="dueño@tu-tienda.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center ml-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Contraseña
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
+                    <input
+                      type="password"
+                      required
+                      className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-white text-sm font-medium"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="cursor-pointer w-full bg-teal-500 hover:bg-teal-400 text-slate-950 py-4 rounded-xl font-black transition flex justify-center items-center gap-2 shadow-lg shadow-teal-500/20 active:scale-98 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="animate-spin" size={18} />
+                      <span>Verificando Credenciales...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Store size={18} />
+                      <span>Entrar a mi Tienda</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* ENLACE DESTACADO PARA AFILIAR COMERCIO */}
+              <div className="mt-6 pt-5 border-t border-slate-800/80 text-center space-y-2">
+                <p className="text-xs text-slate-400">¿Todavía no has registrado tu tienda física?</p>
+                <Link
+                  href="/negocios/registro"
+                  className="inline-flex items-center gap-1.5 text-xs font-black text-teal-400 hover:text-teal-300 underline underline-offset-4 transition"
+                >
+                  <span>Afiliar mi comercio con 15 días gratis</span>
+                  <ArrowRight size={13} />
+                </Link>
+              </div>
+            </>
+          )}
 
         </div>
 

@@ -49,7 +49,7 @@ export default async function HomePage() {
   // Mapeamos los productos de inventario a formato Product con arquetipos y variantes
   const products: Product[] = verifiedStoreProducts.map((sp: any) => {
     const rawCat = (sp.products?.category || '').toLowerCase();
-    const archetype = sp.products?.category_archetype || (
+    const archetype = sp.products?.category_archetype || sp.products?.archetype || (
       rawCat.includes('comida') || rawCat.includes('restaurante') || rawCat.includes('café') ? 'GASTRO_FLASH' :
       rawCat.includes('vehículo') || rawCat.includes('moto') || rawCat.includes('carro') ? 'VEHICLES_CLASSIFIED' :
       rawCat.includes('electro') || rawCat.includes('mueble') || rawCat.includes('tecnología') ? 'HIGH_TICKET' :

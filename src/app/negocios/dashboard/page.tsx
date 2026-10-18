@@ -90,12 +90,21 @@ export default function OwnerDashboard() {
       .from('store_products')
       .select(`
         *,
-        products (name, description, category, sizes, category_archetype, variants, specs, regular_price_usd, aura_price_usd, unlock_fee_usd, is_sponsored)
+        products (name, description, category, sizes, archetype, variants, specs, regular_price_usd, aura_price_usd, unlock_fee_usd, is_sponsored)
       `)
       .eq('store_id', sId)
       .order('created_at', { ascending: false });
 
-    if (data) setProducts(data);
+    if (data) {
+      const mapped = data.map((item: any) => ({
+        ...item,
+        products: item.products ? {
+          ...item.products,
+          category_archetype: item.products.archetype || item.products.category_archetype || 'RETAIL_STANDARD'
+        } : null
+      }));
+      setProducts(mapped);
+    }
   }, []);
 
   const fetchReservations = useCallback(async (sId: string) => {
@@ -104,7 +113,7 @@ export default function OwnerDashboard() {
         .from('reservations')
         .select(`
           *,
-          products (name, image_url, category_archetype)
+          products (name, imageUrl, archetype)
         `)
         .eq('store_id', sId)
         .order('created_at', { ascending: false });
@@ -121,9 +130,9 @@ export default function OwnerDashboard() {
             store_name: store?.name || 'Mi Tienda',
             product_id: r.product_id,
             product_name: r.products?.name || r.product_name || 'Producto Apartado',
-            product_image: r.products?.image_url || r.product_image,
+            product_image: r.products?.imageUrl || r.products?.image_url || r.product_image,
             selected_size: r.selected_size || 'Única',
-            category_archetype: r.category_archetype || r.products?.category_archetype || 'RETAIL_STANDARD',
+            category_archetype: r.category_archetype || r.products?.archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
             total_price: priceUsd,
             unlock_fee_usd: Number(r.unlock_fee_usd || 0),
@@ -152,43 +161,61 @@ export default function OwnerDashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return router.push('/negocios');
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('store_id')
-      .eq('id', user.id)
-      .single();
+    // 1. Buscar en stores por owner_id (fuente de verdad principal)
+    let targetStoreData: any = null;
+    const { data: storeByOwner } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('owner_id', user.id)
+      .limit(1)
+      .maybeSingle();
 
-    let targetStoreId = profile?.store_id;
-
-    if (!targetStoreId) {
-      const { data: storeData } = await supabase
-        .from('stores')
-        .select('*')
-        .eq('owner_id', user.id)
-        .limit(1)
+    if (storeByOwner) {
+      targetStoreData = storeByOwner;
+    } else {
+      // 2. Si no, consultar profiles.store_id
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('store_id, role')
+        .eq('id', user.id)
         .maybeSingle();
 
-      if (storeData) {
-        targetStoreId = storeData.id;
-        setStore(storeData as Store);
+      if (profile?.store_id) {
+        const { data: storeData } = await supabase
+          .from('stores')
+          .select('*')
+          .eq('id', profile.store_id)
+          .maybeSingle();
+
+        if (storeData) {
+          targetStoreData = storeData;
+          // Auto-vincular owner_id si estaba null
+          if (!storeData.owner_id) {
+            await supabase.from('stores').update({ owner_id: user.id }).eq('id', storeData.id);
+          }
+        }
       }
-    } else {
-      const { data: storeData } = await supabase
-        .from('stores')
-        .select('*')
-        .eq('id', targetStoreId)
-        .single();
-      if (storeData) setStore(storeData as Store);
     }
 
-    if (targetStoreId) {
-      setStoreId(targetStoreId);
+    if (targetStoreData) {
+      setStoreId(targetStoreData.id);
+      setStore(targetStoreData as Store);
+
+      // Auto-reparar profile para asegurar rol de dueño
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        role: 'owner',
+        store_id: targetStoreData.id,
+        full_name: user.user_metadata?.full_name || 'Comerciante Aura'
+      });
+
       await Promise.all([
-        fetchInventory(targetStoreId),
-        fetchReservations(targetStoreId)
+        fetchInventory(targetStoreData.id),
+        fetchReservations(targetStoreData.id)
       ]);
     } else {
-      alert("Error: No se encontró vinculación con ninguna tienda.");
+      // Redirigir a /negocios para que elija o registre su tienda sin alertas molestas
+      router.push('/negocios');
     }
     setLoading(false);
   }, [router, fetchInventory, fetchReservations]);
@@ -400,18 +427,18 @@ export default function OwnerDashboard() {
           .from('products')
           .insert([{ 
             name: formData.name,
+            slug: formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-'),
             category: formData.category,
-            category_archetype: formData.category_archetype,
+            archetype: formData.category_archetype,
             variants: variantsPayload,
             specs: specsPayload,
             regular_price_usd: regularPriceNum,
             aura_price_usd: finalAuraPrice,
             unlock_fee_usd: unlockFeeCalculated,
             auto_confirm_stock: formData.auto_confirm_stock,
-            stock_quota: formData.stock_quota,
             is_sponsored: formData.is_sponsored,
             published_at: new Date().toISOString(),
-            sizes: formData.sizes.split(',').map(s => s.trim()).filter(Boolean)
+            price: regularPriceNum || finalAuraPrice
           }])
           .select()
           .single();
