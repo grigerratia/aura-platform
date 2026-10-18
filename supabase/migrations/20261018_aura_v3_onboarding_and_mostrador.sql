@@ -35,3 +35,4 @@ DO $$ BEGIN
   CREATE POLICY "Permitir actualizar reservas desde mostrador" ON public.reservations
     FOR UPDATE USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+

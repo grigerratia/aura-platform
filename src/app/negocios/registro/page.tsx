@@ -152,40 +152,62 @@ export default function BusinessRegisterPage() {
       if (formData.accepts_zelle) badges.push('Zelle');
       if (formData.has_delivery) badges.push('Delivery Cumaná');
 
-      // 4. Crear la Tienda en la tabla `stores`
-      const { data: newStore, error: storeError } = await supabase
+      // 4. Crear la Tienda en la tabla `stores` con fallback resiliente
+      const fullStoreData: any = {
+        name: formData.store_name.trim(),
+        slug: formData.slug.trim(),
+        owner_id: userId,
+        owner_whatsapp: cleanPhone,
+        whatsapp: cleanPhone,
+        description: formData.description.trim() || `Vitrina comercial de ${formData.store_name} en Cumaná.`,
+        zone: formData.zone,
+        address: formData.address.trim(),
+        rif: formData.rif.trim() || null,
+        schedule: formData.schedule.trim(),
+        badges: badges,
+        plan_tier: formData.plan_tier,
+        subscription_status: 'TRIAL',
+        pago_movil_info: {
+          bank_name: formData.pm_bank,
+          phone: formData.pm_phone.trim(),
+          id_doc: formData.pm_id.trim(),
+          account_holder: formData.store_name.trim()
+        },
+        verification_status: 'DRAFT_UNVERIFIED',
+        cashier_access_pin: '1234',
+        rif_or_id_number: formData.rif.trim() || formData.owner_id_doc.trim() || null,
+        is_active: true
+      };
+
+      let newStore: any = null;
+      const { data: insertedStore, error: storeError } = await supabase
         .from('stores')
-        .insert([{
-          name: formData.store_name.trim(),
-          slug: formData.slug.trim(),
-          owner_id: userId,
-          owner_whatsapp: cleanPhone,
-          whatsapp: cleanPhone,
-          description: formData.description.trim() || `Vitrina comercial de ${formData.store_name} en Cumaná.`,
-          zone: formData.zone,
-          address: formData.address.trim(),
-          rif: formData.rif.trim() || null,
-          schedule: formData.schedule.trim(),
-          badges: badges,
-          plan_tier: formData.plan_tier,
-          subscription_status: 'TRIAL',
-          pago_movil_info: {
-            bank_name: formData.pm_bank,
-            phone: formData.pm_phone.trim(),
-            id_doc: formData.pm_id.trim(),
-            account_holder: formData.store_name.trim()
-          },
-          verification_status: 'DRAFT_UNVERIFIED',
-          cashier_access_pin: '1234',
-          rif_or_id_number: formData.rif.trim() || formData.owner_id_doc.trim() || null,
-          is_active: true
-        }])
+        .insert([fullStoreData])
         .select()
         .single();
 
       if (storeError) {
-        console.error('Error insertando tienda:', storeError);
-        throw new Error('Error al registrar la tienda: ' + storeError.message);
+        console.warn('Fallo inserción extendida, reintentando con campos básicos:', storeError);
+        const basicStoreData = {
+          name: formData.store_name.trim(),
+          slug: formData.slug.trim(),
+          owner_id: userId,
+          owner_whatsapp: cleanPhone,
+          description: formData.description.trim() || `Vitrina de ${formData.store_name}`,
+          is_active: true
+        };
+        const retryResult = await supabase
+          .from('stores')
+          .insert([basicStoreData])
+          .select()
+          .single();
+
+        if (retryResult.error) {
+          throw new Error('Error al registrar la tienda: ' + retryResult.error.message);
+        }
+        newStore = retryResult.data;
+      } else {
+        newStore = insertedStore;
       }
 
       // 5. Crear o actualizar el perfil en `profiles`

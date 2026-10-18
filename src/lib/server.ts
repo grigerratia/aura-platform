@@ -7,8 +7,8 @@ export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key',
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://yzjxskbmcmzmipggwfop.supabase.co',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_zP2h7DGfpcWN_W1RukXw7A_SxlGTvbe',
     {
       cookies: {
         // 2. La nueva estructura oficial de Supabase
