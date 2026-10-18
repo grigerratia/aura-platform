@@ -123,7 +123,10 @@ export default function BusinessRegisterPage() {
       // 1. Limpieza de números de teléfono
       const cleanPhone = formData.owner_whatsapp.replace(/\D/g, '');
 
-      // 2. Crear usuario en Supabase Auth
+      // 2. Crear o autenticar usuario en Supabase Auth
+      let userId = '';
+      let hasActiveSession = false;
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim(),
         password: formData.password,
@@ -136,69 +139,75 @@ export default function BusinessRegisterPage() {
         }
       });
 
-      if (authError) throw authError;
-      if (!authData.user) {
-        throw new Error('No se pudo crear la cuenta de usuario. Por favor intenta nuevamente.');
+      if (authError) {
+        // Si el usuario ya fue creado en Supabase Auth en un intento previo
+        if (
+          authError.message.toLowerCase().includes('already registered') ||
+          authError.message.toLowerCase().includes('already exists') ||
+          authError.message.toLowerCase().includes('registered')
+        ) {
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: formData.email.trim(),
+            password: formData.password
+          });
+          if (signInError) {
+            throw new Error(`Este correo ya está registrado. Por favor verifica tu contraseña: ${signInError.message}`);
+          }
+          userId = signInData.user.id;
+          hasActiveSession = !!signInData.session;
+        } else {
+          throw authError;
+        }
+      } else {
+        if (!authData.user) {
+          throw new Error('No se pudo crear la cuenta de usuario. Por favor intenta nuevamente.');
+        }
+        userId = authData.user.id;
+        hasActiveSession = !!authData.session;
       }
 
-      const userId = authData.user.id;
+      // 3. Crear la Tienda en la tabla `stores` (solo con columnas existentes en el schema)
+      const locationSummary = [
+        formData.description.trim(),
+        formData.zone ? `Zona: ${formData.zone}` : '',
+        formData.address ? `Dir: ${formData.address}` : '',
+        formData.reference_point ? `Ref: ${formData.reference_point}` : '',
+        formData.schedule ? `Horario: ${formData.schedule}` : ''
+      ].filter(Boolean).join(' • ');
 
-      // 3. Compilar Insignias de Pago / Badges
-      const badges: string[] = [];
-      if (formData.accepts_cashea) badges.push('Acepta Cashea');
-      if (formData.accepts_pos) badges.push('Punto de Venta');
-      if (formData.accepts_pago_movil) badges.push('Pago Móvil');
-      if (formData.accepts_usd_cash) badges.push('Efectivo Divisas');
-      if (formData.accepts_zelle) badges.push('Zelle');
-      if (formData.has_delivery) badges.push('Delivery Cumaná');
-
-      // 4. Crear la Tienda en la tabla `stores` con fallback resiliente
-      const fullStoreData: any = {
+      const storePayload = {
         name: formData.store_name.trim(),
         slug: formData.slug.trim(),
         owner_id: userId,
-        owner_whatsapp: cleanPhone,
-        whatsapp: cleanPhone,
-        description: formData.description.trim() || `Vitrina comercial de ${formData.store_name} en Cumaná.`,
-        zone: formData.zone,
-        address: formData.address.trim(),
-        rif: formData.rif.trim() || null,
-        schedule: formData.schedule.trim(),
-        badges: badges,
+        owner_whatsapp: Number(cleanPhone) || null,
+        description: locationSummary || `Vitrina comercial de ${formData.store_name} en Cumaná.`,
         plan_tier: formData.plan_tier,
         subscription_status: 'TRIAL',
-        pago_movil_info: {
-          bank_name: formData.pm_bank,
-          phone: formData.pm_phone.trim(),
-          id_doc: formData.pm_id.trim(),
-          account_holder: formData.store_name.trim()
-        },
         verification_status: 'DRAFT_UNVERIFIED',
         cashier_access_pin: '1234',
-        rif_or_id_number: formData.rif.trim() || formData.owner_id_doc.trim() || null,
-        is_active: true
+        rif_or_id_number: formData.rif.trim() || formData.owner_id_doc.trim() || null
       };
 
       let newStore: any = null;
       const { data: insertedStore, error: storeError } = await supabase
         .from('stores')
-        .insert([fullStoreData])
+        .insert([storePayload])
         .select()
         .single();
 
       if (storeError) {
-        console.warn('Fallo inserción extendida, reintentando con campos básicos:', storeError);
-        const basicStoreData = {
+        console.warn('Fallo inserción completa, reintentando con campos mínimos:', storeError);
+        const minimalStorePayload = {
           name: formData.store_name.trim(),
           slug: formData.slug.trim(),
           owner_id: userId,
-          owner_whatsapp: cleanPhone,
-          description: formData.description.trim() || `Vitrina de ${formData.store_name}`,
-          is_active: true
+          owner_whatsapp: Number(cleanPhone) || null,
+          description: locationSummary || `Vitrina de ${formData.store_name}`
         };
+
         const retryResult = await supabase
           .from('stores')
-          .insert([basicStoreData])
+          .insert([minimalStorePayload])
           .select()
           .single();
 
@@ -210,7 +219,7 @@ export default function BusinessRegisterPage() {
         newStore = insertedStore;
       }
 
-      // 5. Crear o actualizar el perfil en `profiles`
+      // 4. Crear o actualizar el perfil en `profiles`
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({
@@ -219,20 +228,17 @@ export default function BusinessRegisterPage() {
           full_name: formData.owner_name.trim(),
           phone: cleanPhone,
           store_id: newStore.id,
-          wallet_credit_usd: 0,
-          trust_score: 100
+          wallet_credit_usd: 0
         });
 
       if (profileError) {
-        console.warn('Aviso en perfiles (posible RLS):', profileError);
+        console.warn('Aviso en perfiles:', profileError);
       }
 
-      // 6. Verificar si el usuario ya tiene sesión activa (Confirm email apagado o confirmado)
-      if (authData.session) {
-        // Redirección inmediata al dashboard
+      // 5. Verificar si el usuario ya tiene sesión activa
+      if (hasActiveSession) {
         router.push('/negocios/dashboard');
       } else {
-        // Supabase requiere confirmación de correo
         setSuccessPendingConfirm(true);
       }
     } catch (err: any) {
