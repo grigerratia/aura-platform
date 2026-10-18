@@ -53,17 +53,27 @@ export interface Store {
 
 // Estados del Semáforo de Reservas de Aura
 export type ReservationStatus = 
-  | 'pendiente'   // Cliente solicitó reserva, esperando confirmación de la tienda
-  | 'confirmada'  // Botón Verde: Tienda confirmó disponibilidad por 3 horas
-  | 'ultimo_par'  // Botón Amarillo: Tienda confirmó y apagó la talla en vitrina
-  | 'cancelada'   // Botón Rojo: Tienda reportó que se vendió en físico
-  | 'completada'  // Validada en caja con PIN de 4 dígitos
-  | 'expirada';   // Pasaron las 3 horas sin retiro
+  | 'pending'     // Cliente solicitó reserva, esperando confirmación de la tienda
+  | 'confirmed'   // Botón Verde / Amarillo: Tienda confirmó disponibilidad por 3 horas
+  | 'completed'   // Validada en caja con PIN de 4 dígitos o comprobante
+  | 'cancelled'   // Botón Rojo: Tienda reportó que se vendió en físico / agotado
+  | 'expired'     // Pasaron las 3 horas sin retiro
+  // Alias en español para compatibilidad
+  | 'pendiente'
+  | 'confirmada'
+  | 'ultimo_par'
+  | 'cancelada'
+  | 'completada'
+  | 'expirada';
+
+// Modalidades de Doble Cierre con Pago Móvil
+export type PaymentOption = 'reserva_3h' | 'reserva_48h' | 'delivery' | 'apartado_15d';
 
 // Ticket de Reserva Digital
 export interface Reservation {
   id: string;
   pin: string; // PIN de 4 dígitos para validar en caja (ej: "4821")
+  pin_code?: string;
   store_id: string;
   store_name: string;
   store_whatsapp?: string;
@@ -73,8 +83,10 @@ export interface Reservation {
   product_image?: string;
   selected_size?: string;
   price_usd: number;
+  total_price?: number;
   price_ves: number;
   tasa: number;
+  bcv_rate?: number;
   customer_name: string;
   customer_phone: string;
   status: ReservationStatus;
@@ -82,6 +94,38 @@ export interface Reservation {
   created_at: string;
   confirmed_at?: string;
   completed_at?: string;
+  // Campos de Doble Cierre (Pago Móvil Directo)
+  payment_method?: 'en_tienda' | 'pago_movil';
+  payment_type?: PaymentOption;
+  payment_reference?: string;
+  bank_origin?: string;
+  delivery_address?: string;
+  initial_deposit?: number; // Para apartado de 15 días (30%)
+  // Campos de Fila de Espera
+  is_waitlist?: boolean;
+  waitlist_position?: number;
+}
+
+// Datos de Pago Móvil de una Tienda Física
+export interface StorePaymentInfo {
+  bank_name: string;
+  phone: string;
+  id_doc: string; // C.I. o RIF (ej: "J-12345678-0" o "V-12345678")
+  account_holder: string;
+}
+
+// Elemento de Fila de Espera
+export interface WaitlistItem {
+  id: string;
+  product_id: string;
+  product_name: string;
+  store_id: string;
+  store_name?: string;
+  customer_name: string;
+  customer_phone: string;
+  selected_size?: string;
+  created_at: string;
+  position: number;
 }
 
 // Perfil de usuario (Aura Profiles)

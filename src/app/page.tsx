@@ -4,10 +4,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import Header from '@/components/Header';
 import { ProductCard } from '@/components/ProductCard';
+import SizeHunterFilter from '@/components/SizeHunterFilter';
 import getDolarTasa from '@/util/getDolarTasa';
 import { 
   Sparkles, Clock, ShieldCheck, MapPin, 
-  Flame, CheckCircle, ArrowRight, Store as StoreIcon, Search
+  Flame, CheckCircle, ArrowRight, Store as StoreIcon, Search, Target
 } from 'lucide-react';
 
 export default async function HomePage() {
@@ -98,6 +99,9 @@ export default async function HomePage() {
           {/* Pastillas de Filtros Rápidos */}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-6">
             <span className="text-xs text-white/70 font-semibold mr-1">Filtros populares:</span>
+            <a href="#cazador-tallas" className="bg-teal-400/20 hover:bg-teal-400/30 text-teal-300 border border-teal-400/40 px-3.5 py-1 rounded-full text-xs font-bold transition flex items-center gap-1 shadow-sm">
+              <Target size={13} className="text-teal-400" /> Cazador de Tallas
+            </a>
             <a href="#remates" className="bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40 px-3 py-1 rounded-full text-xs font-bold transition flex items-center gap-1">
               <Flame size={13} /> Liquidaciones de Hoy
             </a>
@@ -157,6 +161,9 @@ export default async function HomePage() {
 
         </div>
       </section>
+
+      {/* FILTRO ESTRELLA: "Cazador de Últimos Pares por Talla" */}
+      <SizeHunterFilter products={products} tasa={tasa} />
 
       {/* SECCIÓN 2: "Remates Verificados de Hoy" (Dopamina y Escasez) */}
       <section id="remates" className="max-w-7xl mx-auto py-10 px-4">

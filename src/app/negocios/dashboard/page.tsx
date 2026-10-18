@@ -5,10 +5,11 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Reservation, Store } from '@/types';
 import {
-  Package, Plus, Search, Edit3, Trash2, Loader2,
+  Package, Plus, Search, Trash2, Loader2,
   CheckCircle2, AlertCircle, LogOut, ChevronRight,
-  Clock, Check, X, QrCode, Sparkles, Printer, Store as StoreIcon,
-  Flame, Tag, ArrowRight
+  Clock, Check, X, QrCode, Printer,
+  Flame, ArrowRight, TrendingUp, Users, Smartphone,
+  DollarSign, MessageSquare
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -38,7 +39,7 @@ export default function OwnerDashboard() {
     price: '',
     sale_price: '',
     sizes: '37, 38, 39, 40',
-    stock_status: 'available', // available | last_units | sold_out
+    stock_status: 'available',
     is_clearance: false,
     is_active: true
   });
@@ -58,19 +59,48 @@ export default function OwnerDashboard() {
 
   const fetchReservations = useCallback(async (sId: string) => {
     try {
-      // Intentamos leer de la tabla reservations
+      // 1. Intentamos leer de la tabla reservations
       const { data, error } = await supabase
         .from('reservations')
-        .select('*')
+        .select(`
+          *,
+          products (name, image_url)
+        `)
         .eq('store_id', sId)
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setReservations(data as Reservation[]);
+        const mapped: Reservation[] = data.map((r: any) => {
+          const priceUsd = Number(r.total_price || r.price_usd || 0);
+          const bcvRate = Number(r.bcv_rate || r.tasa || 55);
+          return {
+            id: r.id,
+            pin: r.pin_code || r.pin || '0000',
+            pin_code: r.pin_code || r.pin || '0000',
+            store_id: r.store_id,
+            store_name: store?.name || 'Mi Tienda',
+            product_id: r.product_id,
+            product_name: r.products?.name || r.product_name || 'Producto Apartado',
+            product_image: r.products?.image_url || r.product_image,
+            selected_size: r.selected_size || 'Única',
+            price_usd: priceUsd,
+            total_price: priceUsd,
+            price_ves: Number((priceUsd * bcvRate).toFixed(2)),
+            tasa: bcvRate,
+            bcv_rate: bcvRate,
+            customer_name: r.customer_name,
+            customer_phone: r.customer_phone,
+            status: r.status,
+            expires_at: r.expires_at,
+            created_at: r.created_at,
+            payment_reference: r.customer_phone?.includes('REF:') || r.customer_phone?.includes('PAGO_MOVIL') ? 'Sí' : undefined,
+          };
+        });
+        setReservations(mapped);
         return;
       }
 
-      // Fallback: si aún no existe tabla reservations, leemos de orders
+      // 2. Fallback: leemos de orders si reservations aún no estuviera accesible
       const { data: ordersData } = await supabase
         .from('orders')
         .select('*')
@@ -81,6 +111,7 @@ export default function OwnerDashboard() {
         const mapped: Reservation[] = ordersData.map((ord: any) => ({
           id: ord.id?.toString() || Math.random().toString(),
           pin: ord.customer_info?.pin || '1234',
+          pin_code: ord.customer_info?.pin || '1234',
           store_id: ord.store_id,
           store_name: 'Mi Tienda',
           product_id: ord.items?.[0]?.id || '',
@@ -88,19 +119,19 @@ export default function OwnerDashboard() {
           selected_size: ord.customer_info?.selected_size || 'Única',
           price_usd: ord.total_usd,
           price_ves: ord.total_ves,
-          tasa: 500,
+          tasa: 55,
           customer_name: ord.customer_info?.name || 'Cliente Aura',
           customer_phone: ord.customer_info?.phone || '',
-          status: ord.status || 'confirmada',
+          status: ord.status || 'pending',
           expires_at: new Date(new Date(ord.created_at).getTime() + 3 * 3600000).toISOString(),
           created_at: ord.created_at
         }));
         setReservations(mapped);
       }
     } catch {
-      // Ignorar fallback
+      // Silencioso
     }
-  }, []);
+  }, [store?.name]);
 
   const checkUser = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -171,16 +202,18 @@ export default function OwnerDashboard() {
   // SEMÁFORO DE ACCIÓN: Botón Verde, Amarillo y Rojo
   const handleUpdateReservationStatus = async (
     reservation: Reservation, 
-    newStatus: 'confirmada' | 'ultimo_par' | 'cancelada'
+    newStatus: 'confirmed' | 'ultimo_par' | 'cancelled'
   ) => {
     try {
-      // 1. Actualizar estado de la reserva
+      // 1. Actualizar estado de la reserva compatible con Postgres CHECK constraint ('pending', 'confirmed', 'completed', 'cancelled', 'expired')
+      const targetDbStatus = newStatus === 'cancelled' ? 'cancelled' : 'confirmed';
+
       await supabase
         .from('reservations')
-        .update({ status: newStatus, confirmed_at: new Date().toISOString() })
+        .update({ status: targetDbStatus })
         .eq('id', reservation.id);
 
-      // 2. Ejecutar la acción colateral sobre el inventario según el color del semáforo
+      // 2. Acción colateral sobre el inventario según el color del semáforo
       if (newStatus === 'ultimo_par') {
         // Botón Amarillo: Apaga la talla o marca últimas unidades
         await supabase
@@ -188,7 +221,7 @@ export default function OwnerDashboard() {
           .update({ stock: 1 })
           .eq('store_id', reservation.store_id)
           .eq('product_id', reservation.product_id);
-      } else if (newStatus === 'cancelada') {
+      } else if (newStatus === 'cancelled') {
         // Botón Rojo: Marca agotado en vitrina
         await supabase
           .from('store_products')
@@ -206,29 +239,64 @@ export default function OwnerDashboard() {
     }
   };
 
-  // Validar PIN en Caja
+  // Validar PIN en Caja (Garantizado con consulta directa a Supabase por pin_code)
   const handleValidatePin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pinInput.trim()) return;
 
     const cleanPin = pinInput.trim().replace('#', '');
-    const found = reservations.find(r => r.pin === cleanPin);
+    let target = reservations.find(r => r.pin === cleanPin || r.pin_code === cleanPin);
 
-    if (found) {
+    // Si aún no está en la memoria del cliente, buscamos directamente en Supabase
+    if (!target && storeId) {
+      try {
+        const { data: dbMatch } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('store_id', storeId)
+          .eq('pin_code', cleanPin)
+          .order('created_at', { ascending: false })
+          .maybeSingle();
+
+        if (dbMatch) {
+          target = {
+            id: dbMatch.id,
+            pin: dbMatch.pin_code,
+            pin_code: dbMatch.pin_code,
+            customer_name: dbMatch.customer_name,
+            customer_phone: dbMatch.customer_phone,
+            product_name: 'Producto en Tienda',
+            store_name: store?.name || 'Mi Tienda',
+            price_usd: Number(dbMatch.total_price || 0),
+            price_ves: Number((dbMatch.total_price || 0) * (dbMatch.bcv_rate || 55)),
+            tasa: Number(dbMatch.bcv_rate || 55),
+            status: dbMatch.status,
+            store_id: dbMatch.store_id,
+            product_id: dbMatch.product_id,
+            created_at: dbMatch.created_at,
+            expires_at: dbMatch.expires_at,
+          };
+        }
+      } catch {
+        // Continuar
+      }
+    }
+
+    if (target) {
       try {
         await supabase
           .from('reservations')
-          .update({ status: 'completada', completed_at: new Date().toISOString() })
-          .eq('id', found.id);
+          .update({ status: 'completed' })
+          .eq('id', target.id);
 
-        setPinSuccessMessage(`¡Venta validada exitosamente! ${found.product_name} entregado a ${found.customer_name}.`);
+        setPinSuccessMessage(`¡Venta validada con éxito! PIN #${cleanPin} procesado para ${target.customer_name}.`);
         setPinInput('');
         if (storeId) fetchReservations(storeId);
       } catch {
         setPinSuccessMessage(`PIN #${cleanPin} validado localmente con éxito.`);
       }
     } else {
-      alert('PIN no encontrado o ya expirado. Verifica con el cliente.');
+      alert('PIN no encontrado o ya expirado. Verifica los 4 dígitos con el cliente.');
     }
   };
 
@@ -314,7 +382,24 @@ export default function OwnerDashboard() {
 
   const storeSlug = store?.slug || '';
   const storeUrl = typeof window !== 'undefined' ? `${window.location.origin}/${storeSlug}` : `https://aura.lat/${storeSlug}`;
-  const pendingReservations = reservations.filter(r => r.status === 'pendiente' || r.status === 'confirmada' || r.status === 'ultimo_par');
+
+  // 🌟 CÁLCULO DE MÉTRICAS DE IMPACTO Y DEMANDA PERDIDA
+  const completedReservations = reservations.filter(
+    r => r.status === 'completed' || r.status === 'completada' || r.payment_reference
+  );
+  const totalSalesUSD = completedReservations.reduce((sum, r) => sum + (r.price_usd || 0), 0);
+  const tasaUsed = reservations[0]?.tasa || 55;
+  const totalSalesVES = totalSalesUSD * tasaUsed;
+
+  // Demanda no satisfecha: canceladas por falta de stock (Botón Rojo) o registros de fila de espera
+  const missedDemand = reservations.filter(
+    r => r.status === 'cancelled' || r.status === 'cancelada' || r.customer_name?.includes('[FILA DE ESPERA]')
+  );
+  const missedCustomersCount = missedDemand.length;
+
+  const pendingReservations = reservations.filter(
+    r => r.status === 'pending' || r.status === 'pendiente' || r.status === 'confirmed' || r.status === 'confirmada' || r.status === 'ultimo_par'
+  );
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans">
@@ -326,7 +411,7 @@ export default function OwnerDashboard() {
             A
           </div>
           <div>
-            <h2 className="font-black text-white text-base tracking-tight leading-none">
+            <h2 className="font-black text-white text-base tracking-tight leading-none truncate max-w-[140px]">
               {store?.name || 'AURA OPS'}
             </h2>
             <span className="text-[10px] text-teal-400 font-bold uppercase tracking-widest">
@@ -401,8 +486,66 @@ export default function OwnerDashboard() {
       </aside>
 
       {/* CONTENIDO PRINCIPAL */}
-      <main className="flex-1 p-4 sm:p-8 overflow-y-auto max-w-7xl">
+      <main className="flex-1 p-4 sm:p-8 overflow-y-auto max-w-7xl space-y-6">
         
+        {/* 🌟 PANEL DE IMPACTO Y DEMANDA PERDIDA (ARRIBA DEL TODO) */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          {/* Tarjeta 1: Ventas Generadas por Aura */}
+          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-900/60 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-black uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                <TrendingUp size={14} /> Ventas Generadas por Aura este mes
+              </span>
+              <span className="text-[10px] font-bold bg-teal-500/20 text-teal-300 px-2.5 py-0.5 rounded-full border border-teal-500/30">
+                QRs & Pagos Validados
+              </span>
+            </div>
+
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="text-3xl sm:text-4xl font-black text-white">
+                ${totalSalesUSD.toFixed(2)}
+              </span>
+              <span className="text-sm font-bold text-slate-300">USD</span>
+              <span className="text-xs font-semibold text-teal-400 ml-2">
+                ≈ Bs. {totalSalesVES.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-300 mt-2 flex items-center gap-1.5">
+              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+              <span><strong>{completedReservations.length} clientes</strong> compraron en tu tienda física gracias a Aura.</span>
+            </p>
+          </div>
+
+          {/* Tarjeta 2: Demanda Perdida / Búsquedas Agotadas */}
+          <div className="bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white p-6 rounded-3xl border border-purple-900/60 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <Users size={14} /> Demanda no Satisfecha en tu Tienda
+              </span>
+              <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-500/30">
+                Clics a Botón Rojo & Fila
+              </span>
+            </div>
+
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="text-3xl sm:text-4xl font-black text-amber-400">
+                {missedCustomersCount}
+              </span>
+              <span className="text-sm font-bold text-slate-300">clientes sin stock</span>
+            </div>
+
+            <p className="text-xs text-slate-300 mt-2 flex items-center gap-1.5">
+              <AlertCircle size={14} className="text-amber-400 shrink-0" />
+              <span>Intentaron apartar pero la talla estaba agotada. ¡Surtir estos productos representa ventas inmediatas!</span>
+            </p>
+          </div>
+
+        </section>
+
         {/* PESTAÑA 1: SEMÁFORO DE RESERVAS Y VALIDACIÓN EN CAJA */}
         {activeTab === 'reservations' && (
           <div className="space-y-6">
@@ -455,88 +598,115 @@ export default function OwnerDashboard() {
               </div>
             </div>
 
-            {/* LISTADO DE RESERVAS PENDIENTES CON EL SEMÁFORO */}
+            {/* LISTADO DE RESERVAS CON EL SEMÁFORO */}
             <div className="space-y-4">
               <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
                 <Clock size={18} className="text-indigo-600" />
-                Reservas Activas de Hoy ({pendingReservations.length})
+                Reservas y Turnos Activos ({pendingReservations.length})
               </h3>
 
               {pendingReservations.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {pendingReservations.map((res) => (
-                    <div
-                      key={res.id}
-                      className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-4"
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div>
-                            <span className="font-mono text-xs font-black bg-slate-900 text-teal-400 px-2 py-0.5 rounded-md">
-                              PIN #{res.pin}
+                  {pendingReservations.map((res) => {
+                    const hasPagoMovil = res.customer_phone?.includes('PAGO_MOVIL') || res.customer_phone?.includes('REF:');
+                    const isWaitlist = res.customer_name?.includes('[FILA DE ESPERA]');
+
+                    return (
+                      <div
+                        key={res.id}
+                        className={`bg-white p-5 rounded-3xl border shadow-sm flex flex-col justify-between space-y-4 ${
+                          hasPagoMovil ? 'border-emerald-300 ring-2 ring-emerald-400/20' : 'border-slate-200'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div>
+                              <span className="font-mono text-xs font-black bg-slate-900 text-teal-400 px-2 py-0.5 rounded-md">
+                                PIN #{res.pin}
+                              </span>
+                              <h4 className="font-black text-slate-900 text-base mt-1.5">
+                                {res.product_name}
+                              </h4>
+                            </div>
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                              res.status === 'confirmed' || res.status === 'confirmada'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {res.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
                             </span>
-                            <h4 className="font-black text-slate-900 text-base mt-1.5">
-                              {res.product_name}
-                            </h4>
                           </div>
-                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                            res.status === 'ultimo_par'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}>
-                            {res.status}
-                          </span>
-                        </div>
 
-                        <div className="space-y-1 text-xs text-slate-600">
-                          {res.selected_size && (
-                            <p>Talla solicitada: <strong className="text-slate-900">{res.selected_size}</strong></p>
+                          {/* Badge de Pago Móvil Directo */}
+                          {hasPagoMovil && (
+                            <div className="mb-3 p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2">
+                              <Smartphone size={15} className="text-emerald-600 shrink-0" />
+                              <div className="font-medium truncate">
+                                <strong>Pago Móvil Notificado:</strong> {res.customer_phone}
+                              </div>
+                            </div>
                           )}
-                          <p>Cliente: <strong className="text-slate-900">{res.customer_name}</strong> ({res.customer_phone})</p>
-                          <p>Total a cobrar en caja: <strong className="text-emerald-700 font-black">${res.price_usd} USD</strong> (Bs. {res.price_ves})</p>
+
+                          {/* Badge de Fila de Espera */}
+                          {isWaitlist && (
+                            <div className="mb-3 p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                              <Users size={15} className="text-amber-600 shrink-0" />
+                              <div>
+                                <strong>Fila de Espera:</strong> Cliente aguarda turno por WhatsApp si el actual no retira.
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="space-y-1 text-xs text-slate-600">
+                            {res.selected_size && (
+                              <p>Talla solicitada: <strong className="text-slate-900">{res.selected_size}</strong></p>
+                            )}
+                            <p>Cliente: <strong className="text-slate-900">{res.customer_name}</strong> ({res.customer_phone})</p>
+                            <p>Total a cobrar en caja: <strong className="text-emerald-700 font-black">${res.price_usd} USD</strong> (Bs. {res.price_ves})</p>
+                          </div>
                         </div>
-                      </div>
 
-                      {/* EL SEMÁFORO DE ACCIÓN: 3 BOTONES DEL MODELO */}
-                      <div className="pt-3 border-t border-slate-100 space-y-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                          Semáforo de Disponibilidad en Estante:
-                        </span>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {/* BOTÓN VERDE */}
-                          <button
-                            onClick={() => handleUpdateReservationStatus(res, 'confirmada')}
-                            className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-2 rounded-xl text-[11px] font-bold transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
-                            title="El producto está en el estante y quedan más unidades"
-                          >
-                            <Check size={14} className="mb-0.5" />
-                            <span>Sí hay (Activo)</span>
-                          </button>
+                        {/* EL SEMÁFORO DE ACCIÓN: 3 BOTONES DEL MODELO */}
+                        <div className="pt-3 border-t border-slate-100 space-y-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                            Semáforo de Disponibilidad en Estante:
+                          </span>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {/* BOTÓN VERDE */}
+                            <button
+                              onClick={() => handleUpdateReservationStatus(res, 'confirmed')}
+                              className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-2 rounded-xl text-[11px] font-bold transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
+                              title="El producto está en el estante y quedan más unidades"
+                            >
+                              <Check size={14} className="mb-0.5" />
+                              <span>Sí hay (Activo)</span>
+                            </button>
 
-                          {/* BOTÓN AMARILLO */}
-                          <button
-                            onClick={() => handleUpdateReservationStatus(res, 'ultimo_par')}
-                            className="cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 p-2 rounded-xl text-[11px] font-black transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
-                            title="El producto está en el estante pero es el último par (apaga la talla)"
-                          >
-                            <AlertCircle size={14} className="mb-0.5" />
-                            <span>Último Par</span>
-                          </button>
+                            {/* BOTÓN AMARILLO */}
+                            <button
+                              onClick={() => handleUpdateReservationStatus(res, 'ultimo_par')}
+                              className="cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 p-2 rounded-xl text-[11px] font-black transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
+                              title="El producto está en el estante pero es el último par (apaga la talla)"
+                            >
+                              <AlertCircle size={14} className="mb-0.5" />
+                              <span>Último Par</span>
+                            </button>
 
-                          {/* BOTÓN ROJO */}
-                          <button
-                            onClick={() => handleUpdateReservationStatus(res, 'cancelada')}
-                            className="cursor-pointer bg-red-600 hover:bg-red-500 text-white p-2 rounded-xl text-[11px] font-bold transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
-                            title="Ya se vendió en tienda física. Marca agotado."
-                          >
-                            <X size={14} className="mb-0.5" />
-                            <span>Agotado</span>
-                          </button>
+                            {/* BOTÓN ROJO */}
+                            <button
+                              onClick={() => handleUpdateReservationStatus(res, 'cancelled')}
+                              className="cursor-pointer bg-red-600 hover:bg-red-500 text-white p-2 rounded-xl text-[11px] font-bold transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
+                              title="Ya se vendió en tienda física. Marca agotado."
+                            >
+                              <X size={14} className="mb-0.5" />
+                              <span>Agotado</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
 
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center">
@@ -628,7 +798,7 @@ export default function OwnerDashboard() {
                       <h2 className="font-black text-lg">Añadir Producto a Vitrina</h2>
                       <p className="text-xs text-slate-400">Listo en 30 segundos desde tu celular</p>
                     </div>
-                    <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-white">
+                    <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-white cursor-pointer">
                       Cerrar
                     </button>
                   </div>
@@ -714,9 +884,9 @@ export default function OwnerDashboard() {
                         id="clearanceCheck"
                         checked={formData.is_clearance}
                         onChange={(e) => setFormData({ ...formData, is_clearance: e.target.checked })}
-                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                       />
-                      <label htmlFor="clearanceCheck" className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                      <label htmlFor="clearanceCheck" className="text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer">
                         <Flame size={14} className="text-amber-500" />
                         Destacar en &quot;Remates y Liquidaciones del Día&quot;
                       </label>

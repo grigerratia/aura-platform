@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Product, Store } from '@/types';
-import { Clock, Eye, Sparkles, Tag, CheckCircle2 } from 'lucide-react';
+import { Clock, Eye, Sparkles, Tag, CheckCircle2, Users } from 'lucide-react';
 import ReserveProductModal from './ReserveProductModal';
 import { QuickViewModal } from './QuickViewModal';
+import WaitlistModal from './WaitlistModal';
 
 interface Props {
   product: Product;
@@ -15,6 +16,7 @@ interface Props {
 
 export function ProductCard({ product, tasa, store }: Props) {
   const [isReserveModalOpen, setIsReserveModalOpen] = useState(false);
+  const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
   const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
 
   // Lógica de Precios
@@ -146,22 +148,30 @@ export function ProductCard({ product, tasa, store }: Props) {
             </div>
           </div>
 
-          {/* Botón de Apartar en 1 Clic (Pagar en Tienda) */}
-          <button
-            disabled={isOutOfStock}
-            onClick={(e) => {
-              e.preventDefault();
-              setIsReserveModalOpen(true);
-            }}
-            className={`cursor-pointer mt-3 w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-98 ${
-              isOutOfStock
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-indigo-700 to-teal-600 hover:from-indigo-600 hover:to-teal-500 text-white shadow-indigo-500/20'
-            }`}
-          >
-            <Clock size={14} />
-            <span>{isOutOfStock ? 'Agotado en Tienda' : 'Apartar por 3 Horas'}</span>
-          </button>
+          {/* Botón de Acción: Fila de Espera si está agotado o Apartar en 1 Clic */}
+          {isOutOfStock ? (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                setIsWaitlistOpen(true);
+              }}
+              className="cursor-pointer mt-3 w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-98 bg-amber-500 hover:bg-amber-400 text-slate-950"
+            >
+              <Users size={14} />
+              <span>Fila de Espera (Avisarme)</span>
+            </button>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                setIsReserveModalOpen(true);
+              }}
+              className="cursor-pointer mt-3 w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-98 bg-gradient-to-r from-indigo-700 to-teal-600 hover:from-indigo-600 hover:to-teal-500 text-white shadow-indigo-500/20"
+            >
+              <Clock size={14} />
+              <span>Apartar por 3 Horas</span>
+            </button>
+          )}
 
         </div>
       </div>
@@ -173,6 +183,14 @@ export function ProductCard({ product, tasa, store }: Props) {
         tasa={tasa}
         isOpen={isReserveModalOpen}
         onClose={() => setIsReserveModalOpen(false)}
+      />
+
+      {/* Modal de Fila de Espera */}
+      <WaitlistModal
+        product={product}
+        store={resolvedStore}
+        isOpen={isWaitlistOpen}
+        onClose={() => setIsWaitlistOpen(false)}
       />
 
       {/* Modal de Vista Rápida */}
