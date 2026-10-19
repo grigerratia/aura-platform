@@ -611,20 +611,31 @@ export default function OwnerDashboard() {
       
       {/* SIDEBAR DE COMERCIO */}
       <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shrink-0">
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between md:justify-start gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-black text-xl text-slate-950">
-            A
-          </div>
-          <div className="min-w-0">
-            <h2 className="font-black text-white text-base tracking-tight leading-none truncate max-w-[140px]">
-              {store?.name || 'AURA OPS'}
-            </h2>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-[9px] bg-indigo-500/30 text-indigo-300 font-bold px-1.5 py-0.5 rounded border border-indigo-400/30">
-                {planName}
-              </span>
+        <div className="p-4 md:p-6 border-b border-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-black text-xl text-slate-950 shrink-0">
+              A
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-black text-white text-base tracking-tight leading-none truncate max-w-[140px]">
+                {store?.name || 'AURA OPS'}
+              </h2>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className="text-[9px] bg-indigo-500/30 text-indigo-300 font-bold px-1.5 py-0.5 rounded border border-indigo-400/30">
+                  {planName}
+                </span>
+              </div>
             </div>
           </div>
+
+          <button
+            onClick={() => supabase.auth.signOut().then(() => router.push('/negocios'))}
+            className="md:hidden cursor-pointer flex items-center gap-1.5 text-xs font-bold text-red-400 hover:text-white bg-red-950/50 hover:bg-red-600 border border-red-800/60 hover:border-red-600 px-3 py-1.5 rounded-xl transition"
+            title="Cerrar Sesión"
+          >
+            <LogOut size={14} />
+            <span>Salir</span>
+          </button>
         </div>
 
         {/* NAVEGACIÓN */}
@@ -726,6 +737,62 @@ export default function OwnerDashboard() {
 
       {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 p-4 sm:p-8 overflow-y-auto max-w-7xl space-y-6">
+
+        {/* BARRA SUPERIOR DE ACCIONES Y SESIÓN */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-slate-900 text-teal-400 flex items-center justify-center font-black text-lg shadow-inner">
+              {store?.name?.charAt(0) || 'A'}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-black text-slate-900 text-base sm:text-lg">
+                  {store?.name || 'Mi Comercio'}
+                </h1>
+                <span className="text-[10px] font-black uppercase tracking-wider text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                  Online
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Panel de Administración • Cumaná, Sucre
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {storeSlug && (
+              <Link
+                href={`/${storeSlug}`}
+                target="_blank"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-indigo-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2.5 rounded-xl transition shadow-xs"
+              >
+                <span>Ver Vitrina Pública</span>
+                <ArrowRight size={13} />
+              </Link>
+            )}
+
+            <button
+              onClick={() => setShowPinModal(true)}
+              className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 border border-indigo-200 hover:border-indigo-600 px-3.5 py-2.5 rounded-xl transition shadow-xs active:scale-95"
+              title="Configurar PIN de Mostrador para Empleados"
+            >
+              <Lock size={13} />
+              <span>PIN Mostrador</span>
+            </button>
+
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                router.push('/negocios');
+              }}
+              className="cursor-pointer inline-flex items-center gap-2 text-xs font-black text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 px-4 py-2.5 rounded-xl transition shadow-sm active:scale-95"
+              title="Cerrar Sesión del Comercio"
+            >
+              <LogOut size={16} />
+              <span>Cerrar Sesión</span>
+            </button>
+          </div>
+        </div>
 
         {/* BANNER DE ESTADO DE VERIFICACIÓN RÁPIDA B2B */}
         {(!store?.verification_status || store.verification_status === 'DRAFT_UNVERIFIED') && (
