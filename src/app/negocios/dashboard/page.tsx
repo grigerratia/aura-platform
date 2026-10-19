@@ -411,11 +411,12 @@ export default function OwnerDashboard() {
         : 0;
 
       if (!currentProductId) {
+        const uniqueSlug = `${formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
         const { data: newP, error: pError } = await supabase
           .from('products')
           .insert([{ 
             name: formData.name,
-            slug: formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-'),
+            slug: uniqueSlug,
             category: formData.category,
             archetype: formData.category_archetype,
             variants: variantsPayload,
