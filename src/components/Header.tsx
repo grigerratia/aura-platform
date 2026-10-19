@@ -205,6 +205,15 @@ export default function Header({ stores, initialTasa = 500.0 }: Props) {
                         </Link>
                       )}
 
+                      <Link
+                        href="/perfil"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <User size={14} className="text-teal-600" />
+                        <span>Mi Perfil & Preferencias</span>
+                      </Link>
+
                       <button
                         type="button"
                         onClick={() => {

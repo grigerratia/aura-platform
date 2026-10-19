@@ -211,6 +211,15 @@ export interface Profile {
   role: 'admin' | 'owner' | 'customer' | string;
   store_id?: string | null;
 
+  // Identidad y Logística Local
+  id_doc?: string;
+  zone?: string;
+  delivery_address?: string;
+  phone_alt?: string;
+  preferred_categories?: string[];
+  shoe_size?: string;
+  clothing_size?: string;
+
   // Candado de Confianza
   wallet_credit_usd?: number; // Saldo a favor reutilizable en Aura
   trust_score?: number; // 0 - 100 de reputación de asistencia
