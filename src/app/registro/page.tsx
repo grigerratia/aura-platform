@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -35,8 +35,10 @@ export default function CustomerRegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successRegistration, setSuccessRegistration] = useState(false);
+  // Bloqueo temporal para evitar que toques residuales de "Siguiente" activen el botón final
+  const [canSubmitStep3, setCanSubmitStep3] = useState(false);
 
-  // Form State - sin valores por defecto arbitrarios para que el usuario elija conscientemente
+  // Form State
   const [formData, setFormData] = useState({
     // Paso 1: Cuenta y Acceso
     full_name: '',
@@ -52,6 +54,19 @@ export default function CustomerRegisterPage() {
     shoe_size: '',
     clothing_size: '',
   });
+
+  // Enfriamiento de 400ms al entrar al Paso 3 para evitar activación accidental por doble toque
+  useEffect(() => {
+    if (step === 3) {
+      setCanSubmitStep3(false);
+      const timer = setTimeout(() => {
+        setCanSubmitStep3(true);
+      }, 400);
+      return () => clearTimeout(timer);
+    } else {
+      setCanSubmitStep3(false);
+    }
+  }, [step]);
 
   // Medidor de seguridad de contraseña
   const getPasswordStrength = () => {
@@ -95,31 +110,30 @@ export default function CustomerRegisterPage() {
     setStep((prev) => Math.max(prev - 1, 1) as any);
   };
 
-  // Prevenir envío accidental al presionar Enter en inputs o selects
-  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
-    if (e.key === 'Enter') {
-      if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
-      e.preventDefault();
-      if (step < 3) {
-        handleNextStep();
-      }
-      // En el paso 3, bloqueamos el enter accidental para que el usuario haga clic voluntario en "Crear mi Cuenta"
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Disparado EXCLUSIVAMENTE al presionar de forma intencional el botón "Crear mi Cuenta Gratis"
+  const handleFinalRegister = async () => {
+    if (!canSubmitStep3) return; // Evita clics fantasma o dobles toques
     setErrorMsg(null);
 
-    // Salvaguarda: si no estamos en el paso final, simplemente avanza al siguiente paso
-    if (step < 3) {
-      handleNextStep();
-      return;
+    // Verificaciones integrales de seguridad
+    if (!formData.full_name.trim()) {
+      setStep(1);
+      return setErrorMsg('Por favor ingresa tu nombre y apellido.');
     }
-
-    // Validación explícita del Paso 3
+    if (!formData.email.trim() || !formData.email.includes('@')) {
+      setStep(1);
+      return setErrorMsg('Ingresa un correo electrónico válido.');
+    }
+    if (!formData.password || formData.password.length < 6) {
+      setStep(1);
+      return setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+    }
+    if (!formData.phone.trim()) {
+      setStep(2);
+      return setErrorMsg('Por favor ingresa tu número de WhatsApp para reservas.');
+    }
     if (!formData.favorite_zone) {
-      return setErrorMsg('Por favor selecciona tu zona habitual de compra en Cumaná.');
+      return setErrorMsg('Por favor selecciona tu zona comercial habitual en Cumaná.');
     }
 
     setLoading(true);
@@ -147,7 +161,6 @@ export default function CustomerRegisterPage() {
       let userId = authData?.user?.id;
 
       if (authError) {
-        // Si el usuario ya existe, intentar iniciar sesión si la contraseña coincide
         if (
           authError.message.toLowerCase().includes('already registered') ||
           authError.message.toLowerCase().includes('already exists') ||
@@ -185,7 +198,7 @@ export default function CustomerRegisterPage() {
         console.warn('Aviso en perfil de cliente:', profileError);
       }
 
-      // Mostrar pantalla de éxito amigable SIN auto-redirección abrupta
+      // Mostrar pantalla de éxito amigable
       setSuccessRegistration(true);
 
     } catch (err: any) {
@@ -229,7 +242,7 @@ export default function CustomerRegisterPage() {
       {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-4xl mx-auto w-full px-4 py-8 md:py-12 flex-1 flex flex-col justify-center">
 
-        {/* PANTALLA DE ÉXITO (CONFIRMACIÓN TRANQUILA Y CLARA) */}
+        {/* PANTALLA DE ÉXITO */}
         {successRegistration ? (
           <div className="max-w-lg mx-auto w-full bg-slate-900 border border-teal-500/40 rounded-3xl p-6 sm:p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="w-16 h-16 rounded-3xl bg-teal-500/20 text-teal-400 border border-teal-500/30 flex items-center justify-center mx-auto mb-4 shadow-inner">
@@ -274,7 +287,7 @@ export default function CustomerRegisterPage() {
               </div>
             </div>
 
-            {/* BOTONES DE ENTRADA A LA APP */}
+            {/* BOTÓN DE ENTRADA A LA APP */}
             <div className="space-y-3">
               <button
                 type="button"
@@ -284,14 +297,6 @@ export default function CustomerRegisterPage() {
                 <ShoppingBag size={18} />
                 <span>Explorar Vitrinas de Cumaná</span>
                 <ArrowRight size={16} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => router.push('/')}
-                className="w-full cursor-pointer text-xs font-bold text-slate-400 hover:text-white py-2 transition"
-              >
-                Ir a la página principal
               </button>
             </div>
           </div>
@@ -327,7 +332,7 @@ export default function CustomerRegisterPage() {
               </div>
             </div>
 
-            {/* TARJETA PRINCIPAL DEL FORMULARIO */}
+            {/* TARJETA PRINCIPAL (SIN ELEMENTO FORM PARA EVITAR ENVÍOS ACCIDENTALES) */}
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative">
               
               {/* ALERTA DE ERROR */}
@@ -338,7 +343,7 @@ export default function CustomerRegisterPage() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown}>
+              <div className="space-y-6">
 
                 {/* PASO 1: TU CUENTA */}
                 {step === 1 && (
@@ -356,7 +361,6 @@ export default function CustomerRegisterPage() {
                         <User className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
                         <input
                           type="text"
-                          required
                           placeholder="Ej: Carlos Salazar"
                           value={formData.full_name}
                           onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
@@ -373,7 +377,6 @@ export default function CustomerRegisterPage() {
                         <Mail className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
                         <input
                           type="email"
-                          required
                           placeholder="tu-correo@gmail.com"
                           value={formData.email}
                           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -390,8 +393,6 @@ export default function CustomerRegisterPage() {
                         <Lock className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
                         <input
                           type={showPassword ? 'text' : 'password'}
-                          required
-                          minLength={6}
                           placeholder="••••••••"
                           value={formData.password}
                           onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -439,7 +440,6 @@ export default function CustomerRegisterPage() {
                         <Phone className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
                         <input
                           type="tel"
-                          required
                           placeholder="Ej: 04141234567 o 04121234567"
                           value={formData.phone}
                           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -524,6 +524,7 @@ export default function CustomerRegisterPage() {
                         </label>
                         {formData.shoe_size && (
                           <button
+                            key="btn-clear-shoe"
                             type="button"
                             onClick={() => setFormData({ ...formData, shoe_size: '' })}
                             className="text-[10px] text-rose-400 hover:underline cursor-pointer"
@@ -535,7 +536,7 @@ export default function CustomerRegisterPage() {
                       <div className="flex flex-wrap gap-2">
                         {SHOE_SIZES.map((sz) => (
                           <button
-                            key={sz}
+                            key={`shoe-${sz}`}
                             type="button"
                             onClick={() => setFormData({ ...formData, shoe_size: formData.shoe_size === sz ? '' : sz })}
                             className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
@@ -561,6 +562,7 @@ export default function CustomerRegisterPage() {
                         </label>
                         {formData.clothing_size && (
                           <button
+                            key="btn-clear-clothing"
                             type="button"
                             onClick={() => setFormData({ ...formData, clothing_size: '' })}
                             className="text-[10px] text-rose-400 hover:underline cursor-pointer"
@@ -572,7 +574,7 @@ export default function CustomerRegisterPage() {
                       <div className="flex flex-wrap gap-2">
                         {CLOTHING_SIZES.map((sz) => (
                           <button
-                            key={sz}
+                            key={`clothing-${sz}`}
                             type="button"
                             onClick={() => setFormData({ ...formData, clothing_size: formData.clothing_size === sz ? '' : sz })}
                             className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-bold transition border ${
@@ -609,10 +611,11 @@ export default function CustomerRegisterPage() {
                   </div>
                 )}
 
-                {/* BOTONES DE NAVEGACIÓN DEL WIZARD */}
+                {/* BOTONES DE NAVEGACIÓN TOTALMENTE INDEPENDIENTES CON KEYS ÚNICAS */}
                 <div className="mt-6 pt-5 border-t border-slate-800 flex items-center justify-between gap-3">
                   {step > 1 ? (
                     <button
+                      key="btn-nav-prev"
                       type="button"
                       onClick={handlePrevStep}
                       className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white bg-slate-950 border border-slate-800 px-4 py-3 rounded-xl transition"
@@ -631,6 +634,7 @@ export default function CustomerRegisterPage() {
 
                   {step < 3 ? (
                     <button
+                      key="btn-nav-next"
                       type="button"
                       onClick={handleNextStep}
                       className="cursor-pointer ml-auto bg-teal-500 hover:bg-teal-400 text-slate-950 font-black px-6 py-3 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95"
@@ -640,9 +644,11 @@ export default function CustomerRegisterPage() {
                     </button>
                   ) : (
                     <button
-                      type="submit"
-                      disabled={loading}
-                      className="cursor-pointer ml-auto bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-slate-950 font-black px-7 py-3.5 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95 disabled:opacity-50"
+                      key="btn-nav-finish-submit"
+                      type="button"
+                      onClick={handleFinalRegister}
+                      disabled={loading || !canSubmitStep3}
+                      className="cursor-pointer ml-auto bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-slate-950 font-black px-7 py-3.5 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95 disabled:opacity-40"
                     >
                       {loading ? (
                         <>
@@ -659,7 +665,7 @@ export default function CustomerRegisterPage() {
                   )}
                 </div>
 
-              </form>
+              </div>
 
             </div>
 
