@@ -42,14 +42,14 @@ export default function ProductActions({ product, store, tasa }: Props) {
 
       {/* Acceso Anticipado VIP (30 minutos de exclusividad en Remates) */}
       {vipAccess.isLocked ? (
-        <div className="p-4 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-300 rounded-2xl text-xs space-y-2">
-          <div className="flex items-center gap-2 font-black text-amber-950">
-            <Crown size={18} className="text-amber-500 shrink-0" />
+        <div className="p-4 bg-amber-950/20 border border-amber-800/40 rounded-2xl text-xs space-y-2 text-white">
+          <div className="flex items-center gap-2 font-black text-amber-400">
+            <Crown size={18} className="text-amber-400 shrink-0" />
             <span>Acceso Anticipado VIP (Remate Exclusivo)</span>
           </div>
-          <p className="text-amber-900 leading-relaxed text-[11px]">
+          <p className="text-slate-300 leading-relaxed text-[11px]">
             Este producto fue publicado hace menos de 30 minutos. Se desbloquea para todo público en{' '}
-            <strong className="font-mono text-amber-950 underline">{vipAccess.minutesRemaining} minutos</strong>.
+            <strong className="font-mono text-amber-400 underline">{vipAccess.minutesRemaining} minutos</strong>.
           </p>
           <div className="flex gap-2 pt-1">
             <button
@@ -62,14 +62,14 @@ export default function ProductActions({ product, store, tasa }: Props) {
         </div>
       ) : isOutOfStock ? (
         <div className="space-y-2">
-          <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2">
-            <Users size={16} className="text-amber-600 shrink-0" />
+          <div className="p-3 bg-amber-950/30 rounded-2xl border border-amber-900/50 text-xs text-amber-300 flex items-center gap-2">
+            <Users size={16} className="text-amber-400 shrink-0" />
             <span>Este producto se encuentra en <strong>Reserva Temporal</strong> o agotado para hoy.</span>
           </div>
 
           <button
             onClick={() => setIsWaitlistModalOpen(true)}
-            className="cursor-pointer w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-4 rounded-2xl font-black text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
+            className="cursor-pointer w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-4 rounded-2xl font-black text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 active:scale-98"
           >
             <Users size={18} />
             Anotarme en la Fila de Espera (Mismo Precio)
@@ -78,7 +78,7 @@ export default function ProductActions({ product, store, tasa }: Props) {
       ) : (
         <button
           onClick={() => setIsReserveModalOpen(true)}
-          className="cursor-pointer w-full bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white py-4 rounded-2xl font-black text-base shadow-xl shadow-teal-500/25 transition-all transform active:scale-98 flex items-center justify-center gap-2"
+          className="cursor-pointer w-full bg-gradient-to-r from-emerald-600 via-teal-500 to-[#00ffb2] hover:brightness-110 text-black py-4 rounded-2xl font-black text-base shadow-[0_0_25px_rgba(0,255,178,0.25)] transition-all transform active:scale-98 flex items-center justify-center gap-2"
         >
           <Clock size={20} />
           Apartar Producto (Reserva Garantizada)

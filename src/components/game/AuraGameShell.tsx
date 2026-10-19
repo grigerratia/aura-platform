@@ -72,6 +72,7 @@ export default function AuraGameShell({
         walletCreditUSD={walletCredit}
         selectedCity={selectedCity}
         onSelectCity={setSelectedCity}
+        tasa={initialTasa}
       />
 
       {/* 3. ÁREA CENTRAL CON TRANSICIÓN DE HUMO / MATERIALIZACIÓN */}
