@@ -10,7 +10,7 @@ import {
   CheckCircle2, AlertCircle, LogOut, ChevronRight,
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
-  DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock
+  DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -46,7 +46,7 @@ export default function OwnerDashboard() {
   const [cashierPin, setCashierPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
 
-  // Formulario Adaptativo Multi-Rubro V3.0
+  // Formulario Adaptativo Multi-Rubro
   const [formData, setFormData] = useState<{
     product_id: string;
     name: string;
@@ -161,7 +161,7 @@ export default function OwnerDashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return router.push('/negocios');
 
-    // 1. Buscar en stores por owner_id (fuente de verdad principal)
+    // 1. Buscar en stores por owner_id
     let targetStoreData: any = null;
     const { data: storeByOwner } = await supabase
       .from('stores')
@@ -189,7 +189,6 @@ export default function OwnerDashboard() {
 
         if (storeData) {
           targetStoreData = storeData;
-          // Auto-vincular owner_id si estaba null
           if (!storeData.owner_id) {
             await supabase.from('stores').update({ owner_id: user.id }).eq('id', storeData.id);
           }
@@ -201,7 +200,6 @@ export default function OwnerDashboard() {
       setStoreId(targetStoreData.id);
       setStore(targetStoreData as Store);
 
-      // Auto-reparar profile para asegurar rol de dueño
       await supabase.from('profiles').upsert({
         id: user.id,
         role: 'owner',
@@ -214,7 +212,6 @@ export default function OwnerDashboard() {
         fetchReservations(targetStoreData.id)
       ]);
     } else {
-      // Redirigir a /negocios para que elija o registre su tienda sin alertas molestas
       router.push('/negocios');
     }
     setLoading(false);
@@ -241,7 +238,7 @@ export default function OwnerDashboard() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
-  // SEMÁFORO DE ACCIÓN: Botón Verde, Amarillo y Rojo
+  // Semáforo de Acción
   const handleUpdateReservationStatus = async (
     reservation: Reservation, 
     newStatus: 'confirmed' | 'ultimo_par' | 'cancelled'
@@ -254,7 +251,6 @@ export default function OwnerDashboard() {
         .update({ status: targetDbStatus })
         .eq('id', reservation.id);
 
-      // Colateral sobre inventario
       if (newStatus === 'ultimo_par') {
         await supabase
           .from('store_products')
@@ -262,7 +258,6 @@ export default function OwnerDashboard() {
           .eq('store_id', reservation.store_id)
           .eq('product_id', reservation.product_id);
       } else if (newStatus === 'cancelled') {
-        // Registrar demanda perdida (Motor 1 & 4)
         await logLostDemand({
           storeId: reservation.store_id,
           productId: reservation.product_id,
@@ -288,7 +283,7 @@ export default function OwnerDashboard() {
     }
   };
 
-  // Validar PIN en Caja (Validar Entrega y Cobro)
+  // Validar PIN en caja
   const handleValidatePin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pinInput.trim()) return;
@@ -337,43 +332,40 @@ export default function OwnerDashboard() {
           .update({ status: 'completed' })
           .eq('id', target.id);
 
-        setPinSuccessMessage(`¡Venta validada con éxito! PIN #${cleanPin} completado para ${target.customer_name}.`);
+        setPinSuccessMessage(`✓ Venta validada: PIN #${cleanPin} (${target.customer_name}).`);
         setPinInput('');
         if (storeId) fetchReservations(storeId);
       } catch {
-        setPinSuccessMessage(`PIN #${cleanPin} validado localmente con éxito.`);
+        setPinSuccessMessage(`PIN #${cleanPin} validado con éxito.`);
       }
     } else {
-      alert('PIN no encontrado o ya expirado. Verifica los 4 dígitos con el cliente.');
+      alert('PIN no encontrado o ya expirado. Verifica los 4 dígitos.');
     }
   };
 
-  // CANDADO DE CONFIANZA: [Cliente asistió pero no llevó el producto (Liberar Stock)]
+  // Candado de Confianza: liberar stock a billetera
   const handleAttendedNoSale = async (res: Reservation) => {
     const feeToRefund = res.unlock_fee_usd && res.unlock_fee_usd > 0 ? res.unlock_fee_usd : 3.00;
-    if (!confirm(`¿Confirmas que ${res.customer_name} asistió a la tienda pero no llevó el producto? Se liberará el stock y se abonarán $${feeToRefund.toFixed(2)} USD a su Billetera Aura.`)) return;
+    if (!confirm(`¿El cliente asistió pero no llevó la prenda? Se liberará el stock y se abonarán $${feeToRefund.toFixed(2)} USD a su Billetera Aura.`)) return;
 
     try {
-      // 1. Actualizar reserva a ATTENDED_NO_SALE
       await supabase
         .from('reservations')
         .update({ status: 'ATTENDED_NO_SALE' })
         .eq('id', res.id);
 
-      // 2. Liberar stock en la tienda
       await supabase
         .from('store_products')
         .update({ is_active: true, stock: 10 })
         .eq('store_id', res.store_id)
         .eq('product_id', res.product_id);
 
-      // 3. Acreditar saldo a favor en la billetera de protección
       await refundFeeToWallet({
         reservationId: res.id,
         amountUsd: feeToRefund
       });
 
-      alert(`✓ Stock liberado con éxito en tu vitrina. El saldo a favor de $${feeToRefund.toFixed(2)} USD fue acreditado en la Billetera Aura de ${res.customer_name}.`);
+      alert(`✓ Stock liberado. Saldo de $${feeToRefund.toFixed(2)} acreditado al cliente.`);
       if (storeId) {
         fetchReservations(storeId);
         fetchInventory(storeId);
@@ -383,7 +375,7 @@ export default function OwnerDashboard() {
     }
   };
 
-  // Guardar Producto Adaptativo Multi-Rubro V3.0
+  // Guardar Producto
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!storeId) return;
@@ -393,7 +385,6 @@ export default function OwnerDashboard() {
       let currentProductId = formData.product_id;
       const archetypeConfig = getArchetypeConfig(formData.category_archetype);
 
-      // Construcción de variantes JSONB según arquetipo
       let variantsPayload: { label: string; options: string[] }[] = [];
       if (formData.category_archetype === 'RETAIL_STANDARD') {
         const parsedSizes = formData.sizes.split(',').map(s => s.trim()).filter(Boolean);
@@ -405,7 +396,6 @@ export default function OwnerDashboard() {
         variantsPayload = [{ label: 'Transmisión', options: ['Automática', 'Sincrónica'] }];
       }
 
-      // Ficha técnica JSONB
       const specsPayload: Record<string, any> = {};
       if (formData.spec_1.trim()) specsPayload['especificacion_1'] = formData.spec_1.trim();
       if (formData.spec_2.trim()) specsPayload['especificacion_2'] = formData.spec_2.trim();
@@ -415,13 +405,11 @@ export default function OwnerDashboard() {
       const salePriceNum = formData.sale_price ? parseFloat(formData.sale_price) : null;
       const finalAuraPrice = salePriceNum || priceNum;
 
-      // Calcular fee de desbloqueo (10% con tope de arquetipo)
       const rawFee = finalAuraPrice * 0.10;
       const unlockFeeCalculated = formData.is_clearance 
         ? Math.min(rawFee, archetypeConfig.maxUnlockFeeCap) 
         : 0;
 
-      // Si es un producto nuevo en el catálogo global
       if (!currentProductId) {
         const { data: newP, error: pError } = await supabase
           .from('products')
@@ -450,7 +438,6 @@ export default function OwnerDashboard() {
         ? Math.round(((regularPriceNum - finalAuraPrice) / regularPriceNum) * 100)
         : formData.is_clearance ? 25 : 0;
 
-      // Insertar en store_products
       const { error: spError } = await supabase
         .from('store_products')
         .insert([{
@@ -464,7 +451,7 @@ export default function OwnerDashboard() {
 
       if (spError) throw spError;
 
-      alert(`✓ Producto publicado en tu vitrina (${archetypeConfig.name}).`);
+      alert(`✓ Producto publicado en tu vitrina.`);
       setIsAdding(false);
       setFormData({
         product_id: '',
@@ -501,15 +488,14 @@ export default function OwnerDashboard() {
 
   const handleClearInventory = async () => {
     if (!storeId) return;
-    if (!confirm("⚠️ ¿Estás seguro de que deseas eliminar TODOS los productos de tu vitrina para comenzar de cero? Esta acción no se puede deshacer.")) return;
+    if (!confirm("¿Deseas eliminar todos los productos para comenzar de cero?")) return;
     setLoading(true);
     try {
       const { error } = await supabase.from('store_products').delete().eq('store_id', storeId);
       if (error) throw error;
-      alert("✓ Tu inventario ha sido vaciado. Ya puedes comenzar a subir tus nuevos productos.");
       await fetchInventory(storeId);
     } catch (err: any) {
-      alert("Error al vaciar inventario: " + err.message);
+      alert("Error: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -531,7 +517,7 @@ export default function OwnerDashboard() {
         .eq('id', storeId);
 
       if (error) throw error;
-      alert("✓ Solicitud enviada con éxito. El equipo de Aura revisará tu tienda en minutos.");
+      alert("✓ Solicitud enviada con éxito.");
       setShowVerifyModal(false);
       if (store) {
         setStore({
@@ -543,7 +529,7 @@ export default function OwnerDashboard() {
         });
       }
     } catch (err: any) {
-      alert("Error al solicitar verificación: " + err.message);
+      alert("Error: " + err.message);
     } finally {
       setVerifyLoading(false);
     }
@@ -557,17 +543,13 @@ export default function OwnerDashboard() {
       const cleanPin = cashierPin.trim();
       const { error } = await supabase
         .from('stores')
-        .update({
-          cashier_access_pin: cleanPin
-        })
+        .update({ cashier_access_pin: cleanPin })
         .eq('id', storeId);
 
       if (error) throw error;
-      alert(`✓ PIN de Mostrador actualizado a: ${cleanPin}`);
+      alert(`✓ PIN de Mostrador actualizado: ${cleanPin}`);
       setShowPinModal(false);
-      if (store) {
-        setStore({ ...store, cashier_access_pin: cleanPin });
-      }
+      if (store) setStore({ ...store, cashier_access_pin: cleanPin });
     } catch (err: any) {
       alert("Error al actualizar PIN: " + err.message);
     } finally {
@@ -577,8 +559,8 @@ export default function OwnerDashboard() {
 
   if (loading && !isAdding) {
     return (
-      <div className="h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="animate-spin text-indigo-600" size={48} />
+      <div className="min-h-screen flex items-center justify-center bg-[#020508] text-white">
+        <Loader2 className="animate-spin text-emerald-400" size={36} />
       </div>
     );
   }
@@ -586,7 +568,6 @@ export default function OwnerDashboard() {
   const storeSlug = store?.slug || '';
   const storeUrl = typeof window !== 'undefined' ? `${window.location.origin}/${storeSlug}` : `https://aura.lat/${storeSlug}`;
 
-  // Métricas del Panel de Impacto
   const completedReservations = reservations.filter(
     r => r.status === 'completed' || r.status === 'completada' || r.status === 'COMPLETED_IN_STORE' || r.payment_reference
   );
@@ -604,54 +585,53 @@ export default function OwnerDashboard() {
   );
 
   const planTier = store?.plan_tier || 'VITRINA_20';
-  const planName = planTier === 'DOMINIO_80' ? 'Dominio ($80/mes)' : planTier === 'ACELERADOR_45' ? 'Acelerador ($45/mes)' : 'Vitrina ($20/mes)';
+  const planName = planTier === 'DOMINIO_80' ? 'Dominio' : planTier === 'ACELERADOR_45' ? 'Acelerador' : 'Vitrina';
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans">
+    <div className="min-h-screen bg-[#020508] text-slate-200 flex flex-col md:flex-row font-sans selection:bg-[#00ffb2] selection:text-black">
       
-      {/* SIDEBAR DE COMERCIO */}
-      <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col shrink-0">
-        <div className="p-4 md:p-6 border-b border-slate-800 flex items-center justify-between gap-3">
+      {/* 1. SIDEBAR DE COMERCIO */}
+      <aside className="w-full md:w-64 bg-[#030910] border-r border-slate-900 flex flex-col shrink-0">
+        
+        {/* Cabecera del Comercio */}
+        <div className="p-4 md:p-5 border-b border-slate-900 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-black text-xl text-slate-950 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center font-black text-base text-black shrink-0">
               A
             </div>
             <div className="min-w-0">
-              <h2 className="font-black text-white text-base tracking-tight leading-none truncate max-w-[140px]">
-                {store?.name || 'AURA OPS'}
+              <h2 className="font-bold text-white text-sm tracking-tight truncate max-w-[130px]">
+                {store?.name || 'Mi Comercio'}
               </h2>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="text-[9px] bg-indigo-500/30 text-indigo-300 font-bold px-1.5 py-0.5 rounded border border-indigo-400/30">
-                  {planName}
-                </span>
-              </div>
+              <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">
+                Plan {planName}
+              </span>
             </div>
           </div>
 
           <button
             onClick={() => supabase.auth.signOut().then(() => router.push('/negocios'))}
-            className="md:hidden cursor-pointer flex items-center gap-1.5 text-xs font-bold text-red-400 hover:text-white bg-red-950/50 hover:bg-red-600 border border-red-800/60 hover:border-red-600 px-3 py-1.5 rounded-xl transition"
+            className="md:hidden cursor-pointer p-1.5 text-slate-400 hover:text-rose-400 transition"
             title="Cerrar Sesión"
           >
-            <LogOut size={14} />
-            <span>Salir</span>
+            <LogOut size={16} />
           </button>
         </div>
 
-        {/* NAVEGACIÓN */}
-        <nav className="flex-1 p-4 space-y-1.5 flex md:flex-col overflow-x-auto">
+        {/* Pestañas de Navegación */}
+        <nav className="flex-1 p-3 space-y-1 flex md:flex-col overflow-x-auto">
           <button
             onClick={() => setActiveTab('reservations')}
-            className={`cursor-pointer flex items-center gap-3 w-full p-3 rounded-xl font-bold text-xs transition ${
+            className={`cursor-pointer flex items-center gap-2.5 w-full p-2.5 rounded-xl font-bold text-xs transition ${
               activeTab === 'reservations'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                ? 'bg-slate-900 text-white border border-slate-800'
+                : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
             }`}
           >
-            <Clock size={18} />
+            <Clock size={16} className={activeTab === 'reservations' ? 'text-emerald-400' : ''} />
             <span className="whitespace-nowrap">Semáforo de Reservas</span>
             {pendingReservations.length > 0 && (
-              <span className="ml-auto bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-black">
+              <span className="ml-auto bg-emerald-500/20 text-[#00ffb2] px-1.5 py-0.5 rounded text-[10px] font-bold">
                 {pendingReservations.length}
               </span>
             )}
@@ -659,33 +639,33 @@ export default function OwnerDashboard() {
 
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`cursor-pointer flex items-center gap-3 w-full p-3 rounded-xl font-bold text-xs transition ${
+            className={`cursor-pointer flex items-center gap-2.5 w-full p-2.5 rounded-xl font-bold text-xs transition ${
               activeTab === 'inventory'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                ? 'bg-slate-900 text-white border border-slate-800'
+                : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
             }`}
           >
-            <Package size={18} />
-            <span className="whitespace-nowrap">Mi Vitrina 80/20</span>
+            <Package size={16} className={activeTab === 'inventory' ? 'text-emerald-400' : ''} />
+            <span className="whitespace-nowrap">Mi Vitrina ({products.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('qr')}
-            className={`cursor-pointer flex items-center gap-3 w-full p-3 rounded-xl font-bold text-xs transition ${
+            className={`cursor-pointer flex items-center gap-2.5 w-full p-2.5 rounded-xl font-bold text-xs transition ${
               activeTab === 'qr'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                ? 'bg-slate-900 text-white border border-slate-800'
+                : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
             }`}
           >
-            <QrCode size={18} />
-            <span className="whitespace-nowrap">Hablador QR Vitrina</span>
+            <QrCode size={16} className={activeTab === 'qr' ? 'text-emerald-400' : ''} />
+            <span className="whitespace-nowrap">Hablador QR</span>
           </button>
 
-          {/* MODO MOSTRADOR PARA EMPLEADOS */}
-          <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl mt-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-teal-400 flex items-center gap-1">
-                <Lock size={12} /> Modo Mostrador
+          {/* MODO MOSTRADOR */}
+          <div className="p-3 bg-[#020508] border border-slate-900 rounded-xl mt-4 space-y-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                <Lock size={12} className="text-emerald-400" /> Mostrador
               </span>
               <button
                 type="button"
@@ -693,91 +673,86 @@ export default function OwnerDashboard() {
                   setCashierPin(store?.cashier_access_pin || '1234');
                   setShowPinModal(true);
                 }}
-                className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
+                className="text-slate-400 hover:text-white text-[10px] underline cursor-pointer"
               >
                 PIN: {store?.cashier_access_pin || '1234'}
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 leading-tight">
-              Para empleados en caja. No expone tus ventas ni inventario.
-            </p>
             {storeId && (
               <Link
                 href={`/mostrador/${storeId}`}
                 target="_blank"
-                className="w-full bg-slate-800 hover:bg-slate-700 text-teal-300 font-bold py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition text-[11px]"
+                className="w-full bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white font-bold py-1.5 px-2.5 rounded-lg flex items-center justify-between transition text-[11px]"
               >
-                <span>Abrir en Caja</span>
+                <span>Terminal de Caja</span>
                 <ArrowRight size={12} />
               </Link>
             )}
           </div>
         </nav>
 
-        {/* PIE DE SIDEBAR */}
-        <div className="p-4 border-t border-slate-800 flex items-center justify-between">
+        {/* Pie de Sidebar */}
+        <div className="p-3 border-t border-slate-900 flex items-center justify-between">
           {storeSlug && (
             <Link
               href={`/${storeSlug}`}
               target="_blank"
-              className="text-xs text-teal-400 hover:underline flex items-center gap-1 font-bold"
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1 font-semibold transition"
             >
-              Ver mi vitrina <ArrowRight size={12} />
+              <span>Ver mi vitrina</span>
+              <ArrowUpRight size={12} />
             </Link>
           )}
           <button
             onClick={() => supabase.auth.signOut().then(() => router.push('/negocios'))}
-            className="cursor-pointer text-slate-400 hover:text-red-400 transition p-2"
+            className="cursor-pointer text-slate-500 hover:text-rose-400 transition p-1.5"
             title="Cerrar Sesión"
           >
-            <LogOut size={18} />
+            <LogOut size={16} />
           </button>
         </div>
       </aside>
 
-      {/* CONTENIDO PRINCIPAL */}
-      <main className="flex-1 p-4 sm:p-8 overflow-y-auto max-w-7xl space-y-6">
-
-        {/* BARRA SUPERIOR DE ACCIONES Y SESIÓN */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+      {/* 2. CONTENIDO PRINCIPAL */}
+      <main className="flex-1 p-4 sm:p-6 overflow-y-auto max-w-6xl space-y-5">
+        
+        {/* BARRA SUPERIOR DE ACCIONES */}
+        <div className="bg-[#030910] border border-slate-900 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-slate-900 text-teal-400 flex items-center justify-center font-black text-lg shadow-inner">
+            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 flex items-center justify-center font-bold text-sm">
               {store?.name?.charAt(0) || 'A'}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-black text-slate-900 text-base sm:text-lg">
+                <h1 className="font-bold text-white text-base">
                   {store?.name || 'Mi Comercio'}
                 </h1>
-                <span className="text-[10px] font-black uppercase tracking-wider text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
-                  Online
-                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400" title="En línea" />
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Panel de Administración • Cumaná, Sucre
+              <p className="text-xs text-slate-400">
+                {store?.zone || 'Cumaná, Sucre'}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {storeSlug && (
               <Link
                 href={`/${storeSlug}`}
                 target="_blank"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-indigo-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2.5 rounded-xl transition shadow-xs"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 px-3 py-2 rounded-xl transition border border-slate-800"
               >
-                <span>Ver Vitrina Pública</span>
-                <ArrowRight size={13} />
+                <span>Vitrina Pública</span>
+                <ArrowUpRight size={13} />
               </Link>
             )}
 
             <button
               onClick={() => setShowPinModal(true)}
-              className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 border border-indigo-200 hover:border-indigo-600 px-3.5 py-2.5 rounded-xl transition shadow-xs active:scale-95"
-              title="Configurar PIN de Mostrador para Empleados"
+              className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 px-3 py-2 rounded-xl transition border border-slate-800"
             >
-              <Lock size={13} />
-              <span>PIN Mostrador</span>
+              <Lock size={13} className="text-emerald-400" />
+              <span>PIN</span>
             </button>
 
             <button
@@ -785,28 +760,21 @@ export default function OwnerDashboard() {
                 await supabase.auth.signOut();
                 router.push('/negocios');
               }}
-              className="cursor-pointer inline-flex items-center gap-2 text-xs font-black text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 px-4 py-2.5 rounded-xl transition shadow-sm active:scale-95"
-              title="Cerrar Sesión del Comercio"
+              className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-bold text-rose-400 hover:bg-rose-950/30 px-3 py-2 rounded-xl transition border border-rose-950/50"
+              title="Cerrar Sesión"
             >
-              <LogOut size={16} />
-              <span>Cerrar Sesión</span>
+              <LogOut size={14} />
+              <span>Salir</span>
             </button>
           </div>
         </div>
 
-        {/* BANNER DE ESTADO DE VERIFICACIÓN RÁPIDA B2B */}
+        {/* BANNER DE VERIFICACIÓN (DISCRETO Y DIRECTO) */}
         {(!store?.verification_status || store.verification_status === 'DRAFT_UNVERIFIED') && (
-          <div className="bg-amber-950/50 border border-amber-600/70 p-5 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm text-white animate-in fade-in">
-            <div className="flex items-start sm:items-center gap-3">
-              <AlertCircle className="text-amber-400 shrink-0 mt-0.5 sm:mt-0" size={26} />
-              <div>
-                <h4 className="font-bold text-sm text-amber-200">
-                  Tu tienda está en Modo Borrador (No visible en el buscador público de Cumaná)
-                </h4>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Puedes subir productos de inmediato, pero se publicarán en el feed cuando verifiques tu local en 1 minuto.
-                </p>
-              </div>
+          <div className="bg-amber-950/30 border border-amber-900/40 p-3.5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-200">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} className="text-amber-400 shrink-0" />
+              <span>Tienda en borrador: Verifícala para aparecer en el buscador público de Cumaná.</span>
             </div>
             <button
               onClick={() => {
@@ -817,154 +785,100 @@ export default function OwnerDashboard() {
                 });
                 setShowVerifyModal(true);
               }}
-              className="cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-2.5 rounded-xl text-xs transition shadow-md whitespace-nowrap active:scale-95"
+              className="cursor-pointer bg-amber-400 hover:bg-amber-300 text-black font-black px-3.5 py-1.5 rounded-xl text-xs transition shrink-0"
             >
-              Verificar mi Tienda en 1 Minuto
+              Verificar en 1 min
             </button>
           </div>
         )}
 
         {store?.verification_status === 'PENDING_REVIEW' && (
-          <div className="bg-indigo-950/60 border border-indigo-700/80 p-5 rounded-3xl flex items-center gap-3 shadow-sm text-white animate-in fade-in">
-            <Clock className="text-teal-400 shrink-0" size={24} />
-            <div>
-              <h4 className="font-bold text-sm text-teal-300">
-                Verificación en Revisión por el Equipo Aura
-              </h4>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Hemos recibido tu foto de fachada, RIF e Instagram. Tu tienda se activará públicamente en menos de 15 minutos.
-              </p>
-            </div>
+          <div className="bg-slate-900/60 border border-slate-800 p-3 rounded-2xl flex items-center gap-2 text-xs text-slate-300">
+            <Clock size={15} className="text-emerald-400 shrink-0" />
+            <span>Verificación en revisión por el equipo de Aura. Se activará en breve.</span>
           </div>
         )}
 
-        {store?.verification_status === 'VERIFIED' && (
-          <div className="bg-emerald-950/30 border border-emerald-800/60 px-4 py-2.5 rounded-2xl flex items-center justify-between text-xs text-emerald-300">
-            <span className="flex items-center gap-1.5 font-bold">
-              <ShieldCheck size={16} className="text-emerald-400" /> Tienda Verificada Oficialmente en Cumaná
-            </span>
-            <span className="text-[10px] text-slate-400 hidden sm:inline">Tus productos aparecen en el buscador y portada</span>
-          </div>
-        )}
-        
-        {/* PANEL DE IMPACTO Y DEMANDA PERDIDA */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* MÉTRICAS (DISEÑO LIMPIO Y MATE) */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           
-          {/* Tarjeta 1: Ventas Generadas por Aura */}
-          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-900/60 shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-black uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
-                <TrendingUp size={14} /> Ventas Generadas por Aura este mes
-              </span>
-              <span className="text-[10px] font-bold bg-teal-500/20 text-teal-300 px-2.5 py-0.5 rounded-full border border-teal-500/30">
-                QRs & Pagos Validados
-              </span>
-            </div>
-
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-3xl sm:text-4xl font-black text-white">
-                ${totalSalesUSD.toFixed(2)}
-              </span>
-              <span className="text-sm font-bold text-slate-300">USD</span>
-              <span className="text-xs font-semibold text-teal-400 ml-2">
+          <div className="bg-[#030910] p-4 rounded-2xl border border-slate-900 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <TrendingUp size={13} className="text-emerald-400" /> Ventas validadas por Aura
+            </span>
+            <div className="text-2xl font-black text-white flex items-baseline gap-2">
+              <span>${totalSalesUSD.toFixed(2)}</span>
+              <span className="text-xs text-slate-400 font-bold">USD</span>
+              <span className="text-xs text-emerald-400 font-semibold">
                 ≈ Bs. {totalSalesVES.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
               </span>
             </div>
-
-            <p className="text-xs text-slate-300 mt-2 flex items-center gap-1.5">
-              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-              <span><strong>{completedReservations.length} clientes</strong> compraron en tu tienda física gracias a Aura.</span>
-            </p>
+            <span className="text-[11px] text-slate-400 block">
+              {completedReservations.length} compras completadas en tienda
+            </span>
           </div>
 
-          {/* Tarjeta 2: Demanda Perdida / Búsquedas Agotadas */}
-          <div className="bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white p-6 rounded-3xl border border-purple-900/60 shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                <Users size={14} /> Demanda no Satisfecha en tu Tienda
-              </span>
-              <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-500/30">
-                Clics a Botón Rojo & Fila
-              </span>
+          <div className="bg-[#030910] p-4 rounded-2xl border border-slate-900 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <Users size={13} className="text-amber-400" /> Demanda no satisfecha
+            </span>
+            <div className="text-2xl font-black text-white flex items-baseline gap-2">
+              <span className="text-amber-400">{missedCustomersCount}</span>
+              <span className="text-xs text-slate-400 font-bold">clientes sin stock</span>
             </div>
-
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-3xl sm:text-4xl font-black text-amber-400">
-                {missedCustomersCount}
-              </span>
-              <span className="text-sm font-bold text-slate-300">clientes sin stock</span>
-            </div>
-
-            <p className="text-xs text-slate-300 mt-2 flex items-center gap-1.5">
-              <AlertCircle size={14} className="text-amber-400 shrink-0" />
-              <span>Intentaron apartar pero la talla o producto estaba agotado. ¡Surtir estos artículos representa ventas directas!</span>
-            </p>
+            <span className="text-[11px] text-slate-400 block">
+              Intentaron apartar cuando la talla o cupo estaba agotado
+            </span>
           </div>
 
         </section>
 
-        {/* PESTAÑA 1: SEMÁFORO DE RESERVAS Y VALIDACIÓN EN CAJA */}
+        {/* PESTAÑA 1: SEMÁFORO DE RESERVAS */}
         {activeTab === 'reservations' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             
-            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                  Semáforo de Reservas en Tienda
-                </h1>
-                <p className="text-slate-500 text-xs sm:text-sm font-medium">
-                  Confirma stock en estante o valida el PIN cuando el cliente llegue a caja física.
-                </p>
-              </div>
-            </header>
+            {/* VALIDADOR DE PIN RÁPIDO */}
+            <div className="bg-[#030910] p-4 rounded-2xl border border-slate-900 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-white text-sm">Validar PIN de Cliente en Caja</h3>
+                  <p className="text-xs text-slate-400">Ingresa los 4 dígitos del boleto cuando el cliente retire en tu local.</p>
+                </div>
 
-            {/* CAJA DE VALIDACIÓN POR PIN DE RETIRO + CANDADO DE CONFIANZA */}
-            <div className="bg-gradient-to-r from-indigo-900 to-purple-900 text-white p-6 rounded-3xl shadow-lg border border-indigo-800">
-              <div className="max-w-2xl">
-                <span className="text-[11px] font-black uppercase tracking-wider text-teal-300 block mb-1">
-                  Validador de Mostrador & Candado de Confianza
-                </span>
-                <h3 className="text-xl font-black mb-1">¿El cliente está frente al mostrador?</h3>
-                <p className="text-xs text-white/80 mb-4">
-                  Pídele su PIN de 4 dígitos para completar la venta o liberar el stock si la prenda no le quedó.
-                </p>
-
-                <form onSubmit={handleValidatePin} className="flex flex-wrap gap-2">
+                <form onSubmit={handleValidatePin} className="flex gap-2 shrink-0">
                   <input
                     type="text"
                     maxLength={6}
-                    placeholder="Ej: 4821"
+                    placeholder="PIN #4821"
                     value={pinInput}
                     onChange={(e) => setPinInput(e.target.value)}
-                    className="p-3 bg-white text-slate-900 rounded-xl font-mono font-black text-lg text-center w-36 outline-none focus:ring-2 focus:ring-teal-400"
+                    className="px-3 py-2 bg-[#020508] text-white rounded-xl font-mono text-center w-28 text-sm border border-slate-800 outline-none focus:border-emerald-500"
                   />
                   <button
                     type="submit"
-                    className="cursor-pointer bg-teal-400 hover:bg-teal-300 text-slate-950 font-black px-5 py-3 rounded-xl transition text-xs sm:text-sm flex items-center gap-2 shadow-md"
+                    className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
                   >
-                    <CheckCircle2 size={18} /> Validar Entrega y Cobro
+                    <CheckCircle2 size={15} />
+                    <span>Validar</span>
                   </button>
                 </form>
-
-                {pinSuccessMessage && (
-                  <div className="mt-3 p-3 bg-teal-500/20 border border-teal-400/40 rounded-xl text-teal-200 text-xs font-bold flex items-center gap-2">
-                    <CheckCircle2 size={16} /> {pinSuccessMessage}
-                  </div>
-                )}
               </div>
+
+              {pinSuccessMessage && (
+                <div className="p-2.5 bg-emerald-950/40 border border-emerald-900/60 rounded-xl text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={14} /> {pinSuccessMessage}
+                </div>
+              )}
             </div>
 
-            {/* LISTADO DE RESERVAS CON EL SEMÁFORO */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Clock size={18} className="text-indigo-600" />
-                Reservas y Turnos Activos ({pendingReservations.length})
-              </h3>
+            {/* LISTA DE RESERVAS */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-slate-400 font-bold">
+                <span>Reservas en Curso ({pendingReservations.length})</span>
+              </div>
 
               {pendingReservations.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {pendingReservations.map((res) => {
                     const hasPagoMovil = res.customer_phone?.includes('PAGO_MOVIL') || res.customer_phone?.includes('REF:');
                     const isWaitlist = res.customer_name?.includes('[FILA DE ESPERA]');
@@ -973,124 +887,99 @@ export default function OwnerDashboard() {
                     return (
                       <div
                         key={res.id}
-                        className={`bg-white p-5 rounded-3xl border shadow-sm flex flex-col justify-between space-y-4 ${
-                          hasPagoMovil ? 'border-emerald-300 ring-2 ring-emerald-400/20' : 'border-slate-200'
-                        }`}
+                        className="bg-[#030910] p-4 rounded-2xl border border-slate-900 flex flex-col justify-between space-y-3"
                       >
                         <div>
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-xs font-black bg-slate-900 text-teal-400 px-2 py-0.5 rounded-md">
-                                  PIN #{res.pin}
-                                </span>
-                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                                  {archetype.name.split(',')[0]}
-                                </span>
-                              </div>
-                              <h4 className="font-black text-slate-900 text-base mt-1.5 leading-snug">
-                                {res.product_name}
-                              </h4>
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-black text-emerald-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                                PIN #{res.pin}
+                              </span>
+                              <span className="text-[10px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded">
+                                {archetype.name.split(',')[0]}
+                              </span>
                             </div>
-                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-900/40">
                               {res.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
                             </span>
                           </div>
 
-                          {/* Badge de Pago Móvil Directo */}
+                          <h4 className="font-bold text-white text-sm leading-snug">
+                            {res.product_name}
+                          </h4>
+
                           {hasPagoMovil && (
-                            <div className="mb-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2">
-                              <Smartphone size={14} className="text-emerald-600 shrink-0" />
-                              <div className="font-medium truncate text-[11px]">
-                                <strong>Pago Notificado:</strong> {res.customer_phone}
-                              </div>
+                            <div className="mt-1.5 p-1.5 bg-emerald-950/40 rounded-lg border border-emerald-900/40 text-[11px] text-emerald-300 flex items-center gap-1.5">
+                              <Smartphone size={12} className="text-emerald-400 shrink-0" />
+                              <span className="truncate">{res.customer_phone}</span>
                             </div>
                           )}
 
-                          {/* Badge de Fila de Espera */}
-                          {isWaitlist && (
-                            <div className="mb-2 p-2 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
-                              <Users size={14} className="text-amber-600 shrink-0" />
-                              <div className="text-[11px]">
-                                <strong>Fila de Espera:</strong> Cliente aguarda turno si el actual no retira.
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="space-y-1 text-xs text-slate-600">
+                          <div className="mt-2 space-y-0.5 text-xs text-slate-400">
                             {res.selected_size && (
-                              <p>Variante / Talla: <strong className="text-slate-900">{res.selected_size}</strong></p>
+                              <p>Variante: <span className="text-white font-medium">{res.selected_size}</span></p>
                             )}
-                            <p>Cliente: <strong className="text-slate-900">{res.customer_name}</strong> ({res.customer_phone})</p>
+                            <p>Cliente: <span className="text-white font-medium">{res.customer_name}</span> ({res.customer_phone})</p>
                             
-                            {/* Desglose de Split Payment */}
                             {res.unlock_fee_usd && res.unlock_fee_usd > 0 ? (
-                              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 mt-2 space-y-0.5">
-                                <div className="text-[11px] text-teal-700 font-semibold flex items-center gap-1">
-                                  <ShieldCheck size={12} /> Anticipo cobrado por Aura: <strong>${res.unlock_fee_usd.toFixed(2)} USD</strong>
-                                </div>
-                                <div className="text-xs text-slate-900 font-bold">
-                                  Cobrar en tu caja: <strong className="text-emerald-700 font-black">${(res.store_pay_balance_usd ?? res.price_usd).toFixed(2)} USD</strong> (Bs. {res.price_ves})
-                                </div>
+                              <div className="p-2 bg-[#020508] rounded-xl border border-slate-900 mt-1.5 text-xs">
+                                <span className="text-slate-400">Cobrar en caja: </span>
+                                <strong className="text-white font-black">${(res.store_pay_balance_usd ?? res.price_usd).toFixed(2)} USD</strong>
+                                <span className="text-emerald-400 ml-1.5 font-bold">Bs. {res.price_ves}</span>
                               </div>
                             ) : (
-                              <p className="mt-1">Total a cobrar en caja: <strong className="text-emerald-700 font-black">${res.price_usd} USD</strong> (Bs. {res.price_ves})</p>
+                              <p className="pt-1">Total en caja: <strong className="text-white font-black">${res.price_usd} USD</strong> (Bs. {res.price_ves})</p>
                             )}
                           </div>
                         </div>
 
-                        {/* SEMÁFORO DE ACCIÓN + CANDADO DE CONFIANZA */}
-                        <div className="pt-3 border-t border-slate-100 space-y-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                            Semáforo de Disponibilidad en Estante:
-                          </span>
+                        {/* SEMÁFORO DE ACCIÓN */}
+                        <div className="pt-2 border-t border-slate-900 space-y-2">
                           <div className="grid grid-cols-3 gap-1.5">
                             <button
                               onClick={() => handleUpdateReservationStatus(res, 'confirmed')}
-                              className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-2 rounded-xl text-[11px] font-bold transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
-                              title="El producto está en el estante y quedan más unidades"
+                              className="cursor-pointer bg-emerald-600/80 hover:bg-emerald-600 text-white py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                              title="Hay stock disponible"
                             >
-                              <Check size={14} className="mb-0.5" />
-                              <span>Sí hay (Activo)</span>
+                              <Check size={13} />
+                              <span>Sí Hay</span>
                             </button>
 
                             <button
                               onClick={() => handleUpdateReservationStatus(res, 'ultimo_par')}
-                              className="cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 p-2 rounded-xl text-[11px] font-black transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
-                              title="Último par/unidad: activa la fila de espera"
+                              className="cursor-pointer bg-amber-500/80 hover:bg-amber-500 text-black py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                              title="Última unidad disponible"
                             >
-                              <AlertCircle size={14} className="mb-0.5" />
-                              <span>Último Par</span>
+                              <AlertCircle size={13} />
+                              <span>Último</span>
                             </button>
 
                             <button
                               onClick={() => handleUpdateReservationStatus(res, 'cancelled')}
-                              className="cursor-pointer bg-red-600 hover:bg-red-500 text-white p-2 rounded-xl text-[11px] font-bold transition flex flex-col items-center justify-center text-center leading-tight shadow-sm"
-                              title="Agotado: registra demanda perdida"
+                              className="cursor-pointer bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-300 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                              title="Agotado"
                             >
-                              <X size={14} className="mb-0.5" />
+                              <X size={13} />
                               <span>Agotado</span>
                             </button>
                           </div>
 
-                          {/* BOTÓN SECUNDARIO CANDADO DE CONFIANZA */}
                           <button
                             type="button"
                             onClick={() => handleAttendedNoSale(res)}
-                            className="w-full text-slate-600 hover:text-indigo-600 hover:bg-slate-50 border border-dashed border-slate-200 rounded-xl py-2 px-3 text-[11px] font-bold transition flex items-center justify-center gap-1.5 cursor-pointer mt-1"
+                            className="w-full text-slate-400 hover:text-white bg-[#020508] hover:bg-slate-900 border border-slate-850 rounded-xl py-1.5 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
                           >
-                            <ShieldCheck size={13} className="text-teal-600" />
-                            <span>Cliente asistió pero no llevó (Liberar Stock a Billetera)</span>
+                            <ShieldCheck size={12} className="text-emerald-400" />
+                            <span>Cliente no llevó: Liberar stock a Billetera</span>
                           </button>
                         </div>
-
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center">
-                  <p className="text-slate-500 text-sm font-medium">No tienes reservas pendientes en este momento.</p>
+                <div className="bg-[#030910] p-8 rounded-2xl border border-slate-900 text-center text-xs text-slate-400">
+                  No tienes reservas pendientes en este momento.
                 </div>
               )}
             </div>
@@ -1098,129 +987,129 @@ export default function OwnerDashboard() {
           </div>
         )}
 
-        {/* PESTAÑA 2: MI VITRINA 80/20 (CATÁLOGO MULTI-RUBRO) */}
+        {/* PESTAÑA 2: MI VITRINA */}
         {activeTab === 'inventory' && (
-          <div className="space-y-6">
-            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="space-y-4">
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                  Mi Vitrina Multi-Rubro ({products.length} Productos)
-                </h1>
-                <p className="text-slate-500 text-xs sm:text-sm font-medium">
-                  Sube tus 15 a 40 productos clave con variantes dinámicas (Restaurantes, Retail, Tecnología, Vehículos).
+                <h2 className="text-lg font-bold text-white tracking-tight">
+                  Inventario de la Tienda ({products.length})
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Tus productos activos en el catálogo de Aura.
                 </p>
               </div>
+
               <div className="flex items-center gap-2">
                 {products.length > 0 && (
                   <button
                     onClick={handleClearInventory}
-                    className="cursor-pointer bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-4 py-3 rounded-2xl font-bold flex items-center gap-1.5 text-xs sm:text-sm transition shadow-sm"
-                    title="Eliminar todos los productos de tu vitrina para comenzar de nuevo"
+                    className="cursor-pointer text-slate-400 hover:text-rose-400 text-xs font-bold px-3 py-2 rounded-xl transition border border-slate-850"
                   >
-                    <Trash2 size={16} /> Vaciar Inventario
+                    Vaciar Inventario
                   </button>
                 )}
                 <button
                   onClick={() => setIsAdding(true)}
-                  className="cursor-pointer bg-slate-900 hover:bg-indigo-600 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 text-sm transition shadow-lg shadow-slate-900/10"
+                  className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
                 >
-                  <Plus size={18} /> Añadir Producto
+                  <Plus size={15} />
+                  <span>Añadir Producto</span>
                 </button>
               </div>
             </header>
 
-            {/* GRID O ESTADO VACÍO DE PRODUCTOS EN VITRINA */}
             {products.length === 0 ? (
-              <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center max-w-lg mx-auto my-6">
-                <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <Package size={32} />
-                </div>
-                <h3 className="text-lg font-black text-slate-900">Tu vitrina está lista para despegar</h3>
-                <p className="text-xs text-slate-500 mt-1 mb-6">
-                  Aún no tienes productos publicados. Agrega tus artículos o combos estrella para que los compradores de Cumaná puedan reservarlos hoy mismo.
+              <div className="bg-[#030910] border border-slate-900 rounded-2xl p-10 text-center max-w-md mx-auto space-y-3">
+                <Package size={32} className="text-slate-600 mx-auto" />
+                <h3 className="text-sm font-bold text-white">Tu vitrina no tiene productos</h3>
+                <p className="text-xs text-slate-400">
+                  Agrega tus artículos estrella para que los compradores puedan reservarlos.
                 </p>
                 <button
                   onClick={() => setIsAdding(true)}
-                  className="cursor-pointer bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-white px-6 py-3.5 rounded-2xl font-black text-sm transition shadow-lg shadow-teal-500/20 inline-flex items-center gap-2"
+                  className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 transition"
                 >
-                  <Plus size={18} /> Publicar Mi Primer Producto
+                  <Plus size={14} />
+                  <span>Publicar Mi Primer Producto</span>
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {products.map((item) => {
-                const archetype = getArchetypeConfig(item.products?.category_archetype);
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {products.map((item) => {
+                  const archetype = getArchetypeConfig(item.products?.category_archetype);
 
-                return (
-                  <div
-                    key={item.id}
-                    className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between group hover:shadow-md transition"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
-                          {archetype.name.split(',')[0]}
-                        </span>
-                        <div className={`h-2.5 w-2.5 rounded-full ${item.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                      </div>
-
-                      <h3 className="font-bold text-slate-900 text-base leading-snug mb-1">
-                        {item.products?.name}
-                      </h3>
-
-                      {item.products?.variants && item.products.variants.length > 0 && (
-                        <p className="text-xs text-slate-500 mb-2">
-                          {item.products.variants[0].label}: <span className="font-semibold text-slate-700">{item.products.variants[0].options.join(', ')}</span>
-                        </p>
-                      )}
-
-                      <div className="flex items-baseline justify-between mt-2">
-                        <div>
-                          <span className="text-2xl font-black text-indigo-900">${item.price}</span>
-                          <span className="text-xs font-bold text-slate-400 ml-1">USD</span>
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-[#030910] p-4 rounded-2xl border border-slate-900 flex flex-col justify-between space-y-3"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900 text-slate-400">
+                            {archetype.name.split(',')[0]}
+                          </span>
+                          <span className={`w-2 h-2 rounded-full ${item.is_active ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                         </div>
-                        <span className="text-xs font-bold text-slate-500">
-                          {item.stock <= 1 ? 'Últimas unidades' : 'Disponible'}
+
+                        <h3 className="font-bold text-white text-sm leading-snug line-clamp-2">
+                          {item.products?.name}
+                        </h3>
+
+                        {item.products?.variants && item.products.variants.length > 0 && (
+                          <p className="text-[11px] text-slate-400 mt-1 truncate">
+                            {item.products.variants[0].label}: {item.products.variants[0].options.join(', ')}
+                          </p>
+                        )}
+
+                        <div className="flex items-baseline justify-between mt-2 pt-2 border-t border-slate-900">
+                          <div>
+                            <span className="text-lg font-black text-white">${item.price}</span>
+                            <span className="text-xs text-slate-400 font-bold ml-1">USD</span>
+                          </div>
+                          <span className="text-xs text-slate-400">
+                            {item.stock <= 1 ? 'Últimas unidades' : 'Disponible'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
+                        <button
+                          onClick={() => deleteProduct(item.id)}
+                          className="cursor-pointer text-slate-500 hover:text-rose-400 font-bold flex items-center gap-1 transition"
+                        >
+                          <Trash2 size={13} />
+                          <span>Quitar</span>
+                        </button>
+                        <span className="text-[11px] text-slate-400">
+                          {item.is_active ? 'Visible' : 'Pausado'}
                         </span>
                       </div>
                     </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <button
-                        onClick={() => deleteProduct(item.id)}
-                        className="cursor-pointer text-slate-400 hover:text-red-500 text-xs font-bold flex items-center gap-1 transition"
-                      >
-                        <Trash2 size={15} /> Quitar
-                      </button>
-                      <span className="text-[11px] font-bold text-slate-400">
-                        {item.is_active ? 'Visible en Aura' : 'Pausado'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
             )}
 
-            {/* MODAL ADAPTATIVO MULTI-RUBRO V3.0 */}
+            {/* MODAL MULTI-RUBRO DE AÑADIR PRODUCTO */}
             {isAdding && (
-              <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in overflow-y-auto">
-                <div className="bg-white w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl border border-slate-100 my-4 animate-in zoom-in-95">
-                  <div className="p-6 bg-slate-900 text-white flex justify-between items-center">
-                    <div>
-                      <h2 className="font-black text-lg">Publicar Producto en tu Vitrina</h2>
-                      <p className="text-xs text-slate-400">Formulario Inteligente según tu Rubro Comercial</p>
-                    </div>
-                    <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                      Cerrar
+              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in overflow-y-auto">
+                <div className="bg-[#030910] w-full max-w-lg rounded-3xl overflow-hidden border border-slate-800 shadow-2xl my-4 text-white">
+                  <div className="p-4 sm:p-5 border-b border-slate-900 flex justify-between items-center">
+                    <h3 className="font-bold text-sm text-white">Publicar Producto en Vitrina</h3>
+                    <button
+                      onClick={() => setIsAdding(false)}
+                      className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <X size={18} />
                     </button>
                   </div>
 
-                  <form onSubmit={handleSaveProduct} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                  <form onSubmit={handleSaveProduct} className="p-4 sm:p-5 space-y-3.5 max-h-[75vh] overflow-y-auto text-xs">
                     
-                    {/* SELECTOR DE ARQUETIPO DE CATEGORÍA */}
+                    {/* Rubro Comercial */}
                     <div className="space-y-1">
-                      <label className="text-xs font-bold uppercase text-slate-500">Rubro / Arquetipo Comercial</label>
+                      <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Rubro Comercial</label>
                       <select
                         value={formData.category_archetype}
                         onChange={(e) => {
@@ -1231,213 +1120,166 @@ export default function OwnerDashboard() {
                             category: arch === 'GASTRO_FLASH' ? 'Comida' : arch === 'HIGH_TICKET' ? 'Electrodomésticos' : arch === 'VEHICLES_CLASSIFIED' ? 'Vehículos' : 'Calzado'
                           });
                         }}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
                       >
-                        <option value="RETAIL_STANDARD">🛍️ Retail & Moda (Ropa, Calzado, Juguetes, Joyería)</option>
-                        <option value="GASTRO_FLASH">🍽️ Gastro Flash (Restaurantes, Cafés, Panaderías - Cupos Hoy)</option>
-                        <option value="HIGH_TICKET">📺 High Ticket (Electrodomésticos, Muebles, Tecnología - Apartado)</option>
-                        <option value="URGENT_SEARCH">🔧 Urgente (Ferretería, Farmacia, Repuestos)</option>
-                        <option value="VEHICLES_CLASSIFIED">🚗 Vehículos & Motos (Agendamiento de Citas Verificadas)</option>
+                        <option value="RETAIL_STANDARD">Retail & Moda (Ropa, Calzado, Joyería)</option>
+                        <option value="GASTRO_FLASH">Gastro Flash (Restaurantes, Cafés, Comida)</option>
+                        <option value="HIGH_TICKET">High Ticket (Electrodomésticos, Muebles)</option>
+                        <option value="URGENT_SEARCH">Urgente (Ferretería, Farmacia, Repuestos)</option>
+                        <option value="VEHICLES_CLASSIFIED">Vehículos & Motos</option>
                       </select>
                     </div>
 
-                    {/* Nombre del Producto */}
-                    <div className="space-y-1 relative">
-                      <label className="text-xs font-bold uppercase text-slate-500">Nombre del Producto o Combo</label>
+                    {/* Nombre */}
+                    <div className="space-y-1">
+                      <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Nombre del Producto</label>
                       <input
                         type="text"
                         required
-                        placeholder="Ej: Combo Hamburguesa Especial + Bebida (o Zapato Deportivo)"
+                        placeholder="Ej: Zapato Deportivo Casual o Combo Burger"
                         value={searchTerm}
                         onChange={(e) => {
                           setSearchTerm(e.target.value);
                           setFormData({ ...formData, name: e.target.value, product_id: '' });
                         }}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
                       />
                     </div>
 
-                    {/* Precios y Split-Payment */}
-                    <div className="grid grid-cols-2 gap-3">
+                    {/* Precios */}
+                    <div className="grid grid-cols-2 gap-2.5">
                       <div className="space-y-1">
-                        <label className="text-xs font-bold uppercase text-slate-500">Precio Regular ($)</label>
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Precio Regular ($)</label>
                         <input
                           type="number"
                           step="0.01"
                           required
-                          placeholder="Ej: 35.00"
+                          placeholder="35.00"
                           value={formData.price}
                           onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
                         />
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs font-bold uppercase text-slate-500">Precio Oferta Aura ($)</label>
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Precio Oferta Aura ($)</label>
                         <input
                           type="number"
                           step="0.01"
                           placeholder="Opcional"
                           value={formData.sale_price}
                           onChange={(e) => setFormData({ ...formData, sale_price: e.target.value })}
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
                         />
                       </div>
                     </div>
 
-                    {/* CAMPOS ADAPTATIVOS SEGÚN ARQUETIPO */}
+                    {/* Variantes según rubro */}
                     {formData.category_archetype === 'RETAIL_STANDARD' && (
                       <div className="space-y-1">
-                        <label className="text-xs font-bold uppercase text-slate-500">Tallas Disponibles (Separadas por coma)</label>
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Tallas (separadas por coma)</label>
                         <input
                           type="text"
-                          placeholder="Ej: 37, 38, 39, 40"
+                          placeholder="37, 38, 39, 40"
                           value={formData.sizes}
                           onChange={(e) => setFormData({ ...formData, sizes: e.target.value })}
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
                         />
                       </div>
                     )}
 
                     {formData.category_archetype === 'GASTRO_FLASH' && (
-                      <div className="space-y-3 p-4 bg-amber-50/60 border border-amber-200 rounded-2xl">
+                      <div className="space-y-2 p-3 bg-[#020508] border border-slate-850 rounded-xl">
                         <div className="space-y-1">
-                          <label className="text-xs font-bold uppercase text-amber-900">Modalidades de Consumo</label>
+                          <label className="text-slate-400 font-bold text-[10px] uppercase">Modalidad</label>
                           <input
                             type="text"
-                            placeholder="Ej: En Mesa / Local, Para Llevar"
+                            placeholder="En Mesa, Para Llevar"
                             value={formData.variant_options}
                             onChange={(e) => setFormData({ ...formData, variant_options: e.target.value })}
-                            className="w-full p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-medium"
+                            className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
                           />
                         </div>
-
                         <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-amber-900">Cupos Disponibles Hoy</label>
+                          <div>
+                            <label className="text-slate-400 font-bold text-[10px]">Cupos Hoy</label>
                             <input
                               type="number"
                               value={formData.stock_quota}
                               onChange={(e) => setFormData({ ...formData, stock_quota: parseInt(e.target.value) || 10 })}
-                              className="w-full p-2 bg-white border border-amber-300 rounded-xl text-xs font-bold"
+                              className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
                             />
                           </div>
-
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-amber-900">Válido Hoy Hasta</label>
+                          <div>
+                            <label className="text-slate-400 font-bold text-[10px]">Válido Hasta</label>
                             <input
                               type="text"
-                              placeholder="Ej: 21:00 hrs"
+                              placeholder="Ej: 21:00"
                               value={formData.spec_1}
                               onChange={(e) => setFormData({ ...formData, spec_1: e.target.value })}
-                              className="w-full p-2 bg-white border border-amber-300 rounded-xl text-xs"
+                              className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
                             />
                           </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <input
-                            type="checkbox"
-                            id="autoConfirmCheck"
-                            checked={formData.auto_confirm_stock}
-                            onChange={(e) => setFormData({ ...formData, auto_confirm_stock: e.target.checked })}
-                            className="w-4 h-4 text-amber-600 rounded cursor-pointer"
-                          />
-                          <label htmlFor="autoConfirmCheck" className="text-xs font-bold text-amber-950 flex items-center gap-1 cursor-pointer">
-                            <Zap size={14} className="text-amber-600" />
-                            Autoconfirmar cupo sin esperar botón verde (Ideal para combos del día)
-                          </label>
                         </div>
                       </div>
                     )}
 
                     {formData.category_archetype === 'HIGH_TICKET' && (
-                      <div className="grid grid-cols-2 gap-2 p-3 bg-teal-50 border border-teal-200 rounded-2xl">
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-teal-900">Garantía</label>
+                      <div className="grid grid-cols-2 gap-2 p-3 bg-[#020508] border border-slate-850 rounded-xl">
+                        <div>
+                          <label className="text-slate-400 font-bold text-[10px]">Garantía</label>
                           <input
                             type="text"
-                            placeholder="Ej: 1 año"
+                            placeholder="1 año"
                             value={formData.spec_1}
                             onChange={(e) => setFormData({ ...formData, spec_1: e.target.value })}
-                            className="w-full p-2 bg-white border border-teal-300 rounded-xl text-xs"
+                            className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
                           />
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-teal-900">Voltaje / Modelo</label>
+                        <div>
+                          <label className="text-slate-400 font-bold text-[10px]">Modelo / Voltaje</label>
                           <input
                             type="text"
-                            placeholder="Ej: 110V / Samsung"
+                            placeholder="110V"
                             value={formData.spec_2}
                             onChange={(e) => setFormData({ ...formData, spec_2: e.target.value })}
-                            className="w-full p-2 bg-white border border-teal-300 rounded-xl text-xs"
+                            className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
                           />
                         </div>
                       </div>
                     )}
 
-                    {formData.category_archetype === 'VEHICLES_CLASSIFIED' && (
-                      <div className="grid grid-cols-2 gap-2 p-3 bg-rose-50 border border-rose-200 rounded-2xl">
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-rose-900">Año de Fabricación</label>
-                          <input
-                            type="text"
-                            placeholder="Ej: 2021"
-                            value={formData.spec_1}
-                            onChange={(e) => setFormData({ ...formData, spec_1: e.target.value })}
-                            className="w-full p-2 bg-white border border-rose-300 rounded-xl text-xs"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-rose-900">Kilometraje (km)</label>
-                          <input
-                            type="text"
-                            placeholder="Ej: 45.000 km"
-                            value={formData.spec_2}
-                            onChange={(e) => setFormData({ ...formData, spec_2: e.target.value })}
-                            className="w-full p-2 bg-white border border-rose-300 rounded-xl text-xs"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Switches Adicionales: Remates & Aura Ads */}
-                    <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <div className="flex items-center gap-2">
+                    {/* Opciones adicionales */}
+                    <div className="space-y-2 pt-2 border-t border-slate-900">
+                      <label className="flex items-center gap-2 cursor-pointer text-slate-300">
                         <input
                           type="checkbox"
-                          id="clearanceCheck"
                           checked={formData.is_clearance}
                           onChange={(e) => setFormData({ ...formData, is_clearance: e.target.checked })}
-                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          className="w-4 h-4 rounded text-emerald-500 cursor-pointer"
                         />
-                        <label htmlFor="clearanceCheck" className="text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer">
-                          <Flame size={14} className="text-amber-500" />
-                          Destacar en &quot;Remates y Flash Outlets&quot;
-                        </label>
-                      </div>
+                        <Flame size={13} className="text-amber-400" />
+                        <span>Destacar en sección "Remates y Liquidaciones"</span>
+                      </label>
 
-                      <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer text-slate-300">
                         <input
                           type="checkbox"
-                          id="sponsoredCheck"
                           checked={formData.is_sponsored}
                           onChange={(e) => setFormData({ ...formData, is_sponsored: e.target.checked })}
-                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          className="w-4 h-4 rounded text-emerald-500 cursor-pointer"
                         />
-                        <label htmlFor="sponsoredCheck" className="text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer">
-                          <Sparkles size={14} className="text-teal-500" />
-                          Impulso Aura Ads (Aparecer de primero en búsquedas)
-                        </label>
-                      </div>
+                        <Sparkles size={13} className="text-emerald-400" />
+                        <span>Impulso Aura Ads (Prioridad en búsquedas)</span>
+                      </label>
                     </div>
 
                     <button
                       type="submit"
                       disabled={loading}
-                      className="cursor-pointer w-full bg-slate-900 hover:bg-indigo-600 text-white py-3.5 rounded-xl font-black text-sm transition mt-2 shadow-md"
+                      className="cursor-pointer w-full bg-emerald-500 hover:bg-emerald-400 text-black py-2.5 rounded-xl font-bold text-xs transition mt-2"
                     >
-                      {loading ? <Loader2 className="animate-spin mx-auto" /> : 'Publicar Producto en Vitrina'}
+                      {loading ? 'Publicando...' : 'Publicar Producto'}
                     </button>
                   </form>
                 </div>
@@ -1448,179 +1290,133 @@ export default function OwnerDashboard() {
 
         {/* PESTAÑA 3: HABLADOR FÍSICO QR */}
         {activeTab === 'qr' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             <header>
-              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                Hablador Físico QR para tu Vitrina
-              </h1>
-              <p className="text-slate-500 text-xs sm:text-sm font-medium">
-                Imprime este cartel y colócalo en tu puerta o mostrador para convertir a los transeúntes en clientes.
+              <h2 className="text-lg font-bold text-white tracking-tight">
+                Hablador QR para Vitrina
+              </h2>
+              <p className="text-xs text-slate-400">
+                Imprime este código y colócalo en tu mostrador o puerta.
               </p>
             </header>
 
-            <div className="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-xl border-2 border-slate-900 text-center space-y-6">
-              
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-teal-400 text-xs font-black uppercase tracking-wider">
+            <div className="max-w-xs mx-auto bg-[#030910] p-6 rounded-2xl border border-slate-900 text-center space-y-4">
+              <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
                 AURA • Vitrina Local
               </div>
 
-              <div>
-                <h2 className="text-2xl font-black text-slate-900 leading-tight">
-                  ¿Pasaste rápido o estamos cerrados?
-                </h2>
-                <p className="text-slate-600 text-xs mt-2">
-                  Escanea aquí para ver nuestros precios reales adentro y apartar tu talla con precio congelado.
-                </p>
-              </div>
-
-              {/* CÓDIGO QR GENERADO */}
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 inline-block shadow-inner">
+              <div className="p-3 bg-white rounded-xl inline-block">
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(storeUrl)}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(storeUrl)}`}
                   alt={`QR de ${store?.name}`}
-                  className="w-48 h-48 mx-auto"
+                  className="w-40 h-40 mx-auto"
                 />
               </div>
 
-              <div className="space-y-1">
-                <strong className="block text-slate-900 font-black text-base">{store?.name}</strong>
-                <span className="text-xs text-slate-500 font-mono">{storeUrl}</span>
+              <div className="space-y-0.5">
+                <strong className="block text-white font-bold text-sm">{store?.name}</strong>
+                <span className="text-[11px] text-slate-400 font-mono truncate block">{storeUrl}</span>
               </div>
 
               <button
                 onClick={() => window.print()}
-                className="cursor-pointer w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md"
+                className="cursor-pointer w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 border border-slate-800"
               >
-                <Printer size={16} /> Imprimir Cartel de Vitrina
+                <Printer size={14} />
+                <span>Imprimir Cartel</span>
               </button>
-
             </div>
           </div>
         )}
 
-        {/* MODAL 1: VERIFICACIÓN RÁPIDA EN 1 MINUTO */}
+        {/* MODAL 1: VERIFICACIÓN */}
         {showVerifyModal && (
-          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
-            <div className="bg-white max-w-md w-full rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
+            <div className="bg-[#030910] max-w-sm w-full rounded-2xl p-5 border border-slate-800 shadow-2xl space-y-4 text-white">
               <div className="flex justify-between items-start">
                 <div>
-                  <span className="text-[10px] font-black uppercase text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                    Activación Inmediata
-                  </span>
-                  <h3 className="text-xl font-black text-slate-900 mt-1">
-                    Verificar Tienda en 1 Minuto
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Para proteger a los compradores y activar tu vitrina pública en el buscador de Cumaná.
-                  </p>
+                  <h3 className="text-base font-bold text-white">Verificar Tienda</h3>
+                  <p className="text-xs text-slate-400">Activa tu vitrina en el buscador de Cumaná.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowVerifyModal(false)}
-                  className="cursor-pointer p-2 text-slate-400 hover:text-slate-600 rounded-full"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={handleRequestVerification} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase text-slate-500">
-                    Foto de Fachada o Mostrador (Enlace / URL) *
-                  </label>
-                  <input
-                    type="url"
-                    required
-                    placeholder="https://ejemplo.com/mifachada.jpg o link de post"
-                    value={verifyForm.storefront_photo_url}
-                    onChange={(e) => setVerifyForm({ ...verifyForm, storefront_photo_url: e.target.value })}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <p className="text-[10px] text-slate-400">
-                    Puedes pegar un enlace a una imagen de tu local o de tu cuenta comercial.
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase text-slate-500">
-                    RIF de la Empresa o Cédula del Titular *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: J-40123456-7 o V-18234567"
-                    value={verifyForm.rif_or_id_number}
-                    onChange={(e) => setVerifyForm({ ...verifyForm, rif_or_id_number: e.target.value })}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase text-slate-500">
-                    Usuario de Instagram Comercial (@) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: @mitiendacumana"
-                    value={verifyForm.instagram_handle}
-                    onChange={(e) => setVerifyForm({ ...verifyForm, instagram_handle: e.target.value })}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={verifyLoading}
-                    className="cursor-pointer w-full bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-white font-black py-3.5 rounded-xl text-xs transition shadow-lg shadow-teal-500/20 flex items-center justify-center gap-2"
-                  >
-                    {verifyLoading ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" />
-                        <span>Enviando Verificación...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheck size={16} />
-                        <span>Enviar Solicitud de Verificación</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL 2: CONFIGURAR PIN DE MOSTRADOR / CAJERO */}
-        {showPinModal && (
-          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
-            <div className="bg-white max-w-sm w-full rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-4 animate-in zoom-in-95">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center">
-                    <Lock size={18} />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-slate-900">PIN de Mostrador</h3>
-                    <p className="text-[11px] text-slate-500">Para cajeros y empleados</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPinModal(false)}
-                  className="cursor-pointer p-1.5 text-slate-400 hover:text-slate-600 rounded-full"
+                  className="p-1 text-slate-400 hover:text-white"
                 >
                   <X size={16} />
                 </button>
               </div>
 
-              <form onSubmit={handleUpdateCashierPin} className="space-y-4">
+              <form onSubmit={handleRequestVerification} className="space-y-3 text-xs">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block">
-                    Nuevo PIN de Mostrador (4 a 6 dígitos)
-                  </label>
+                  <label className="text-slate-400 font-bold uppercase text-[10px]">Foto de Fachada (URL) *</label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://ejemplo.com/mifachada.jpg"
+                    value={verifyForm.storefront_photo_url}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, storefront_photo_url: e.target.value })}
+                    className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold uppercase text-[10px]">RIF o Cédula *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="J-40123456-7"
+                    value={verifyForm.rif_or_id_number}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, rif_or_id_number: e.target.value })}
+                    className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold uppercase text-[10px]">Instagram Comercial (@) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="@mitiendacumana"
+                    value={verifyForm.instagram_handle}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, instagram_handle: e.target.value })}
+                    className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={verifyLoading}
+                  className="cursor-pointer w-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-2.5 rounded-xl text-xs transition mt-2"
+                >
+                  {verifyLoading ? "Enviando..." : "Enviar Verificación"}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 2: PIN DE MOSTRADOR */}
+        {showPinModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
+            <div className="bg-[#030910] max-w-xs w-full rounded-2xl p-5 border border-slate-800 shadow-2xl space-y-4 text-white">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-base font-bold text-white">PIN de Mostrador</h3>
+                  <p className="text-xs text-slate-400">Para tus empleados en caja.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(false)}
+                  className="p-1 text-slate-400 hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateCashierPin} className="space-y-3 text-xs">
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold text-[10px] uppercase">Nuevo PIN (4 a 6 dígitos)</label>
                   <input
                     type="password"
                     maxLength={6}
@@ -1628,20 +1424,19 @@ export default function OwnerDashboard() {
                     placeholder="1234"
                     value={cashierPin}
                     onChange={(e) => setCashierPin(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center text-xl tracking-widest text-slate-900 outline-none focus:ring-2 focus:ring-teal-500"
+                    className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl font-mono text-center text-lg text-white outline-none focus:border-emerald-500"
                   />
-                  <p className="text-[11px] text-slate-400">
-                    Tus empleados ingresarán este PIN en: <br />
-                    <code className="text-indigo-600 font-mono text-[10px]">/mostrador/{storeId}</code>
+                  <p className="text-[10px] text-slate-500">
+                    Acceso en: <span className="font-mono text-slate-400">/mostrador/{storeId}</span>
                   </p>
                 </div>
 
                 <button
                   type="submit"
                   disabled={pinLoading}
-                  className="cursor-pointer w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl text-xs transition"
+                  className="cursor-pointer w-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-2 rounded-xl text-xs transition"
                 >
-                  {pinLoading ? "Guardando..." : "Guardar PIN de Mostrador"}
+                  {pinLoading ? "Guardando..." : "Guardar PIN"}
                 </button>
               </form>
             </div>
