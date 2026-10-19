@@ -1,34 +1,88 @@
-/* 1. La nueva forma de importar Tailwind en v4 */
 @import "tailwindcss";
 
-/* 2. Aquí declaramos tus colores personalizados para que Tailwind los convierta en clases como bg-brand-primary */
 @theme {
   --color-brand-primary: hsl(var(--brand-primary));
   --color-brand-secondary: hsl(var(--brand-secondary));
   --radius-aura: var(--radius-aura-val);
 }
 
-/* 3. Las variables base (que luego cambiaremos dinámicamente por cada negocio) */
 @layer base {
   :root {
-    --brand-primary: 262 83% 58%; /* Morado por defecto */
-    --brand-secondary: 210 100% 50%;
+    --brand-primary: 160 100% 45%; /* Verde Aurora */
+    --brand-secondary: 260 84% 65%; /* Violeta Aurora */
     --radius-aura-val: 1rem;
     
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --background: 240 10% 3.9%;
-      --foreground: 0 0% 98%;
-    }
+    --background: 222 47% 2%; /* Negro cielo profundo #020508 */
+    --foreground: 0 0% 98%;
   }
 
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-    font-family: Arial, Helvetica, sans-serif;
+    background-color: #020508;
+    color: #f8fafc;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
+}
+
+/* Efecto de Barrido de Luz Luminoso (Game Sweep / Shimmer) */
+@keyframes game-sweep-anim {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(250%) skewX(-20deg);
+  }
+}
+
+.game-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.game-sweep::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 80%
+  );
+  animation: game-sweep-anim 3.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+/* Resplandores y Estilos Aurora */
+.aurora-glow-green {
+  box-shadow: 0 0 25px -4px rgba(0, 255, 178, 0.35);
+}
+
+.aurora-glow-red {
+  box-shadow: 0 0 25px -4px rgba(244, 63, 94, 0.4);
+}
+
+.aurora-glow-cosmic {
+  box-shadow: 0 0 30px -4px rgba(168, 85, 247, 0.45);
+}
+
+/* Scrollbar ultra sutil para móviles y escritorio */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #020508;
+}
+::-webkit-scrollbar-thumb {
+  background: #064e3b;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #10b981;
 }
