@@ -10,7 +10,8 @@ import {
   CheckCircle2, AlertCircle, LogOut, ChevronRight,
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
-  DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight
+  DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight,
+  Upload, Image as ImageIcon, Camera
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -45,16 +46,21 @@ export default function OwnerDashboard() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [cashierPin, setCashierPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // Formulario Adaptativo Multi-Rubro
   const [formData, setFormData] = useState<{
     product_id: string;
     name: string;
+    description: string;
+    brand: string;
+    imageUrl: string;
     category: string;
     category_archetype: CategoryArchetype;
     price: string;
     regular_price: string;
     sale_price: string;
+    stock: number;
     sizes: string;
     variant_options: string;
     auto_confirm_stock: boolean;
@@ -68,11 +74,15 @@ export default function OwnerDashboard() {
   }>({
     product_id: '',
     name: '',
+    description: '',
+    brand: '',
+    imageUrl: '',
     category: 'Calzado',
     category_archetype: 'RETAIL_STANDARD',
     price: '',
     regular_price: '',
     sale_price: '',
+    stock: 10,
     sizes: '37, 38, 39, 40',
     variant_options: 'En Mesa, Para Llevar',
     auto_confirm_stock: false,
@@ -86,14 +96,19 @@ export default function OwnerDashboard() {
   });
 
   const fetchInventory = useCallback(async (sId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('store_products')
       .select(`
         *,
-        products (name, description, category, sizes, archetype, variants, specs, regular_price_usd, aura_price_usd, unlock_fee_usd, is_sponsored)
+        products (*)
       `)
       .eq('store_id', sId)
       .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error al cargar inventario:', error);
+      return;
+    }
 
     if (data) {
       const mapped = data.map((item: any) => ({
@@ -375,6 +390,53 @@ export default function OwnerDashboard() {
     }
   };
 
+  // Subir imagen a Supabase Storage
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP).');
+      return;
+    }
+
+    if (file.size > 6 * 1024 * 1024) {
+      alert('La imagen no debe superar los 6MB.');
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const fileExt = file.name.split('.').pop() || 'jpg';
+      const cleanFileName = `${storeId || 'tienda'}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+
+      const { data, error } = await supabase.storage
+        .from('product-images')
+        .upload(cleanFileName, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (error) {
+        console.error('Error al subir imagen a Storage:', error);
+        alert('No se pudo subir automáticamente. Puedes pegar el enlace directo (URL) de la imagen o verificar las políticas de almacenamiento.');
+        return;
+      }
+
+      const { data: publicData } = supabase.storage
+        .from('product-images')
+        .getPublicUrl(data.path);
+
+      if (publicData?.publicUrl) {
+        setFormData(prev => ({ ...prev, imageUrl: publicData.publicUrl }));
+      }
+    } catch (err: any) {
+      alert('Error al procesar la imagen: ' + err.message);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   // Guardar Producto
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -417,6 +479,9 @@ export default function OwnerDashboard() {
           .insert([{ 
             name: formData.name,
             slug: uniqueSlug,
+            description: formData.description.trim() || null,
+            brand: formData.brand.trim() || null,
+            imageUrl: formData.imageUrl.trim() || null,
             category: formData.category,
             archetype: formData.category_archetype,
             variants: variantsPayload,
@@ -439,13 +504,17 @@ export default function OwnerDashboard() {
         ? Math.round(((regularPriceNum - finalAuraPrice) / regularPriceNum) * 100)
         : formData.is_clearance ? 25 : 0;
 
+      const finalStock = Number(formData.stock) > 0 
+        ? Number(formData.stock) 
+        : (formData.stock_status === 'available' ? 10 : formData.stock_status === 'last_units' ? 2 : 0);
+
       const { error: spError } = await supabase
         .from('store_products')
         .insert([{
           store_id: storeId,
           product_id: currentProductId,
           price: finalAuraPrice,
-          stock: formData.stock_status === 'available' ? 10 : formData.stock_status === 'last_units' ? 2 : 0,
+          stock: finalStock,
           discount_percent: discountPercent,
           is_active: formData.is_active
         }]);
@@ -457,11 +526,15 @@ export default function OwnerDashboard() {
       setFormData({
         product_id: '',
         name: '',
+        description: '',
+        brand: '',
+        imageUrl: '',
         category: 'Calzado',
         category_archetype: 'RETAIL_STANDARD',
         price: '',
         regular_price: '',
         sale_price: '',
+        stock: 10,
         sizes: '37, 38, 39, 40',
         variant_options: 'En Mesa, Para Llevar',
         auto_confirm_stock: false,
@@ -1036,9 +1109,10 @@ export default function OwnerDashboard() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                 {products.map((item) => {
                   const archetype = getArchetypeConfig(item.products?.category_archetype);
+                  const p = item.products;
 
                   return (
                     <div
@@ -1046,6 +1120,16 @@ export default function OwnerDashboard() {
                       className="bg-[#030910] p-4 rounded-2xl border border-slate-900 flex flex-col justify-between space-y-3"
                     >
                       <div>
+                        {p?.imageUrl && (
+                          <div className="relative w-full h-36 rounded-xl overflow-hidden bg-slate-950 mb-3 border border-slate-850">
+                            <img
+                              src={p.imageUrl}
+                              alt={p.name || 'Producto'}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+
                         <div className="flex items-start justify-between gap-2 mb-1.5">
                           <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900 text-slate-400">
                             {archetype.name.split(',')[0]}
@@ -1053,13 +1137,25 @@ export default function OwnerDashboard() {
                           <span className={`w-2 h-2 rounded-full ${item.is_active ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                         </div>
 
+                        {p?.brand && (
+                          <span className="text-[10px] text-emerald-400/90 font-bold uppercase tracking-wider block mb-0.5">
+                            {p.brand}
+                          </span>
+                        )}
+
                         <h3 className="font-bold text-white text-sm leading-snug line-clamp-2">
-                          {item.products?.name}
+                          {p?.name}
                         </h3>
 
-                        {item.products?.variants && item.products.variants.length > 0 && (
+                        {p?.description && (
+                          <p className="text-[11px] text-slate-400 line-clamp-2 mt-1">
+                            {p.description}
+                          </p>
+                        )}
+
+                        {p?.variants && p.variants.length > 0 && (
                           <p className="text-[11px] text-slate-400 mt-1 truncate">
-                            {item.products.variants[0].label}: {item.products.variants[0].options.join(', ')}
+                            {p.variants[0].label}: {p.variants[0].options.join(', ')}
                           </p>
                         )}
 
@@ -1068,8 +1164,8 @@ export default function OwnerDashboard() {
                             <span className="text-lg font-black text-white">${item.price}</span>
                             <span className="text-xs text-slate-400 font-bold ml-1">USD</span>
                           </div>
-                          <span className="text-xs text-slate-400">
-                            {item.stock <= 1 ? 'Últimas unidades' : 'Disponible'}
+                          <span className="text-xs text-slate-400 font-medium">
+                            Stock: <strong className="text-white">{item.stock ?? 10}</strong> un.
                           </span>
                         </div>
                       </div>
@@ -1108,6 +1204,68 @@ export default function OwnerDashboard() {
 
                   <form onSubmit={handleSaveProduct} className="p-4 sm:p-5 space-y-3.5 max-h-[75vh] overflow-y-auto text-xs">
                     
+                    {/* Foto del Producto */}
+                    <div className="space-y-2 p-3 bg-[#020508] border border-slate-850 rounded-2xl">
+                      <div className="flex items-center justify-between">
+                        <label className="text-slate-300 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                          <Camera size={13} className="text-emerald-400" />
+                          <span>Foto del Producto</span>
+                        </label>
+                        {formData.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, imageUrl: '' })}
+                            className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                          >
+                            Quitar foto
+                          </button>
+                        )}
+                      </div>
+
+                      {formData.imageUrl ? (
+                        <div className="relative w-full h-36 rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+                          <img
+                            src={formData.imageUrl}
+                            alt="Vista previa"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <label className="w-full cursor-pointer bg-slate-900 hover:bg-slate-850 border border-dashed border-slate-700 hover:border-emerald-500/60 rounded-xl py-3 px-3 flex items-center justify-center gap-2 text-slate-300 transition text-xs font-semibold">
+                            {uploadingImage ? (
+                              <>
+                                <Loader2 size={15} className="animate-spin text-emerald-400" />
+                                <span>Subiendo foto a Supabase...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Upload size={15} className="text-emerald-400" />
+                                <span>Subir foto desde dispositivo</span>
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={uploadingImage}
+                              onChange={handleImageUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                      )}
+
+                      <div className="pt-1">
+                        <input
+                          type="url"
+                          placeholder="O pega el enlace de la foto (https://...)"
+                          value={formData.imageUrl}
+                          onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                          className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-xl text-white text-xs placeholder:text-slate-600 outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+
                     {/* Rubro Comercial */}
                     <div className="space-y-1">
                       <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Rubro Comercial</label>
@@ -1144,6 +1302,45 @@ export default function OwnerDashboard() {
                           setFormData({ ...formData, name: e.target.value, product_id: '' });
                         }}
                         className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    {/* Marca y Stock */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Marca / Fabricante</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Nike, Samsung, Casero..."
+                          value={formData.brand}
+                          onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Stock / Unidades</label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          placeholder="10"
+                          value={formData.stock}
+                          onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Descripción */}
+                    <div className="space-y-1">
+                      <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Descripción o Detalles</label>
+                      <textarea
+                        rows={2}
+                        placeholder="Describe el producto, materiales, estado o detalles importantes..."
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500 resize-none text-xs"
                       />
                     </div>
 
@@ -1277,10 +1474,10 @@ export default function OwnerDashboard() {
 
                     <button
                       type="submit"
-                      disabled={loading}
-                      className="cursor-pointer w-full bg-emerald-500 hover:bg-emerald-400 text-black py-2.5 rounded-xl font-bold text-xs transition mt-2"
+                      disabled={loading || uploadingImage}
+                      className="cursor-pointer w-full bg-emerald-500 hover:bg-emerald-400 text-black py-2.5 rounded-xl font-bold text-xs transition mt-2 disabled:opacity-50"
                     >
-                      {loading ? 'Publicando...' : 'Publicar Producto'}
+                      {loading ? 'Publicando...' : uploadingImage ? 'Subiendo foto...' : 'Publicar Producto'}
                     </button>
                   </form>
                 </div>
