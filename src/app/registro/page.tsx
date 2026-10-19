@@ -7,7 +7,8 @@ import Link from 'next/link';
 import {
   User, Mail, Lock, Phone, MapPin, Sparkles,
   ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, Loader2,
-  ShieldCheck, Wallet, Eye, EyeOff, Tag, Heart, Store, HelpCircle
+  ShieldCheck, Wallet, Eye, EyeOff, Tag, Heart, Store, HelpCircle,
+  ShoppingBag, Check
 } from 'lucide-react';
 
 const CUMANA_ZONES = [
@@ -35,7 +36,7 @@ export default function CustomerRegisterPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successRegistration, setSuccessRegistration] = useState(false);
 
-  // Form State
+  // Form State - sin valores por defecto arbitrarios para que el usuario elija conscientemente
   const [formData, setFormData] = useState({
     // Paso 1: Cuenta y Acceso
     full_name: '',
@@ -47,9 +48,9 @@ export default function CustomerRegisterPage() {
     id_doc: '',
 
     // Paso 3: Preferencias en Cumaná
-    favorite_zone: 'Centro de Cumaná',
-    shoe_size: '40',
-    clothing_size: 'M',
+    favorite_zone: '',
+    shoe_size: '',
+    clothing_size: '',
   });
 
   // Medidor de seguridad de contraseña
@@ -81,6 +82,10 @@ export default function CustomerRegisterPage() {
       if (!formData.phone.trim()) {
         return setErrorMsg('Por favor ingresa tu número de WhatsApp para notificarte tus reservas.');
       }
+      const clean = formData.phone.replace(/\D/g, '');
+      if (clean.length < 10) {
+        return setErrorMsg('Ingresa un número telefónico válido (ej: 04141234567).');
+      }
     }
     setStep((prev) => Math.min(prev + 1, 3) as any);
   };
@@ -90,9 +95,33 @@ export default function CustomerRegisterPage() {
     setStep((prev) => Math.max(prev - 1, 1) as any);
   };
 
+  // Prevenir envío accidental al presionar Enter en inputs o selects
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter') {
+      if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      if (step < 3) {
+        handleNextStep();
+      }
+      // En el paso 3, bloqueamos el enter accidental para que el usuario haga clic voluntario en "Crear mi Cuenta"
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+
+    // Salvaguarda: si no estamos en el paso final, simplemente avanza al siguiente paso
+    if (step < 3) {
+      handleNextStep();
+      return;
+    }
+
+    // Validación explícita del Paso 3
+    if (!formData.favorite_zone) {
+      return setErrorMsg('Por favor selecciona tu zona habitual de compra en Cumaná.');
+    }
+
     setLoading(true);
 
     try {
@@ -109,8 +138,8 @@ export default function CustomerRegisterPage() {
             role: 'customer',
             id_doc: formData.id_doc.trim() || null,
             favorite_zone: formData.favorite_zone,
-            preferred_shoe_size: formData.shoe_size,
-            preferred_clothing_size: formData.clothing_size,
+            preferred_shoe_size: formData.shoe_size || 'N/A',
+            preferred_clothing_size: formData.clothing_size || 'N/A',
           }
         }
       });
@@ -129,7 +158,7 @@ export default function CustomerRegisterPage() {
             password: formData.password
           });
           if (signInError) {
-            throw new Error(`Este correo ya está registrado en Aura. Por favor inicia sesión en la pantalla de login: ${signInError.message}`);
+            throw new Error(`Este correo ya está registrado en Aura. Por favor inicia sesión en la pantalla de login.`);
           }
           userId = signInData.user.id;
         } else {
@@ -156,12 +185,8 @@ export default function CustomerRegisterPage() {
         console.warn('Aviso en perfil de cliente:', profileError);
       }
 
+      // Mostrar pantalla de éxito amigable SIN auto-redirección abrupta
       setSuccessRegistration(true);
-
-      // Redirigir al inicio después de 1.5 segundos
-      setTimeout(() => {
-        router.push('/');
-      }, 1500);
 
     } catch (err: any) {
       console.error(err);
@@ -204,18 +229,70 @@ export default function CustomerRegisterPage() {
       {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-4xl mx-auto w-full px-4 py-8 md:py-12 flex-1 flex flex-col justify-center">
 
-        {/* PANTALLA DE ÉXITO */}
+        {/* PANTALLA DE ÉXITO (CONFIRMACIÓN TRANQUILA Y CLARA) */}
         {successRegistration ? (
-          <div className="max-w-md mx-auto w-full bg-slate-900 border border-teal-500/40 rounded-3xl p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="max-w-lg mx-auto w-full bg-slate-900 border border-teal-500/40 rounded-3xl p-6 sm:p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="w-16 h-16 rounded-3xl bg-teal-500/20 text-teal-400 border border-teal-500/30 flex items-center justify-center mx-auto mb-4 shadow-inner">
-              <CheckCircle2 size={36} />
+              <CheckCircle2 size={38} />
             </div>
-            <h2 className="text-2xl font-black text-white">¡Bienvenido a Aura!</h2>
-            <p className="text-slate-300 text-sm mt-2">
-              Tu cuenta ha sido creada exitosamente. Tu Billetera de Protección con Saldo a Favor está activa.
+
+            <h2 className="text-2xl sm:text-3xl font-black text-white">¡Bienvenido a Aura!</h2>
+            <p className="text-slate-300 text-sm mt-2 max-w-sm mx-auto">
+              Hola <strong className="text-teal-400">{formData.full_name}</strong>, tu cuenta de comprador inteligente en Cumaná ha sido creada con éxito.
             </p>
-            <div className="mt-6 p-4 bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-400">
-              Redirigiéndote a las mejores vitrinas de Cumaná...
+
+            {/* RESUMEN DE TU CUENTA ACTIVADA */}
+            <div className="my-6 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-left space-y-3">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 pb-2">
+                Resumen de tu Perfil Activado
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-500 block text-[10px]">CORREO DE ACCESO:</span>
+                  <span className="font-semibold text-slate-200 truncate block">{formData.email}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">WHATSAPP PARA RESERVAS:</span>
+                  <span className="font-semibold text-teal-400 block">{formData.phone}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">ZONA DE COMPRA:</span>
+                  <span className="font-semibold text-slate-200 block">{formData.favorite_zone || 'Centro de Cumaná'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">BILLETERA DE PROTECCIÓN:</span>
+                  <span className="font-black text-emerald-400 block">$0.00 USD (Activa)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* BENEFICIOS ACTIVADOS */}
+            <div className="p-3.5 bg-teal-950/40 border border-teal-800/50 rounded-2xl text-xs text-teal-200 text-left flex items-start gap-2.5 mb-6">
+              <ShieldCheck size={20} className="text-teal-400 shrink-0 mt-0.5" />
+              <div className="text-[11px] leading-relaxed">
+                Tus reservas en tiendas físicas cuentan con <strong>Candado de Confianza</strong>. Si un producto reservado no te sirve al probarlo en el mostrador, tu dinero queda respaldado en tu Billetera Aura.
+              </div>
+            </div>
+
+            {/* BOTONES DE ENTRADA A LA APP */}
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="w-full cursor-pointer bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-slate-950 font-black py-4 px-6 rounded-2xl text-sm transition shadow-lg shadow-teal-500/20 flex items-center justify-center gap-2 active:scale-95"
+              >
+                <ShoppingBag size={18} />
+                <span>Explorar Vitrinas de Cumaná</span>
+                <ArrowRight size={16} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="w-full cursor-pointer text-xs font-bold text-slate-400 hover:text-white py-2 transition"
+              >
+                Ir a la página principal
+              </button>
             </div>
           </div>
         ) : (
@@ -257,11 +334,11 @@ export default function CustomerRegisterPage() {
               {errorMsg && (
                 <div className="mb-5 p-4 bg-red-950/60 border border-red-800 rounded-2xl flex items-start gap-3 text-red-200 text-xs animate-in fade-in">
                   <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
-                  <span className="font-semibold">{errorMsg}</span>
+                  <span className="font-semibold leading-relaxed">{errorMsg}</span>
                 </div>
               )}
 
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown}>
 
                 {/* PASO 1: TU CUENTA */}
                 {step === 1 && (
@@ -401,26 +478,35 @@ export default function CustomerRegisterPage() {
 
                 {/* PASO 3: PREFERENCIAS LOCALES */}
                 {step === 3 && (
-                  <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="space-y-5 animate-in fade-in duration-150">
                     <div className="space-y-1">
-                      <h3 className="font-bold text-base text-white">Tu Experiencia Local</h3>
+                      <h3 className="font-bold text-base text-white">Tu Experiencia Local en Cumaná</h3>
                       <p className="text-xs text-slate-400">
-                        Personaliza tu feed para ver ofertas cercanas y liquidaciones en tu talla exacta.
+                        Configura tu zona para ver vitrinas cercanas y activa el Cazador de Tallas si compras calzado o ropa.
                       </p>
                     </div>
 
                     {/* Zona en Cumaná */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400 ml-1">
-                        Tu Zona Habitual en Cumaná
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400 ml-1 flex items-center justify-between">
+                        <span>Tu Zona Habitual de Compras *</span>
+                        {formData.favorite_zone && (
+                          <span className="text-[10px] text-teal-400 font-bold flex items-center gap-1">
+                            <Check size={12} /> Seleccionada
+                          </span>
+                        )}
                       </label>
                       <div className="relative">
                         <MapPin className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
                         <select
                           value={formData.favorite_zone}
-                          onChange={(e) => setFormData({ ...formData, favorite_zone: e.target.value })}
+                          onChange={(e) => {
+                            setFormData({ ...formData, favorite_zone: e.target.value });
+                            setErrorMsg(null);
+                          }}
                           className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-white text-sm font-medium cursor-pointer"
                         >
+                          <option value="">-- Elige tu zona comercial principal --</option>
                           {CUMANA_ZONES.map((zone) => (
                             <option key={zone} value={zone} className="bg-slate-900 text-white">
                               {zone}
@@ -432,16 +518,26 @@ export default function CustomerRegisterPage() {
 
                     {/* Talla de Calzado */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400 ml-1 flex items-center justify-between">
-                        <span>Talla de Calzado Habitual</span>
-                        <span className="text-[10px] text-teal-400 lowercase font-normal">para el Cazador de Tallas</span>
-                      </label>
+                      <div className="flex items-center justify-between ml-1">
+                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                          Talla de Calzado Habitual (Opcional)
+                        </label>
+                        {formData.shoe_size && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, shoe_size: '' })}
+                            className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {SHOE_SIZES.map((sz) => (
                           <button
                             key={sz}
                             type="button"
-                            onClick={() => setFormData({ ...formData, shoe_size: sz })}
+                            onClick={() => setFormData({ ...formData, shoe_size: formData.shoe_size === sz ? '' : sz })}
                             className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
                               formData.shoe_size === sz
                                 ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-md shadow-teal-500/20'
@@ -452,19 +548,33 @@ export default function CustomerRegisterPage() {
                           </button>
                         ))}
                       </div>
+                      <p className="text-[11px] text-slate-500 ml-1">
+                        Te avisaremos cuando una zapatería de tu zona publique remates en tu talla.
+                      </p>
                     </div>
 
                     {/* Talla de Ropa */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400 ml-1">
-                        Talla de Ropa Habitual
-                      </label>
+                      <div className="flex items-center justify-between ml-1">
+                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                          Talla de Ropa Habitual (Opcional)
+                        </label>
+                        {formData.clothing_size && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, clothing_size: '' })}
+                            className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {CLOTHING_SIZES.map((sz) => (
                           <button
                             key={sz}
                             type="button"
-                            onClick={() => setFormData({ ...formData, clothing_size: sz })}
+                            onClick={() => setFormData({ ...formData, clothing_size: formData.clothing_size === sz ? '' : sz })}
                             className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-bold transition border ${
                               formData.clothing_size === sz
                                 ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/20'
@@ -532,7 +642,7 @@ export default function CustomerRegisterPage() {
                     <button
                       type="submit"
                       disabled={loading}
-                      className="cursor-pointer ml-auto bg-teal-500 hover:bg-teal-400 text-slate-950 font-black px-7 py-3.5 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95 disabled:opacity-50"
+                      className="cursor-pointer ml-auto bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 text-slate-950 font-black px-7 py-3.5 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95 disabled:opacity-50"
                     >
                       {loading ? (
                         <>
@@ -578,4 +688,3 @@ export default function CustomerRegisterPage() {
     </div>
   );
 }
-
