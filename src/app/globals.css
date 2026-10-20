@@ -71,6 +71,40 @@
   box-shadow: 0 0 30px -4px rgba(168, 85, 247, 0.45);
 }
 
+/* Utilidades Cinematográficas de Aura (Efectos Monolíticos & Thanos) */
+.aura-cinema-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  background-color: rgba(5, 11, 22, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+}
+
+.aura-cinema-mask {
+  -webkit-mask-image: linear-gradient(125deg, #000 0%, #000 45%, transparent 68%);
+  mask-image: linear-gradient(125deg, #000 0%, #000 45%, transparent 68%);
+  -webkit-mask-size: 300% 300%;
+  mask-size: 300% 300%;
+  -webkit-mask-position: 0% 0%;
+  mask-position: 0% 0%;
+  transition: -webkit-mask-position 0.88s cubic-bezier(0.32, 0.04, 0.24, 1),
+    mask-position 0.88s cubic-bezier(0.32, 0.04, 0.24, 1);
+}
+
+.aura-cinema-mask-exit {
+  -webkit-mask-position: 100% 100% !important;
+  mask-position: 100% 100% !important;
+}
+
+.aura-text-gradient-aurora {
+  background: linear-gradient(to right, #a7f3d0, #00ffb2, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 /* Scrollbar ultra sutil para móviles y escritorio */
 ::-webkit-scrollbar {
   width: 5px;

@@ -67,6 +67,24 @@ export default function ThanosSvgFilter() {
             yChannelSelector="G"
           />
         </filter>
+
+        {/* Filtro Cinematográfico Aura: Fragmentación orgánica tipo arena/ceniza */}
+        <filter id="aura-cinema-erosion" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.065"
+            numOctaves="3"
+            seed="7"
+            result="noise"
+          />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="noise"
+            scale="24"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
       </defs>
     </svg>
   );
