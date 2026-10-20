@@ -107,6 +107,13 @@ export interface Store {
   // Modo Empleado / Mostrador
   cashier_access_pin?: string;
 
+  // Geolocalización y Reputación (Cercanía & Mejor Atención)
+  latitude?: number;
+  longitude?: number;
+  rating?: number;
+  reviews_count?: number;
+  category?: string;
+
   // Motor 1: Suscripciones B2B
   plan_tier?: StorePlanTier;
   subscription_status?: StoreSubscriptionStatus;

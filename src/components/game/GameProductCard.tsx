@@ -2,7 +2,7 @@
 
 import { Product } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
-import { Lock, Unlock, Zap, Flame, Users, Sparkles } from 'lucide-react';
+import { Unlock, Zap, Flame, Users, Sparkles, MapPin, Star, Heart } from 'lucide-react';
 import Image from 'next/image';
 
 interface Props {
@@ -12,6 +12,11 @@ interface Props {
   customBadge?: string;
   groupJoinedCount?: number;
   groupTargetCount?: number;
+  storeName?: string;
+  storeRating?: number;
+  distanceFormatted?: string;
+  isFavoriteStore?: boolean;
+  onToggleFavoriteStore?: () => void;
 }
 
 export default function GameProductCard({
@@ -21,6 +26,11 @@ export default function GameProductCard({
   customBadge,
   groupJoinedCount,
   groupTargetCount,
+  storeName,
+  storeRating,
+  distanceFormatted,
+  isFavoriteStore,
+  onToggleFavoriteStore,
 }: Props) {
   const { playTap } = useGameSound();
 
@@ -35,7 +45,7 @@ export default function GameProductCard({
   const renderBadge = () => {
     if (customBadge) {
       return (
-        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md border border-emerald-500/40 text-[#00ffb2] px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md">
+        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-[#00ffb2] px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
           <Sparkles size={11} />
           <span>{customBadge}</span>
         </div>
@@ -45,7 +55,7 @@ export default function GameProductCard({
     if (groupJoinedCount !== undefined && groupTargetCount !== undefined) {
       const remaining = groupTargetCount - groupJoinedCount;
       return (
-        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md border border-violet-500/50 text-violet-300 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md">
+        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-violet-300 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
           <Users size={11} className="text-violet-400" />
           <span>{remaining <= 1 ? 'Falta 1' : `Faltan ${remaining}`}</span>
         </div>
@@ -54,7 +64,7 @@ export default function GameProductCard({
 
     if (product.stock && product.stock <= 2) {
       return (
-        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md border border-rose-500/50 text-rose-300 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md">
+        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-rose-300 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
           <Flame size={11} className="text-rose-400" />
           <span>Último Par</span>
         </div>
@@ -63,7 +73,7 @@ export default function GameProductCard({
 
     if (product.discount_percent && product.discount_percent > 0) {
       return (
-        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md border border-emerald-500/50 text-[#00ffb2] px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md">
+        <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-[#00ffb2] px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
           <Zap size={11} className="text-[#00ffb2]" />
           <span>-{product.discount_percent}%</span>
         </div>
@@ -79,44 +89,93 @@ export default function GameProductCard({
         playTap();
         onSelect(product);
       }}
-      className="cursor-pointer group relative bg-[#030910] border border-emerald-950/70 hover:border-emerald-500/50 rounded-2xl sm:rounded-3xl p-2.5 sm:p-3 flex flex-col justify-between transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_20px_-4px_rgba(0,255,178,0.2)] active:scale-[0.98] select-none"
+      className="cursor-pointer group relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 flex flex-col justify-between transition-all duration-300 hover:scale-[1.02] hover:bg-[#071322]/90 hover:shadow-[0_15px_35px_rgba(0,0,0,0.65)] active:scale-[0.98] select-none"
     >
-      {/* 1. IMAGEN CON ESQUINAS REDONDEADAS Y BADGE FLOTANTE */}
+      {/* Reflejo especular superior (1px de luz de alta gama sin bordes) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
+
+      {/* 1. IMAGEN CON ESQUINAS REDONDEADAS, BADGE Y CORAZÓN DE TIENDA */}
       <div className="relative w-full aspect-square rounded-xl sm:rounded-2xl overflow-hidden bg-slate-950/80 mb-2.5">
         {renderBadge()}
+
+        {/* Botón de seguir / favorita para la tienda */}
+        {onToggleFavoriteStore && (
+          <button
+            type="button"
+            title={isFavoriteStore ? 'Siguiendo esta tienda' : 'Seguir tienda'}
+            onClick={(e) => {
+              e.stopPropagation();
+              playTap();
+              onToggleFavoriteStore();
+            }}
+            className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90"
+          >
+            <Heart
+              size={13}
+              className={isFavoriteStore ? 'fill-rose-500 text-rose-500' : 'text-slate-400 hover:text-rose-400'}
+            />
+          </button>
+        )}
 
         {product.imageUrl || product.image_url ? (
           <Image
             src={product.imageUrl || product.image_url || ''}
             alt={product.name}
             fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 20vw"
             className="object-cover group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-emerald-950/20 text-emerald-600 font-bold text-xs">
+          <div className="w-full h-full flex items-center justify-center bg-emerald-950/20 text-emerald-500 font-bold text-xs">
             Aura
           </div>
         )}
       </div>
 
-      {/* 2. CONTENIDO MINIMALISTA (1 LÍNEA DE TÍTULO) */}
-      <div className="space-y-1 mb-2 px-0.5">
-        <h3 className="text-xs sm:text-sm font-bold text-slate-100 truncate group-hover:text-[#00ffb2] transition-colors">
+      {/* 2. CONTENIDO MINIMALISTA (METADATOS DE TIENDA + 1 LÍNEA DE TÍTULO) */}
+      <div className="space-y-1.5 mb-2.5 px-0.5">
+        {/* Metadatos de Tienda: Nombre, Distancia y Estrellas */}
+        {(storeName || distanceFormatted || storeRating) && (
+          <div className="flex items-center justify-between text-[10px] text-slate-400">
+            {storeName && (
+              <span className="truncate max-w-[95px] font-medium text-slate-400 group-hover:text-slate-300">
+                {storeName}
+              </span>
+            )}
+
+            <div className="flex items-center gap-2 shrink-0 ml-auto font-light">
+              {distanceFormatted && (
+                <span className="flex items-center gap-0.5 text-slate-400">
+                  <MapPin size={9} className="text-emerald-400 shrink-0" />
+                  <span>{distanceFormatted}</span>
+                </span>
+              )}
+
+              {storeRating !== undefined && storeRating > 0 && (
+                <span className="flex items-center gap-0.5 text-amber-300 font-medium">
+                  <Star size={9} className="fill-amber-400 text-amber-400 shrink-0" />
+                  <span>{storeRating.toFixed(1)}</span>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        <h3 className="text-xs sm:text-sm font-semibold text-slate-200 truncate group-hover:text-emerald-300 transition-colors">
           {product.name}
         </h3>
 
-        {/* PRECIO TACHADO + PRECIO AURA GRANDE */}
+        {/* PRECIO TACHADO + PRECIO AURA GRANDE (SIN BLANCO PURO) */}
         <div className="flex items-baseline gap-1.5 flex-wrap">
           {regularPrice > auraPrice && (
-            <span className="text-[11px] text-slate-500 line-through font-semibold">
+            <span className="text-[11px] text-slate-500 line-through font-light">
               ${regularPrice.toFixed(2)}
             </span>
           )}
-          <span className="text-base sm:text-lg font-black text-white tracking-tight">
+          <span className="text-base sm:text-lg font-black text-slate-100 tracking-tight">
             ${auraPrice.toFixed(2)}
           </span>
-          <span className="text-[10px] text-emerald-400 font-bold uppercase">USD</span>
+          <span className="text-[10px] text-emerald-400/90 font-bold uppercase">USD</span>
         </div>
       </div>
 
@@ -128,7 +187,7 @@ export default function GameProductCard({
           playTap();
           onSelect(product);
         }}
-        className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-900/90 via-emerald-700/80 to-teal-800 text-white font-black py-2 sm:py-2.5 px-2 rounded-xl text-xs transition border border-emerald-500/40 hover:border-emerald-400 flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+        className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-900/90 via-emerald-700/80 to-teal-800 text-slate-100 font-black py-2 sm:py-2.5 px-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
       >
         <Unlock size={13} className="text-[#00ffb2]" />
         <span className="truncate">Desbloquea con ${unlockFee.toFixed(2)}</span>
@@ -136,4 +195,3 @@ export default function GameProductCard({
     </div>
   );
 }
-

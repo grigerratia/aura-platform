@@ -11,6 +11,8 @@ import {
   Truck, AlertCircle
 } from 'lucide-react';
 import { CategoryArchetype, StorePlanTier } from '@/types';
+import { AURA_OFFICIAL_CATEGORIES } from '@/lib/categories';
+import { getStoreCoordinates } from '@/lib/geoDistance';
 
 // Opciones de zonas reales en Cumaná
 const CUMANA_ZONES = [
@@ -55,7 +57,9 @@ export default function BusinessRegisterPage() {
     store_name: '',
     rif: '',
     category_archetype: 'RETAIL_STANDARD' as CategoryArchetype,
-    category_label: 'Calzado y Moda',
+    category_name: 'Moda',
+    category_label: 'Moda',
+    subcategory: 'Calzado',
     slug: '',
     description: '',
 
@@ -197,12 +201,19 @@ export default function BusinessRegisterPage() {
         formData.schedule ? `Horario: ${formData.schedule}` : ''
       ].filter(Boolean).join(' • ');
 
+      const coords = getStoreCoordinates({ zone: formData.zone, name: formData.store_name });
+
       const storePayload = {
         name: formData.store_name.trim(),
         slug: formData.slug.trim(),
         owner_id: userId,
         owner_whatsapp: Number(cleanPhone) || null,
         description: locationSummary || `Vitrina comercial de ${formData.store_name} en Cumaná.`,
+        category: formData.category_name,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        rating: 4.85,
+        reviews_count: 1,
         plan_tier: formData.plan_tier,
         subscription_status: 'TRIAL',
         verification_status: 'DRAFT_UNVERIFIED',
@@ -224,7 +235,8 @@ export default function BusinessRegisterPage() {
           slug: formData.slug.trim(),
           owner_id: userId,
           owner_whatsapp: Number(cleanPhone) || null,
-          description: locationSummary || `Vitrina de ${formData.store_name}`
+          description: locationSummary || `Vitrina de ${formData.store_name}`,
+          category: formData.category_name
         };
 
         const retryResult = await supabase
@@ -444,37 +456,76 @@ export default function BusinessRegisterPage() {
                   </div>
                 </div>
 
-                {/* Rubro Comercial / Arquetipo */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Rubro Comercial Principal *
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {[
-                      { arch: 'RETAIL_STANDARD', label: '🛍️ Calzado, Ropa y Accesorios', desc: 'Manejo de tallas y colores' },
-                      { arch: 'GASTRO_FLASH', label: '🍽️ Restaurante o Comida', desc: 'Cupos diarios hoy, en mesa o delivery' },
-                      { arch: 'HIGH_TICKET', label: '📺 Electrodomésticos & Hogar', desc: 'Apartado y productos de alto valor' },
-                      { arch: 'URGENT_SEARCH', label: '🔧 Ferretería, Farmacia o Repuestos', desc: 'Búsqueda inmediata por cercanía' },
-                      { arch: 'VEHICLES_CLASSIFIED', label: '🚗 Vehículos & Motos', desc: 'Agendamiento de citas y concesionarios' },
-                    ].map((item) => (
-                      <button
-                        type="button"
-                        key={item.arch}
-                        onClick={() => setFormData({
-                          ...formData,
-                          category_archetype: item.arch as CategoryArchetype,
-                          category_label: item.label
-                        })}
-                        className={`cursor-pointer p-4 rounded-2xl border text-left transition flex flex-col justify-between ${
-                          formData.category_archetype === item.arch
-                            ? 'bg-teal-950/60 border-teal-500 text-white ring-2 ring-teal-500/20'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                        }`}
-                      >
-                        <span className="font-bold text-sm text-white mb-1">{item.label}</span>
-                        <span className="text-[11px] text-slate-400">{item.desc}</span>
-                      </button>
-                    ))}
+                {/* Categoría Oficial de Aura (9 Categorías Oficiales) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      Categoría Oficial de la Tienda *
+                    </label>
+                    <span className="text-[11px] text-teal-400 font-semibold">9 Categorías Oficiales</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {AURA_OFFICIAL_CATEGORIES.map((cat) => {
+                      const IconComponent = cat.icon;
+                      const isSelected = formData.category_name === cat.name;
+                      return (
+                        <button
+                          type="button"
+                          key={cat.id}
+                          onClick={() => setFormData({
+                            ...formData,
+                            category_archetype: cat.archetype,
+                            category_name: cat.name,
+                            category_label: cat.name,
+                            subcategory: cat.subcategories[0]
+                          })}
+                          className={`cursor-pointer p-3.5 rounded-2xl text-left transition flex flex-col justify-between relative group ${
+                            isSelected
+                              ? 'bg-gradient-to-b from-teal-500/20 to-emerald-500/10 text-slate-100 shadow-lg shadow-teal-500/10 ring-1 ring-teal-400/40'
+                              : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 ring-1 ring-white/5'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <div
+                              className="w-8 h-8 rounded-xl flex items-center justify-center"
+                              style={{ backgroundColor: `${cat.colorHex}22`, color: cat.colorHex }}
+                            >
+                              <IconComponent size={16} />
+                            </div>
+                            <span className="font-bold text-xs text-slate-100">{cat.name}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 line-clamp-1">{cat.description}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Subcategoría dentro de la categoría seleccionada */}
+                  <div className="pt-2">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                      Subcategoría Especializada ({formData.category_name})
+                    </label>
+                    {(() => {
+                      const activeCat = AURA_OFFICIAL_CATEGORIES.find(c => c.name === formData.category_name) || AURA_OFFICIAL_CATEGORIES[0];
+                      return (
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeCat.subcategories.map((sub) => (
+                            <button
+                              type="button"
+                              key={sub}
+                              onClick={() => setFormData({ ...formData, subcategory: sub })}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                                formData.subcategory === sub
+                                  ? 'bg-teal-500/20 text-teal-300 ring-1 ring-teal-400/40'
+                                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 ring-1 ring-white/5'
+                              }`}
+                            >
+                              {sub}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 

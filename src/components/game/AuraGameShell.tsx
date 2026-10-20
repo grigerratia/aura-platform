@@ -91,6 +91,7 @@ export default function AuraGameShell({
           ) : activeMode === 'relampago' ? (
             <RelampagoMode
               products={initialProducts}
+              stores={initialStores}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
           ) : activeMode === 'manadas' ? (

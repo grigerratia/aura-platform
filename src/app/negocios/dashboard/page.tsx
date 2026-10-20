@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Reservation, Store, CategoryArchetype } from '@/types';
 import { ARCHETYPE_CONFIGS, getArchetypeConfig, refundFeeToWallet, logLostDemand } from '@/lib/monetization';
+import { AURA_OFFICIAL_CATEGORIES, getCategoryArchetype } from '@/lib/categories';
 import {
   Package, Plus, Search, Trash2, Loader2,
   CheckCircle2, AlertCircle, LogOut, ChevronRight,
@@ -56,6 +57,7 @@ export default function OwnerDashboard() {
     brand: string;
     imageUrl: string;
     category: string;
+    subcategory: string;
     category_archetype: CategoryArchetype;
     price: string;
     regular_price: string;
@@ -79,7 +81,8 @@ export default function OwnerDashboard() {
     description: '',
     brand: '',
     imageUrl: '',
-    category: 'Tecnología & Comercio',
+    category: 'Moda',
+    subcategory: 'Calzado',
     category_archetype: 'RETAIL_STANDARD',
     price: '',
     regular_price: '',
@@ -503,6 +506,7 @@ export default function OwnerDashboard() {
             brand: formData.brand.trim() || null,
             imageUrl: formData.imageUrl.trim() || null,
             category: formData.category,
+            subcategory: formData.subcategory?.trim() || null,
             archetype: formData.category_archetype,
             variants: variantsPayload,
             specs: specsPayload,
@@ -549,7 +553,8 @@ export default function OwnerDashboard() {
         description: '',
         brand: '',
         imageUrl: '',
-        category: 'Tecnología & Comercio',
+        category: 'Moda',
+        subcategory: 'Calzado',
         category_archetype: 'RETAIL_STANDARD',
         price: '',
         regular_price: '',
@@ -1288,39 +1293,53 @@ export default function OwnerDashboard() {
                       </div>
                     </div>
 
-                    {/* Rubro Comercial y Categoría */}
+                    {/* Categoría Oficial y Subcategoría */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <div className="space-y-1">
-                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Rubro Comercial</label>
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Categoría Principal</label>
                         <select
-                          value={formData.category_archetype}
+                          value={formData.category}
                           onChange={(e) => {
-                            const arch = e.target.value as CategoryArchetype;
+                            const selectedName = e.target.value;
+                            const catDef = AURA_OFFICIAL_CATEGORIES.find(c => c.name.toLowerCase() === selectedName.toLowerCase()) || AURA_OFFICIAL_CATEGORIES[0];
                             setFormData({ 
                               ...formData, 
-                              category_archetype: arch,
-                              category: arch === 'GASTRO_FLASH' ? 'Comida & Bebidas' : arch === 'HIGH_TICKET' ? 'Electrodomésticos & Equipos' : arch === 'VEHICLES_CLASSIFIED' ? 'Vehículos & Repuestos' : 'Tecnología & Comercio'
+                              category: catDef.name,
+                              category_archetype: catDef.archetype,
+                              subcategory: catDef.subcategories[0] || ''
                             });
                           }}
-                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500 text-xs"
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-slate-200 outline-none focus:border-emerald-500 text-xs"
                         >
-                          <option value="RETAIL_STANDARD">Comercio General & Tecnología (Audífonos, Moda, Accesorios)</option>
-                          <option value="GASTRO_FLASH">Gastro Flash (Restaurantes, Cafés, Comida)</option>
-                          <option value="HIGH_TICKET">Equipos & Electrodomésticos (High Ticket)</option>
-                          <option value="URGENT_SEARCH">Ferretería, Farmacia & Repuestos</option>
-                          <option value="VEHICLES_CLASSIFIED">Vehículos & Motos</option>
+                          {AURA_OFFICIAL_CATEGORIES.map((cat) => (
+                            <option key={cat.id} value={cat.name} className="bg-slate-900 text-slate-200">
+                              {cat.name} ({cat.description})
+                            </option>
+                          ))}
                         </select>
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Categoría Específica</label>
-                        <input
-                          type="text"
-                          placeholder="Ej: Audio, Tecnología, Calzado, etc."
-                          value={formData.category}
-                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500 text-xs"
-                        />
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Subcategoría</label>
+                        {(() => {
+                          const currentCatDef = AURA_OFFICIAL_CATEGORIES.find(
+                            c => c.name.toLowerCase() === formData.category.toLowerCase()
+                          ) || AURA_OFFICIAL_CATEGORIES[0];
+                          return (
+                            <select
+                              value={formData.subcategory}
+                              onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
+                              className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-slate-200 outline-none focus:border-emerald-500 text-xs"
+                            >
+                              {currentCatDef.subcategories.map((sub) => (
+                                <option key={sub} value={sub} className="bg-slate-900 text-slate-200">
+                                  {sub}
+                                </option>
+                              ))}
+                              <option value="General" className="bg-slate-900 text-slate-200">General / Otro</option>
+                            </select>
+                          );
+                        })()}
                       </div>
                     </div>
 
