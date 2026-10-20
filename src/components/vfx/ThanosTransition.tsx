@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useRef, useEffect } from 'react';
-import { motion, AnimatePresence, usePresence } from 'framer-motion';
+import { motion, AnimatePresence, useIsPresent } from 'framer-motion';
 import { emitThanosDust, ThanosIntensity } from './AshParticleOverlay';
 import { useGameSound } from '@/hooks/useGameSound';
 
@@ -18,7 +18,7 @@ function ThanosItem({
   className = '',
   reconstructDust = false,
 }: ThanosItemProps) {
-  const [isPresent] = usePresence();
+  const isPresent = useIsPresent();
   const ref = useRef<HTMLDivElement>(null);
   const { playDustSnap } = useGameSound();
   const isEpic = intensity === 'epic';

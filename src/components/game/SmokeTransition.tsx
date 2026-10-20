@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useRef, useEffect } from 'react';
-import { motion, AnimatePresence, usePresence } from 'framer-motion';
+import { motion, AnimatePresence, useIsPresent } from 'framer-motion';
 import { emitThanosDust } from '../vfx/AshParticleOverlay';
 import { useGameSound } from '@/hooks/useGameSound';
 
@@ -18,20 +18,19 @@ function ModeContentWrapper({
   children: ReactNode;
   className?: string;
 }) {
-  const [isPresent] = usePresence();
+  const isPresent = useIsPresent();
   const ref = useRef<HTMLDivElement>(null);
   const { playDustSnap } = useGameSound();
 
-  // Al desmontarse el modo anterior, emitir una suave ráfaga de polvo/ceniza
+  // Al desmontarse el modo anterior, emitir una ráfaga de polvo/ceniza de Thanos
   useEffect(() => {
     if (!isPresent && ref.current) {
       const rect = ref.current.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
-        // Emitir polvo en el área superior/central visible para no saturar
         emitThanosDust(
           {
             left: rect.left,
-            top: Math.max(rect.top, 70),
+            top: Math.max(rect.top, 60),
             width: rect.width,
             height: Math.min(rect.height, 350),
           },
@@ -48,17 +47,15 @@ function ModeContentWrapper({
       ref={ref}
       initial={{
         opacity: 0,
-        y: 10,
+        y: 8,
         scale: 0.99,
-        filter: 'blur(6px)',
       }}
       animate={{
         opacity: 1,
         y: 0,
         scale: 1,
-        filter: 'blur(0px)',
         transition: {
-          duration: 0.24,
+          duration: 0.22,
           ease: [0.22, 1, 0.36, 1],
         },
       }}
@@ -66,9 +63,8 @@ function ModeContentWrapper({
         opacity: 0,
         y: -8,
         scale: 1.01,
-        filter: 'blur(6px)',
         transition: {
-          duration: 0.18,
+          duration: 0.16,
           ease: [0.4, 0, 0.2, 1],
         },
       }}
@@ -81,8 +77,8 @@ function ModeContentWrapper({
 
 /**
  * SmokeTransition
- * Envolvente de alta velocidad (60 FPS) para cambiar entre Radar, Relámpago, Manadas y Pases.
- * Garantiza texto nítido, sin deformaciones y con partículas sutiles de juego.
+ * Envolvente ultra-rápida (60 FPS) para cambiar entre Radar, Relámpago, Manadas y Pases.
+ * Utiliza useIsPresent para garantizar que las vistas NUNCA se queden bloqueadas o invisibles.
  */
 export default function SmokeTransition({
   children,

@@ -78,29 +78,23 @@ export default function AuraGameShell({
       {/* 3. ÁREA CENTRAL CON TRANSICIÓN DE HUMO / MATERIALIZACIÓN */}
       <main className="relative z-10 flex-1 pt-18 sm:pt-20 max-w-6xl mx-auto w-full">
         <SmokeTransition modeKey={activeMode}>
-          {activeMode === 'radar' && (
+          {activeMode === 'radar' ? (
             <RadarMode
               products={initialProducts}
               stores={initialStores}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
-          )}
-
-          {activeMode === 'relampago' && (
+          ) : activeMode === 'relampago' ? (
             <RelampagoMode
               products={initialProducts}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
-          )}
-
-          {activeMode === 'manadas' && (
+          ) : activeMode === 'manadas' ? (
             <ManadasMode
               products={initialProducts}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
-          )}
-
-          {activeMode === 'pases' && (
+          ) : (
             <PasesMode
               onOpenWallet={() => setIsWalletOpen(true)}
               onExploreRadar={() => setActiveMode('radar')}
