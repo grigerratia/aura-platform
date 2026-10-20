@@ -130,16 +130,41 @@ export function getCategoryArchetype(categoryIdOrName: string): CategoryArchetyp
   return found ? found.archetype : 'RETAIL_STANDARD';
 }
 
-export function matchProductCategory(productCategory = '', filterCategoryId = 'all'): boolean {
+export function matchProductCategory(
+  productCategory = '',
+  filterCategoryId = 'all',
+  subcategory = '',
+  productName = ''
+): boolean {
   if (!filterCategoryId || filterCategoryId === 'all') return true;
 
-  const raw = productCategory.toLowerCase().trim();
   const cat = AURA_OFFICIAL_CATEGORIES.find((c) => c.id === filterCategoryId);
   if (!cat) return true;
 
-  // Coincidencia con nombre principal
-  if (raw.includes(cat.name.toLowerCase()) || raw.includes(cat.slug)) return true;
+  const rawCat = (productCategory || '').toLowerCase().trim();
+  const rawSub = (subcategory || '').toLowerCase().trim();
+  const rawName = (productName || '').toLowerCase().trim();
 
-  // Coincidencia con subcategorías
-  return cat.subcategories.some((sub) => raw.includes(sub.toLowerCase()));
+  const catName = cat.name.toLowerCase();
+  const catSlug = cat.slug.toLowerCase();
+
+  // 1. Coincidencia directa con categoría principal
+  if (rawCat === catName || rawCat === catSlug) return true;
+  if (rawCat.includes(catName) || rawCat.includes(catSlug)) return true;
+
+  // 2. Coincidencia con subcategoría
+  if (rawSub && cat.subcategories.some((s) => rawSub.includes(s.toLowerCase()) || s.toLowerCase().includes(rawSub))) {
+    return true;
+  }
+
+  // 3. Coincidencia de subcategorías en categoría
+  if (cat.subcategories.some((sub) => rawCat.includes(sub.toLowerCase()))) {
+    return true;
+  }
+
+  // 4. Si el nombre del producto menciona explícitamente alguna subcategoría exclusiva (ej. 'audífonos', 'reloj')
+  return cat.subcategories.some((sub) => {
+    const s = sub.toLowerCase();
+    return s.length > 3 && rawName.includes(s);
+  });
 }

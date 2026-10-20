@@ -6,6 +6,7 @@ interface Props {
   className?: string;
   count?: number;
   burstTrigger?: number; // Cada vez que este número cambie, dispara una ráfaga de celebración
+  colors?: string[];
 }
 
 interface Particle {
@@ -32,10 +33,13 @@ export default function AuroraParticles({
   className = '',
   count = 18,
   burstTrigger = 0,
+  colors,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const burstParticlesRef = useRef<Particle[]>([]);
+
+  const palette = colors && colors.length > 0 ? colors : AURORA_COLORS;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -64,7 +68,7 @@ export default function AuroraParticles({
       radius: 1 + Math.random() * 2,
       alpha: 0.1 + Math.random() * 0.6,
       maxAlpha: 0.3 + Math.random() * 0.5,
-      color: AURORA_COLORS[Math.floor(Math.random() * AURORA_COLORS.length)],
+      color: palette[Math.floor(Math.random() * palette.length)],
     }));
 
     const render = () => {

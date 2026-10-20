@@ -5,6 +5,7 @@ import { Product, Store } from '@/types';
 import GameProductCard from '../GameProductCard';
 import ThanosCard from '@/components/vfx/ThanosCard';
 import CategoryIconBar from '../CategoryIconBar';
+import AuroraParticles from '../AuroraParticles';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Zap,
@@ -131,9 +132,16 @@ export default function RelampagoMode({
   const filteredFlashProducts = useMemo(() => {
     const q = activeQuery.toLowerCase().trim();
 
-    // Si hay búsqueda activa: busca en la totalidad de productos del catálogo sin descartar ninguno
-    // Si no hay búsqueda: destaca remates, descuentos y stock límite, pero si hay pocos muestra el catálogo
-    let list = [...products];
+    // Deduplicación preventiva por ID o Nombre
+    const seen = new Set<string>();
+    const dedupeProducts = products.filter((p) => {
+      const key = p.id || `${p.name}-${p.store_id || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    let list = dedupeProducts;
 
     if (!q) {
       const clearanceList = list.filter(
@@ -150,7 +158,9 @@ export default function RelampagoMode({
 
     // Filtro por categoría oficial
     if (selectedCategory !== 'all') {
-      list = list.filter((p) => matchProductCategory(p.category, selectedCategory));
+      list = list.filter((p) =>
+        matchProductCategory(p.category, selectedCategory, p.subcategory, p.name)
+      );
     }
 
     // Filtro por búsqueda textual (nombre, descripción, categoría, subcategoría y tienda)
@@ -216,40 +226,40 @@ export default function RelampagoMode({
   ]);
 
   return (
-    <div className="space-y-6 pb-24 select-none">
+    <div className="space-y-3.5 sm:space-y-4 pb-24 select-none">
       
-      {/* 1. ENCABEZADO ÉPICO CINEMATOGRÁFICO: SIN BORDES, VIDRIO OSCURO Y RESPLANDOR */}
-      <div className="relative mx-4 rounded-3xl overflow-hidden bg-[#050b16]/85 backdrop-blur-xl p-5 sm:p-7 shadow-[0_20px_50px_rgba(0,0,0,0.65)]">
-        {/* Reflejo especular superior (1px de luz sin bordes) */}
+      {/* 1. ENCABEZADO COMPACTO CON PARTÍCULAS AURORA Y ESTILO WELCOME PORTAL */}
+      <div className="relative mx-4 rounded-2xl sm:rounded-3xl overflow-hidden bg-[#050b16]/85 backdrop-blur-xl py-3 px-4 sm:py-3.5 sm:px-5 shadow-[0_15px_35px_rgba(0,0,0,0.5)]">
+        {/* Reflejo especular superior fino de 1px */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-rose-400/40 to-transparent" />
 
-        {/* Halo atmosférico de energía relámpago */}
-        <div className="pointer-events-none absolute -top-20 -right-20 w-64 h-64 rounded-full bg-gradient-to-br from-rose-600/15 via-amber-500/10 to-transparent blur-3xl" />
+        {/* Partículas activas en el fondo del header */}
+        <div className="pointer-events-none absolute inset-0 opacity-40">
+          <AuroraParticles count={14} colors={['#f43f5e', '#fb7185', '#f59e0b', '#fbbf24']} />
+        </div>
 
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-rose-400 text-xs font-semibold tracking-wider uppercase">
-              <Zap size={16} className="fill-rose-400 text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.6)]" />
+        <div className="relative z-10 flex items-center justify-between gap-3">
+          <div className="space-y-0.5 min-w-0">
+            <div className="flex items-center gap-1.5 text-rose-400 text-[10px] sm:text-xs font-semibold tracking-wider uppercase">
+              <Zap size={13} className="fill-rose-400 text-rose-400 drop-shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
               <span>Liquidaciones & Oportunidades del Día</span>
             </div>
 
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight bg-gradient-to-r from-rose-300 via-amber-200 to-rose-400 bg-clip-text text-transparent">
+            <h2 className="text-lg sm:text-xl md:text-2xl font-black tracking-tight bg-gradient-to-r from-rose-300 via-amber-200 to-rose-400 bg-clip-text text-transparent">
               Relámpago Aura
             </h2>
 
-            <p className="text-xs sm:text-sm font-light text-slate-400 max-w-md">
-              Últimas unidades a precio de remate físico y cupos gastronómicos antes de cerrar caja en Cumaná.
+            <p className="text-[11px] sm:text-xs font-light text-slate-400 truncate max-w-sm sm:max-w-md hidden sm:block">
+              Últimas unidades a precio de remate físico y cupos gastronómicos antes de cerrar caja.
             </p>
           </div>
 
-          {/* Reloj Digital de Cuenta Regresiva (Sin bordes duros) */}
-          <div className="bg-[#030812]/90 backdrop-blur-xl rounded-2xl px-4 py-3 flex items-center gap-3.5 self-start sm:self-auto shadow-inner">
-            <Clock size={18} className="text-rose-400 animate-pulse drop-shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase font-light text-slate-400 tracking-wider">
-                Vence hoy en
-              </span>
-              <div className="flex items-center gap-1 font-mono text-base sm:text-lg font-black text-slate-100">
+          {/* Reloj Digital de Cuenta Regresiva Compacto */}
+          <div className="bg-[#030812]/90 backdrop-blur-xl rounded-xl px-3 py-1.5 flex items-center gap-2 shrink-0 shadow-inner">
+            <Clock size={15} className="text-rose-400 animate-pulse drop-shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
+            <div className="flex flex-col text-right">
+              <span className="text-[9px] uppercase font-light text-slate-400">Vence hoy</span>
+              <div className="flex items-center gap-0.5 font-mono text-xs sm:text-sm font-bold text-slate-100">
                 <span>{String(timeLeft.hours).padStart(2, '0')}</span>
                 <span className="text-rose-400">:</span>
                 <span>{String(timeLeft.minutes).padStart(2, '0')}</span>
@@ -265,12 +275,12 @@ export default function RelampagoMode({
       <div className="px-4">
         <form
           onSubmit={handleSearchSubmit}
-          className="relative bg-[#050b16]/85 backdrop-blur-xl rounded-2xl px-4 py-2.5 flex items-center gap-2.5 shadow-[0_10px_25px_rgba(0,0,0,0.5)] focus-within:shadow-[0_0_20px_-3px_rgba(0,255,178,0.35)] transition-all"
+          className="relative bg-[#050b16]/85 backdrop-blur-xl rounded-2xl px-4 py-2 flex items-center gap-2.5 shadow-[0_10px_25px_rgba(0,0,0,0.5)] focus-within:shadow-[0_0_20px_-3px_rgba(0,255,178,0.35)] transition-all"
         >
           {/* Reflejo especular superior */}
           <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-700/30 to-transparent" />
 
-          <Search size={18} className="text-emerald-400 shrink-0" />
+          <Search size={16} className="text-emerald-400 shrink-0" />
 
           <input
             type="text"
@@ -297,7 +307,7 @@ export default function RelampagoMode({
               className="text-slate-400 hover:text-slate-200 p-1 rounded-lg transition cursor-pointer"
               title="Borrar búsqueda"
             >
-              <X size={16} />
+              <X size={15} />
             </button>
           )}
 
@@ -305,15 +315,15 @@ export default function RelampagoMode({
           <button
             type="submit"
             title="Buscar"
-            className="cursor-pointer bg-gradient-to-r from-emerald-800 to-teal-700 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-100 hover:text-black p-2 rounded-xl flex items-center justify-center transition active:scale-95 shadow-md"
+            className="cursor-pointer bg-gradient-to-r from-emerald-800 to-teal-700 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-100 hover:text-black p-1.5 sm:p-2 rounded-xl flex items-center justify-center transition active:scale-95 shadow-md"
           >
-            <ArrowRight size={16} className="stroke-[2.5]" />
+            <ArrowRight size={15} className="stroke-[2.5]" />
           </button>
         </form>
       </div>
 
       {/* 3. FILA DE 9 CATEGORÍAS OFICIALES EN ORDEN EXACTO */}
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         <CategoryIconBar
           selectedCategory={selectedCategory}
           onSelectCategory={(catId) => {
@@ -323,8 +333,8 @@ export default function RelampagoMode({
         />
       </div>
 
-      {/* 4. FILTROS RÁPIDOS MULTI-SELECCIÓN (SIN PÍLDORAS): MÁS CERCA, MEJOR ATENCIÓN, MIS TIENDAS */}
-      <div className="px-4 flex items-center gap-4 sm:gap-6 overflow-x-auto no-scrollbar py-1">
+      {/* 4. FILTROS RÁPIDOS MULTI-SELECCIÓN (SIN PÍLDORAS) */}
+      <div className="px-4 flex items-center gap-4 sm:gap-6 overflow-x-auto no-scrollbar py-0.5">
         {/* Filtro 1: Más Cerca */}
         <button
           type="button"
