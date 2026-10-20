@@ -108,13 +108,16 @@ export default function RadarMode({
   return (
     <div className="space-y-4 pb-20">
       
-      {/* 1. BUSCADOR INTUITIVO CON BOTÓN DE BÚSQUEDA Y SOPORTE ENTER */}
+      {/* 1. BUSCADOR INTUITIVO: SOLO FLECHA, SIN BORDES DUROS NI PALABRA BUSCAR */}
       <div className="px-4">
         <form
           onSubmit={handleSearchSubmit}
-          className="relative bg-[#030a10] border border-emerald-950/80 hover:border-emerald-500/50 focus-within:border-[#00ffb2] rounded-2xl px-3 py-2 flex items-center gap-2 shadow-inner transition"
+          className="relative bg-[#050b16]/85 backdrop-blur-xl rounded-2xl px-4 py-2.5 flex items-center gap-2.5 shadow-[0_10px_25px_rgba(0,0,0,0.5)] focus-within:shadow-[0_0_20px_-3px_rgba(0,255,178,0.35)] transition-all"
         >
-          <Search size={18} className="text-emerald-400 shrink-0 ml-1" />
+          {/* Reflejo especular superior fino */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-700/30 to-transparent" />
+
+          <Search size={18} className="text-emerald-400 shrink-0" />
           
           <input
             type="text"
@@ -132,26 +135,27 @@ export default function RadarMode({
                 handleSearchSubmit();
               }
             }}
-            className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-white placeholder-slate-500 font-medium"
+            className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-slate-200 placeholder-slate-500 font-light"
           />
 
           {inputValue && (
             <button
               type="button"
               onClick={handleClearSearch}
-              className="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer"
+              className="text-slate-400 hover:text-slate-200 p-1 rounded-lg transition cursor-pointer"
               title="Borrar texto"
             >
               <X size={16} />
             </button>
           )}
 
+          {/* BOTÓN SOLO CON LA FLECHA (SIN LA PALABRA BUSCAR) */}
           <button
             type="submit"
-            className="cursor-pointer bg-emerald-950/80 hover:bg-[#00ffb2] text-emerald-400 hover:text-black font-black px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 transition active:scale-95 border border-emerald-800/40 hover:border-[#00ffb2]"
+            title="Buscar"
+            className="cursor-pointer bg-gradient-to-r from-emerald-800 to-teal-700 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-100 hover:text-black p-2 rounded-xl flex items-center justify-center transition active:scale-95 shadow-md"
           >
-            <span className="hidden sm:inline">Buscar</span>
-            <ArrowRight size={14} />
+            <ArrowRight size={16} className="stroke-[2.5]" />
           </button>
         </form>
 

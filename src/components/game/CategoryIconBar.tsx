@@ -33,11 +33,12 @@ export default function CategoryIconBar({
   const { playTap } = useGameSound();
 
   return (
-    <div className="w-full overflow-x-auto no-scrollbar py-2 select-none">
-      <div className="flex items-center gap-3.5 sm:gap-5 px-4 min-w-max">
+    <div className="w-full overflow-x-auto no-scrollbar py-3 select-none">
+      <div className="flex items-center gap-3 sm:gap-4 px-4 min-w-max">
         {GAME_CATEGORIES.map((cat) => {
           const Icon = cat.icon;
           const isSelected = selectedCategory === cat.id;
+          const accentColor = cat.colorHex || '#00ffb2';
 
           return (
             <button
@@ -47,20 +48,40 @@ export default function CategoryIconBar({
                 playTap();
                 onSelectCategory(cat.id);
               }}
-              className="cursor-pointer flex flex-col items-center gap-2 py-1 transition-all group active:scale-95 outline-none"
+              className="cursor-pointer flex flex-col items-center gap-2 py-1 transition-all group active:scale-95 outline-none relative"
             >
-              {/* Contenedor del ícono: flotante, borderless, con brillo sutil en seleccionado */}
+              {/* Contenedor del ícono: Vidrio oscuro, reflejo especular de 1px y glow interno contenido (sin cortes) */}
               <div
-                className={`p-2.5 sm:p-3 rounded-2xl transition-all duration-300 flex items-center justify-center ${
+                className={`relative overflow-hidden p-2.5 sm:p-3 rounded-2xl transition-all duration-300 flex items-center justify-center ${
                   isSelected
-                    ? 'bg-gradient-to-b from-[#06181f] to-[#020b12] text-[#00ffb2] shadow-[0_10px_25px_-5px_rgba(0,255,178,0.35)] scale-110 drop-shadow-[0_0_10px_rgba(0,255,178,0.5)]'
-                    : 'bg-[#040913]/60 text-slate-400 hover:text-slate-200 hover:bg-[#071320]/80'
+                    ? 'bg-[#050b16]/95 text-[#00ffb2] scale-105'
+                    : 'bg-[#050b16]/50 text-slate-400 hover:text-slate-200 hover:bg-[#071322]/70'
                 }`}
               >
-                <Icon size={20} className="stroke-[1.75]" />
+                {/* 1. Reflejo especular superior fino (Estilo WelcomePortal) */}
+                <div
+                  className={`pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent transition-opacity duration-300 ${
+                    isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'
+                  }`}
+                />
+
+                {/* 2. Luz ambiental interior confinada (NO choca ni se corta con el contenedor) */}
+                <div
+                  className="pointer-events-none absolute inset-0 transition-opacity duration-300 rounded-2xl"
+                  style={{
+                    background: `radial-gradient(40px circle at 50% 10%, ${accentColor}26, transparent 75%)`,
+                    opacity: isSelected ? 1 : 0,
+                  }}
+                />
+
+                <Icon
+                  size={20}
+                  className="relative z-10 stroke-[1.8] transition-transform duration-300"
+                  style={{ color: isSelected ? accentColor : undefined }}
+                />
               </div>
 
-              {/* Título en letra ligera y color slate suave (sin blanco puro) */}
+              {/* Título en letra ligera y color suave (sin blancos puros) */}
               <span
                 className={`text-[11px] sm:text-xs font-light tracking-wide transition-colors ${
                   isSelected

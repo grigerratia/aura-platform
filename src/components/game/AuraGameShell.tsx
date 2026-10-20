@@ -97,6 +97,7 @@ export default function AuraGameShell({
           ) : activeMode === 'manadas' ? (
             <ManadasMode
               products={initialProducts}
+              stores={initialStores}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
           ) : (

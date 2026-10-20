@@ -71,11 +71,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 GRANT ALL ON public.store_favorites TO authenticated, anon;
 GRANT ALL ON public.store_reviews TO authenticated, anon;
 
--- 6. ACTUALIZAR TIENDAS EXISTENTES CON COORDENADAS REFERENCIALES EN CUMANÁ Y RATING INICIAL
+-- 6. ACTUALIZAR TIENDAS EXISTENTES CON COORDENADAS REFERENCIALES EN CUMANÁ, RATING Y STATUS VERIFIED
 UPDATE public.stores
 SET 
   latitude = 10.453900 + (random() * 0.015 - 0.007),
   longitude = -64.182600 + (random() * 0.015 - 0.007),
   rating = COALESCE(rating, 4.85),
-  reviews_count = COALESCE(reviews_count, 18)
-WHERE latitude IS NULL OR longitude IS NULL;
+  reviews_count = COALESCE(reviews_count, 18),
+  verification_status = 'VERIFIED'
+WHERE latitude IS NULL OR longitude IS NULL OR verification_status = 'DRAFT_UNVERIFIED';

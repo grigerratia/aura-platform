@@ -34,7 +34,11 @@ interface Props {
   onSelectProduct: (p: Product) => void;
 }
 
-export type RelampagoQuickFilter = 'near' | 'rating' | 'favorites';
+export interface ActiveFiltersState {
+  near: boolean;
+  rating: boolean;
+  favorites: boolean;
+}
 
 export default function RelampagoMode({
   products,
@@ -96,11 +100,20 @@ export default function RelampagoMode({
     return distMap;
   }, [stores, userLocation]);
 
-  // 4. Estados de Búsqueda, Categoría y Filtros Rápidos
+  // 4. Estados de Búsqueda, Categoría y Filtros Multi-Selección (Sin píldoras)
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchInputValue, setSearchInputValue] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
-  const [quickFilter, setQuickFilter] = useState<RelampagoQuickFilter>('near');
+  const [activeFilters, setActiveFilters] = useState<ActiveFiltersState>({
+    near: true,
+    rating: false,
+    favorites: false,
+  });
+
+  const toggleFilter = (key: keyof ActiveFiltersState) => {
+    playTap();
+    setActiveFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const handleSearchSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -114,65 +127,89 @@ export default function RelampagoMode({
     setActiveQuery('');
   };
 
-  // 5. Filtrado y Ordenamiento de Productos Flash
+  // 5. Filtrado y Ordenamiento Multi-Criterio de Productos Flash
   const filteredFlashProducts = useMemo(() => {
     const q = activeQuery.toLowerCase().trim();
 
-    // Filtro base: liquidación, descuento >= 15%, últimas unidades o comidas flash
-    let list = products.filter(
-      (p) =>
-        p.is_clearance ||
-        (p.discount_percent && p.discount_percent >= 15) ||
-        (p.stock && p.stock <= 3) ||
-        p.category_archetype === 'GASTRO_FLASH'
-    );
+    // Si hay búsqueda activa: busca en la totalidad de productos del catálogo sin descartar ninguno
+    // Si no hay búsqueda: destaca remates, descuentos y stock límite, pero si hay pocos muestra el catálogo
+    let list = [...products];
+
+    if (!q) {
+      const clearanceList = list.filter(
+        (p) =>
+          p.is_clearance ||
+          (p.discount_percent && p.discount_percent >= 10) ||
+          (p.stock && p.stock <= 4) ||
+          p.category_archetype === 'GASTRO_FLASH'
+      );
+      if (clearanceList.length > 0) {
+        list = clearanceList;
+      }
+    }
 
     // Filtro por categoría oficial
     if (selectedCategory !== 'all') {
       list = list.filter((p) => matchProductCategory(p.category, selectedCategory));
     }
 
-    // Filtro por búsqueda textual
+    // Filtro por búsqueda textual (nombre, descripción, categoría, subcategoría y tienda)
     if (q) {
       list = list.filter((p) => {
         const matchName = (p.name || '').toLowerCase().includes(q);
         const matchDesc = (p.description || '').toLowerCase().includes(q);
         const matchCat = (p.category || '').toLowerCase().includes(q);
+        const matchSub = (p.subcategory || '').toLowerCase().includes(q);
         const store = p.store_id ? storesMap.get(p.store_id) : undefined;
         const matchStore = store ? store.name.toLowerCase().includes(q) : false;
-        return matchName || matchDesc || matchCat || matchStore;
+        return matchName || matchDesc || matchCat || matchSub || matchStore;
       });
     }
 
-    // Filtro rápido: "Mis Tiendas"
-    if (quickFilter === 'favorites') {
+    // Filtro MULTI-SELECT 1: "Mis Tiendas"
+    if (activeFilters.favorites) {
       list = list.filter((p) => p.store_id && favorites.includes(p.store_id));
     }
 
-    // Ordenamiento
+    // Filtro MULTI-SELECT 2: "Mejor Atención" (rating >= 4.5)
+    if (activeFilters.rating) {
+      list = list.filter((p) => {
+        const store = p.store_id ? storesMap.get(p.store_id) : undefined;
+        const r = store?.rating ?? 4.8;
+        return r >= 4.5;
+      });
+    }
+
+    // Ordenamiento combinado simultáneo
     return list.sort((a, b) => {
-      if (quickFilter === 'near') {
-        const distA = a.store_id ? (storeDistances.get(a.store_id)?.km ?? 999) : 999;
-        const distB = b.store_id ? (storeDistances.get(b.store_id)?.km ?? 999) : 999;
+      const distA = a.store_id ? (storeDistances.get(a.store_id)?.km ?? 999) : 999;
+      const distB = b.store_id ? (storeDistances.get(b.store_id)?.km ?? 999) : 999;
+      const storeA = a.store_id ? storesMap.get(a.store_id) : undefined;
+      const storeB = b.store_id ? storesMap.get(b.store_id) : undefined;
+      const ratingA = storeA?.rating ?? 4.8;
+      const ratingB = storeB?.rating ?? 4.8;
+
+      // Si "Más cerca" está activado:
+      if (activeFilters.near) {
+        if (activeFilters.rating && Math.abs(distA - distB) < 0.3) {
+          return ratingB - ratingA;
+        }
         return distA - distB;
       }
 
-      if (quickFilter === 'rating') {
-        const storeA = a.store_id ? storesMap.get(a.store_id) : undefined;
-        const storeB = b.store_id ? storesMap.get(b.store_id) : undefined;
-        const ratingA = storeA?.rating ?? 4.8;
-        const ratingB = storeB?.rating ?? 4.8;
+      // Si solo "Mejor atención" está activado:
+      if (activeFilters.rating) {
         return ratingB - ratingA;
       }
 
-      // Por defecto para favoritas: mayor descuento
+      // Por defecto: mayor descuento
       return (b.discount_percent || 0) - (a.discount_percent || 0);
     });
   }, [
     products,
     selectedCategory,
     activeQuery,
-    quickFilter,
+    activeFilters,
     favorites,
     storesMap,
     storeDistances,
@@ -286,61 +323,82 @@ export default function RelampagoMode({
         />
       </div>
 
-      {/* 4. FILTROS RÁPIDOS (DEBAJO DE CATEGORÍAS): MÁS CERCA (DEFAULT), MEJOR ATENCIÓN, MIS TIENDAS */}
-      <div className="px-4 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-        {/* Filtro 1: Más Cerca (Por defecto) */}
+      {/* 4. FILTROS RÁPIDOS MULTI-SELECCIÓN (SIN PÍLDORAS): MÁS CERCA, MEJOR ATENCIÓN, MIS TIENDAS */}
+      <div className="px-4 flex items-center gap-4 sm:gap-6 overflow-x-auto no-scrollbar py-1">
+        {/* Filtro 1: Más Cerca */}
         <button
           type="button"
-          onClick={() => {
-            playTap();
-            setQuickFilter('near');
-          }}
-          className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95 whitespace-nowrap shadow-md ${
-            quickFilter === 'near'
-              ? 'bg-gradient-to-r from-emerald-950 to-teal-900 text-[#00ffb2] shadow-[0_0_15px_-3px_rgba(0,255,178,0.4)]'
-              : 'bg-[#040913]/70 text-slate-400 hover:text-slate-200 hover:bg-[#071322]'
+          onClick={() => toggleFilter('near')}
+          className={`cursor-pointer pb-2 pt-1 px-1 flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap relative outline-none ${
+            activeFilters.near
+              ? 'text-slate-100 font-medium'
+              : 'text-slate-400 hover:text-slate-300 font-light'
           }`}
         >
-          <MapPin size={13} className="shrink-0 text-emerald-400" />
-          <span>Más cerca</span>
+          <MapPin
+            size={14}
+            className={`shrink-0 transition-colors ${
+              activeFilters.near
+                ? 'text-[#00ffb2] drop-shadow-[0_0_6px_rgba(0,255,178,0.5)]'
+                : 'text-slate-500'
+            }`}
+          />
+          <span className="text-xs tracking-wide">Más cerca</span>
+          {activeFilters.near && (
+            <span className="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-[#00ffb2] to-transparent rounded-full" />
+          )}
         </button>
 
         {/* Filtro 2: Mejor Atención (Medido por Estrellas) */}
         <button
           type="button"
-          onClick={() => {
-            playTap();
-            setQuickFilter('rating');
-          }}
-          className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95 whitespace-nowrap shadow-md ${
-            quickFilter === 'rating'
-              ? 'bg-gradient-to-r from-amber-950 to-yellow-900 text-amber-300 shadow-[0_0_15px_-3px_rgba(245,158,11,0.4)]'
-              : 'bg-[#040913]/70 text-slate-400 hover:text-slate-200 hover:bg-[#071322]'
+          onClick={() => toggleFilter('rating')}
+          className={`cursor-pointer pb-2 pt-1 px-1 flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap relative outline-none ${
+            activeFilters.rating
+              ? 'text-slate-100 font-medium'
+              : 'text-slate-400 hover:text-slate-300 font-light'
           }`}
         >
-          <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" />
-          <span>Mejor atención</span>
+          <Star
+            size={14}
+            className={`shrink-0 transition-colors ${
+              activeFilters.rating
+                ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]'
+                : 'text-slate-500'
+            }`}
+          />
+          <span className="text-xs tracking-wide">Mejor atención</span>
+          {activeFilters.rating && (
+            <span className="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent rounded-full" />
+          )}
         </button>
 
         {/* Filtro 3: Mis Tiendas (Favoritas / Seguidas) */}
         <button
           type="button"
-          onClick={() => {
-            playTap();
-            setQuickFilter('favorites');
-          }}
-          className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95 whitespace-nowrap shadow-md ${
-            quickFilter === 'favorites'
-              ? 'bg-gradient-to-r from-rose-950 to-pink-900 text-rose-300 shadow-[0_0_15px_-3px_rgba(244,63,94,0.4)]'
-              : 'bg-[#040913]/70 text-slate-400 hover:text-slate-200 hover:bg-[#071322]'
+          onClick={() => toggleFilter('favorites')}
+          className={`cursor-pointer pb-2 pt-1 px-1 flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap relative outline-none ${
+            activeFilters.favorites
+              ? 'text-slate-100 font-medium'
+              : 'text-slate-400 hover:text-slate-300 font-light'
           }`}
         >
-          <Heart size={13} className={`shrink-0 ${quickFilter === 'favorites' ? 'fill-rose-400 text-rose-400' : 'text-rose-400'}`} />
-          <span>Mis tiendas</span>
+          <Heart
+            size={14}
+            className={`shrink-0 transition-colors ${
+              activeFilters.favorites
+                ? 'fill-rose-500 text-rose-500 drop-shadow-[0_0_6px_rgba(244,63,94,0.5)]'
+                : 'text-slate-500'
+            }`}
+          />
+          <span className="text-xs tracking-wide">Mis tiendas</span>
           {favorites.length > 0 && (
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 font-bold">
               {favorites.length}
             </span>
+          )}
+          {activeFilters.favorites && (
+            <span className="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-rose-500 to-transparent rounded-full" />
           )}
         </button>
       </div>
@@ -378,22 +436,22 @@ export default function RelampagoMode({
           <div className="col-span-full py-16 text-center space-y-3 bg-[#050b16]/75 backdrop-blur-xl rounded-3xl p-6 shadow-xl">
             <Compass size={36} className="text-rose-400/50 mx-auto" />
             <h4 className="text-sm font-semibold text-slate-200">
-              {quickFilter === 'favorites'
+              {activeFilters.favorites
                 ? 'No tienes ofertas relámpago de tus tiendas seguidas'
                 : 'No encontramos remates activos con estos criterios'}
             </h4>
             <p className="text-xs text-slate-400 max-w-sm mx-auto font-light">
-              {quickFilter === 'favorites'
+              {activeFilters.favorites
                 ? 'Toca el corazón en cualquier producto para seguir tiendas y ver sus ofertas aquí.'
-                : 'Prueba cambiando de categoría, borrando la búsqueda o seleccionando "Más cerca".'}
+                : 'Prueba cambiando de categoría, borrando la búsqueda o desactivando filtros.'}
             </p>
-            {(selectedCategory !== 'all' || activeQuery || quickFilter !== 'near') && (
+            {(selectedCategory !== 'all' || activeQuery || !activeFilters.near || activeFilters.rating || activeFilters.favorites) && (
               <button
                 type="button"
                 onClick={() => {
                   setSelectedCategory('all');
                   handleClearSearch();
-                  setQuickFilter('near');
+                  setActiveFilters({ near: true, rating: false, favorites: false });
                 }}
                 className="mt-2 cursor-pointer bg-gradient-to-r from-emerald-800 to-teal-700 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-100 hover:text-black font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95"
               >

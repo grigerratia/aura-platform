@@ -216,7 +216,7 @@ export default function BusinessRegisterPage() {
         reviews_count: 1,
         plan_tier: formData.plan_tier,
         subscription_status: 'TRIAL',
-        verification_status: 'DRAFT_UNVERIFIED',
+        verification_status: 'VERIFIED',
         cashier_access_pin: '1234',
         rif_or_id_number: formData.rif.trim() || formData.owner_id_doc.trim() || null
       };

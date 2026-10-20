@@ -3,7 +3,8 @@ import { Store, Product } from '@/types';
 import AuraGameShell from '@/components/game/AuraGameShell';
 import getDolarTasa from '@/util/getDolarTasa';
 
-export const revalidate = 60; // Revalidar datos cada 60 segundos
+export const dynamic = 'force-dynamic';
+export const revalidate = 0; // Datos en tiempo real para reflejar nuevas tiendas y productos al instante
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -23,20 +24,16 @@ export default async function HomePage() {
         products (*)
       `)
       .eq('is_active', true)
-      .limit(32)
+      .limit(500)
   ]);
 
   const stores: Store[] = storesData || [];
 
-  // Filtro de Tiendas Verificadas (Solo 'VERIFIED' o por defecto aparece en vitrina pública)
-  const verifiedStoreIds = new Set(
-    stores
-      .filter((s) => !s.verification_status || s.verification_status === 'VERIFIED')
-      .map((s) => s.id)
-  );
+  // Tiendas registradas en vitrina comercial
+  const activeStoreIds = new Set(stores.map((s) => s.id));
 
   const verifiedStoreProducts = (storeProductsData || []).filter((sp: any) =>
-    verifiedStoreIds.has(sp.store_id)
+    activeStoreIds.has(sp.store_id)
   );
 
   // Mapeamos los productos de inventario a formato Product polimórfico
