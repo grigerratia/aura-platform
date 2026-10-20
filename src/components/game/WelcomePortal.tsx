@@ -292,5 +292,3 @@ export default function WelcomePortal({ onSelectMode }: Props) {
     </div>
   );
 }
-
-}
