@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ThanosSvgFilter from "@/components/vfx/ThanosSvgFilter";
+import AshParticleOverlay from "@/components/vfx/AshParticleOverlay";
 
 export const metadata: Metadata = {
   title: "Aura",
@@ -17,7 +19,15 @@ export default function RootLayout({
       suppressHydrationWarning
       className="h-full antialiased"
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/* Filtro SVG acelerado por GPU de desintegración Thanos */}
+        <ThanosSvgFilter />
+
+        {/* Capa de partículas de ceniza en único canvas a 60 FPS */}
+        <AshParticleOverlay />
+
+        {children}
+      </body>
     </html>
   );
 }

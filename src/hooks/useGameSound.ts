@@ -155,12 +155,71 @@ export function useGameSound() {
     });
   };
 
+  // 4. playDustSnap(): Sonido sintético de polvo / arena (ruido blanco filtrado en barrido 1200Hz -> 350Hz) + háptica
+  const playDustSnap = (intensity: 'fast' | 'epic' = 'fast') => {
+    if (isMuted) return;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        if (intensity === 'epic') {
+          navigator.vibrate([16, 28, 12, 35, 8]);
+        } else {
+          navigator.vibrate([10, 22, 6]);
+        }
+      }
+    } catch {}
+
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const duration = intensity === 'epic' ? 0.65 : 0.32;
+    const bufferSize = Math.floor(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    // Generar ruido blanco con atenuación progresiva cálida
+    let lastOut = 0.0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      lastOut = (lastOut + 0.02 * white) / 1.02;
+      data[i] = lastOut * 3.2;
+    }
+
+    const noiseSource = ctx.createBufferSource();
+    noiseSource.buffer = buffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 2.4;
+
+    const gain = ctx.createGain();
+    const now = ctx.currentTime;
+
+    // Barrido de frecuencia de 1200Hz a 350Hz
+    filter.frequency.setValueAtTime(1200, now);
+    filter.frequency.exponentialRampToValueAtTime(350, now + duration);
+
+    // Ganancia sutil y fade out exponencial
+    const peakGain = intensity === 'epic' ? 0.10 : 0.08;
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(peakGain, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    noiseSource.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    noiseSource.start(now);
+    noiseSource.stop(now + duration + 0.02);
+  };
+
   return {
     isMuted,
     toggleMute,
     playTap,
     playSweep,
     playUnlockSuccess,
+    playDustSnap,
   };
 }
 

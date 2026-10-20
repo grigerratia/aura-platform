@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Product, Store } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { useReservations } from '@/store/useReservations';
+import { emitThanosDust } from '@/components/vfx/AshParticleOverlay';
 import {
   X, Unlock, Clock, ShieldCheck, MapPin, Check,
   Sparkles, Store as StoreIcon, AlertCircle, Loader2, ArrowRight
@@ -24,13 +25,24 @@ export default function ProductBottomSheet({
   onSuccessUnlock,
   stores = [],
 }: Props) {
-  const { playTap, playUnlockSuccess } = useGameSound();
+  const { playTap, playUnlockSuccess, playDustSnap } = useGameSound();
   const { setActiveReservation } = useReservations();
 
   const [selectedVariant, setSelectedVariant] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [successMode, setSuccessMode] = useState(false);
   const [generatedPin, setGeneratedPin] = useState('');
+
+  const handleCloseWithDust = () => {
+    if (typeof window !== 'undefined') {
+      const modalEl = document.getElementById('aura-bottom-sheet-content');
+      if (modalEl) {
+        emitThanosDust(modalEl.getBoundingClientRect(), 'disintegrate', 'fast');
+        playDustSnap('fast');
+      }
+    }
+    onClose();
+  };
 
   if (!product) return null;
 
@@ -89,8 +101,15 @@ export default function ProductBottomSheet({
       setGeneratedPin(pin);
       setSuccessMode(true);
 
-      // Disparar sonido de éxito y celebración
+      // Disparar sonido de éxito, partículas de reconstrucción épica y celebración
       playUnlockSuccess();
+      playDustSnap('epic');
+      if (typeof window !== 'undefined') {
+        const modalEl = document.getElementById('aura-bottom-sheet-content');
+        if (modalEl) {
+          emitThanosDust(modalEl.getBoundingClientRect(), 'reconstruct', 'epic');
+        }
+      }
       onSuccessUnlock();
 
     } catch (err) {
@@ -109,15 +128,21 @@ export default function ProductBottomSheet({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={handleCloseWithDust}
           className="fixed inset-0 bg-black/80 backdrop-blur-md"
         />
 
         {/* BOTTOM SHEET CONTENT */}
         <motion.div
-          initial={{ y: '100%' }}
-          animate={{ y: 0 }}
-          exit={{ y: '100%' }}
+          id="aura-bottom-sheet-content"
+          initial={{ y: '100%', opacity: 0.9 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{
+            y: '100%',
+            opacity: 0,
+            filter: 'url(#thanos-disintegrate) blur(2px)',
+            transition: { duration: 0.35, ease: 'easeIn' }
+          }}
           transition={{ type: 'spring', damping: 26, stiffness: 280 }}
           className="relative w-full max-w-lg bg-[#03080e] border-t border-emerald-950/80 rounded-t-3xl sm:rounded-t-[2.5rem] shadow-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto no-scrollbar z-10"
         >
@@ -126,7 +151,7 @@ export default function ProductBottomSheet({
 
           {/* BOTÓN CERRAR */}
           <button
-            onClick={onClose}
+            onClick={handleCloseWithDust}
             className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white bg-slate-900/60 rounded-full transition cursor-pointer"
           >
             <X size={18} />

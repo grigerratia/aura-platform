@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Product } from '@/types';
 import GameProductCard from '../GameProductCard';
 import AuroraParticles from '../AuroraParticles';
+import ThanosTransition from '@/components/vfx/ThanosTransition';
+import { AnimatePresence } from 'framer-motion';
 import { Zap, Clock, Flame, Sparkles } from 'lucide-react';
 
 interface Props {
@@ -71,17 +73,26 @@ export default function RelampagoMode({ products, onSelectProduct }: Props) {
         </div>
       </div>
 
-      {/* 2. CUADRÍCULA DE PRODUCTOS FLASH */}
+      {/* 2. CUADRÍCULA DE PRODUCTOS FLASH CON DESINTEGRACIÓN ÉPICA */}
       <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-        {flashProducts.map((product) => (
-          <GameProductCard
-            key={product.id}
-            product={product}
-            onSelect={onSelectProduct}
-            badgeType="clearance"
-            customBadge={product.discount_percent ? `-${product.discount_percent}%` : 'Flash'}
-          />
-        ))}
+        <AnimatePresence mode="popLayout">
+          {flashProducts.map((product) => (
+            <ThanosTransition
+              key={product.id}
+              elementKey={product.id}
+              intensity="epic"
+              mode="sync"
+              reconstructDust={false}
+            >
+              <GameProductCard
+                product={product}
+                onSelect={onSelectProduct}
+                badgeType="clearance"
+                customBadge={product.discount_percent ? `-${product.discount_percent}%` : 'Flash'}
+              />
+            </ThanosTransition>
+          ))}
+        </AnimatePresence>
 
         {flashProducts.length === 0 && (
           <div className="col-span-full py-12 text-center text-xs text-slate-500 bg-[#030910] rounded-3xl p-6 border border-slate-900">

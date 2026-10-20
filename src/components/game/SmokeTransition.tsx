@@ -1,47 +1,37 @@
 'use client';
 
-import { motion, AnimatePresence } from 'framer-motion';
 import { ReactNode } from 'react';
+import ThanosTransition from '../vfx/ThanosTransition';
+import { ThanosIntensity } from '../vfx/AshParticleOverlay';
 
 interface Props {
   children: ReactNode;
   modeKey: string;
   className?: string;
+  intensity?: ThanosIntensity;
+  reconstructDust?: boolean;
 }
 
-export default function SmokeTransition({ children, modeKey, className = '' }: Props) {
+/**
+ * SmokeTransition / ThanosTransition
+ * Envolvente para transiciones entre modos de juego y vistas en Aura
+ * con efecto de desintegración y reconstrucción estilo chasquido de Thanos.
+ */
+export default function SmokeTransition({
+  children,
+  modeKey,
+  className = '',
+  intensity = 'fast',
+  reconstructDust = true,
+}: Props) {
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={modeKey}
-        initial={{
-          opacity: 0,
-          scale: 0.95,
-          filter: 'blur(10px)',
-          y: 12,
-        }}
-        animate={{
-          opacity: 1,
-          scale: 1,
-          filter: 'blur(0px)',
-          y: 0,
-        }}
-        exit={{
-          opacity: 0,
-          scale: 1.04,
-          filter: 'blur(12px)',
-          y: -8,
-        }}
-        transition={{
-          type: 'spring',
-          stiffness: 260,
-          damping: 22,
-        }}
-        className={className}
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+    <ThanosTransition
+      elementKey={modeKey}
+      className={className}
+      intensity={intensity}
+      reconstructDust={reconstructDust}
+    >
+      {children}
+    </ThanosTransition>
   );
 }
-
