@@ -61,12 +61,14 @@ export default function OwnerDashboard() {
     regular_price: string;
     sale_price: string;
     stock: number;
-    sizes: string;
+    variant_label: string;
     variant_options: string;
+    spec_1_label: string;
+    spec_1_val: string;
+    spec_2_label: string;
+    spec_2_val: string;
     auto_confirm_stock: boolean;
     stock_quota: number;
-    spec_1: string;
-    spec_2: string;
     stock_status: 'available' | 'last_units' | 'sold_out';
     is_clearance: boolean;
     is_sponsored: boolean;
@@ -77,18 +79,20 @@ export default function OwnerDashboard() {
     description: '',
     brand: '',
     imageUrl: '',
-    category: 'Calzado',
+    category: 'Tecnología & Comercio',
     category_archetype: 'RETAIL_STANDARD',
     price: '',
     regular_price: '',
     sale_price: '',
     stock: 10,
-    sizes: '37, 38, 39, 40',
-    variant_options: 'En Mesa, Para Llevar',
+    variant_label: '',
+    variant_options: '',
+    spec_1_label: 'Conectividad / Material',
+    spec_1_val: '',
+    spec_2_label: 'Garantía / Modelo',
+    spec_2_val: '',
     auto_confirm_stock: false,
     stock_quota: 10,
-    spec_1: '',
-    spec_2: '',
     stock_status: 'available',
     is_clearance: false,
     is_sponsored: false,
@@ -400,26 +404,34 @@ export default function OwnerDashboard() {
       return;
     }
 
-    if (file.size > 6 * 1024 * 1024) {
-      alert('La imagen no debe superar los 6MB.');
+    if (file.size > 8 * 1024 * 1024) {
+      alert('La imagen no debe superar los 8MB.');
       return;
     }
 
+    // Vista previa inmediata para el usuario
+    const localPreviewUrl = URL.createObjectURL(file);
+    setFormData(prev => ({ ...prev, imageUrl: localPreviewUrl }));
+
     setUploadingImage(true);
     try {
+      // Refrescar sesión para asegurar token activo
+      await supabase.auth.getSession();
+
       const fileExt = file.name.split('.').pop() || 'jpg';
       const cleanFileName = `${storeId || 'tienda'}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
 
       const { data, error } = await supabase.storage
         .from('product-images')
         .upload(cleanFileName, file, {
+          contentType: file.type || 'image/jpeg',
           cacheControl: '3600',
-          upsert: true
+          upsert: false
         });
 
       if (error) {
         console.error('Error al subir imagen a Storage:', error);
-        alert('No se pudo subir automáticamente. Puedes pegar el enlace directo (URL) de la imagen o verificar las políticas de almacenamiento.');
+        alert(`No se pudo subir la foto a la nube (${error.message || 'Error de políticas'}). Puedes pegar el enlace directo de la imagen o ejecutar el script SQL de permisos en Supabase.`);
         return;
       }
 
@@ -431,7 +443,7 @@ export default function OwnerDashboard() {
         setFormData(prev => ({ ...prev, imageUrl: publicData.publicUrl }));
       }
     } catch (err: any) {
-      alert('Error al procesar la imagen: ' + err.message);
+      alert('Error al procesar la imagen: ' + (err.message || 'Error desconocido'));
     } finally {
       setUploadingImage(false);
     }
@@ -448,19 +460,27 @@ export default function OwnerDashboard() {
       const archetypeConfig = getArchetypeConfig(formData.category_archetype);
 
       let variantsPayload: { label: string; options: string[] }[] = [];
-      if (formData.category_archetype === 'RETAIL_STANDARD') {
-        const parsedSizes = formData.sizes.split(',').map(s => s.trim()).filter(Boolean);
-        variantsPayload = [{ label: 'Talla', options: parsedSizes }];
+      if (formData.variant_options.trim()) {
+        const label = formData.variant_label.trim() || 'Opción / Modelo';
+        const parsedOpts = formData.variant_options.split(',').map(s => s.trim()).filter(Boolean);
+        if (parsedOpts.length > 0) {
+          variantsPayload.push({ label, options: parsedOpts });
+        }
       } else if (formData.category_archetype === 'GASTRO_FLASH') {
-        const parsedModes = formData.variant_options.split(',').map(s => s.trim()).filter(Boolean);
-        variantsPayload = [{ label: 'Modalidad', options: parsedModes.length > 0 ? parsedModes : ['En Mesa', 'Para Llevar'] }];
+        variantsPayload = [{ label: 'Modalidad', options: ['En Mesa', 'Para Llevar'] }];
       } else if (formData.category_archetype === 'VEHICLES_CLASSIFIED') {
         variantsPayload = [{ label: 'Transmisión', options: ['Automática', 'Sincrónica'] }];
       }
 
       const specsPayload: Record<string, any> = {};
-      if (formData.spec_1.trim()) specsPayload['especificacion_1'] = formData.spec_1.trim();
-      if (formData.spec_2.trim()) specsPayload['especificacion_2'] = formData.spec_2.trim();
+      if (formData.spec_1_val.trim()) {
+        const key = formData.spec_1_label.trim() || 'especificacion_1';
+        specsPayload[key] = formData.spec_1_val.trim();
+      }
+      if (formData.spec_2_val.trim()) {
+        const key = formData.spec_2_label.trim() || 'especificacion_2';
+        specsPayload[key] = formData.spec_2_val.trim();
+      }
 
       const priceNum = parseFloat(formData.price);
       const regularPriceNum = formData.regular_price ? parseFloat(formData.regular_price) : priceNum;
@@ -529,18 +549,20 @@ export default function OwnerDashboard() {
         description: '',
         brand: '',
         imageUrl: '',
-        category: 'Calzado',
+        category: 'Tecnología & Comercio',
         category_archetype: 'RETAIL_STANDARD',
         price: '',
         regular_price: '',
         sale_price: '',
         stock: 10,
-        sizes: '37, 38, 39, 40',
-        variant_options: 'En Mesa, Para Llevar',
+        variant_label: '',
+        variant_options: '',
+        spec_1_label: 'Conectividad / Material',
+        spec_1_val: '',
+        spec_2_label: 'Garantía / Modelo',
+        spec_2_val: '',
         auto_confirm_stock: false,
         stock_quota: 10,
-        spec_1: '',
-        spec_2: '',
         stock_status: 'available',
         is_clearance: false,
         is_sponsored: false,
@@ -1266,27 +1288,40 @@ export default function OwnerDashboard() {
                       </div>
                     </div>
 
-                    {/* Rubro Comercial */}
-                    <div className="space-y-1">
-                      <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Rubro Comercial</label>
-                      <select
-                        value={formData.category_archetype}
-                        onChange={(e) => {
-                          const arch = e.target.value as CategoryArchetype;
-                          setFormData({ 
-                            ...formData, 
-                            category_archetype: arch,
-                            category: arch === 'GASTRO_FLASH' ? 'Comida' : arch === 'HIGH_TICKET' ? 'Electrodomésticos' : arch === 'VEHICLES_CLASSIFIED' ? 'Vehículos' : 'Calzado'
-                          });
-                        }}
-                        className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
-                      >
-                        <option value="RETAIL_STANDARD">Retail & Moda (Ropa, Calzado, Joyería)</option>
-                        <option value="GASTRO_FLASH">Gastro Flash (Restaurantes, Cafés, Comida)</option>
-                        <option value="HIGH_TICKET">High Ticket (Electrodomésticos, Muebles)</option>
-                        <option value="URGENT_SEARCH">Urgente (Ferretería, Farmacia, Repuestos)</option>
-                        <option value="VEHICLES_CLASSIFIED">Vehículos & Motos</option>
-                      </select>
+                    {/* Rubro Comercial y Categoría */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Rubro Comercial</label>
+                        <select
+                          value={formData.category_archetype}
+                          onChange={(e) => {
+                            const arch = e.target.value as CategoryArchetype;
+                            setFormData({ 
+                              ...formData, 
+                              category_archetype: arch,
+                              category: arch === 'GASTRO_FLASH' ? 'Comida & Bebidas' : arch === 'HIGH_TICKET' ? 'Electrodomésticos & Equipos' : arch === 'VEHICLES_CLASSIFIED' ? 'Vehículos & Repuestos' : 'Tecnología & Comercio'
+                            });
+                          }}
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500 text-xs"
+                        >
+                          <option value="RETAIL_STANDARD">Comercio General & Tecnología (Audífonos, Moda, Accesorios)</option>
+                          <option value="GASTRO_FLASH">Gastro Flash (Restaurantes, Cafés, Comida)</option>
+                          <option value="HIGH_TICKET">Equipos & Electrodomésticos (High Ticket)</option>
+                          <option value="URGENT_SEARCH">Ferretería, Farmacia & Repuestos</option>
+                          <option value="VEHICLES_CLASSIFIED">Vehículos & Motos</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Categoría Específica</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Audio, Tecnología, Calzado, etc."
+                          value={formData.category}
+                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500 text-xs"
+                        />
+                      </div>
                     </div>
 
                     {/* Nombre */}
@@ -1295,7 +1330,7 @@ export default function OwnerDashboard() {
                       <input
                         type="text"
                         required
-                        placeholder="Ej: Zapato Deportivo Casual o Combo Burger"
+                        placeholder="Ej: Audífonos Inalámbricos Bluetooth o Zapato Deportivo"
                         value={searchTerm}
                         onChange={(e) => {
                           setSearchTerm(e.target.value);
@@ -1311,7 +1346,7 @@ export default function OwnerDashboard() {
                         <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Marca / Fabricante</label>
                         <input
                           type="text"
-                          placeholder="Ej: Nike, Samsung, Casero..."
+                          placeholder="Ej: Sony, Nike, Casero, etc."
                           value={formData.brand}
                           onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                           className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
@@ -1372,76 +1407,102 @@ export default function OwnerDashboard() {
                       </div>
                     </div>
 
-                    {/* Variantes según rubro */}
-                    {formData.category_archetype === 'RETAIL_STANDARD' && (
-                      <div className="space-y-1">
-                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Tallas (separadas por coma)</label>
-                        <input
-                          type="text"
-                          placeholder="37, 38, 39, 40"
-                          value={formData.sizes}
-                          onChange={(e) => setFormData({ ...formData, sizes: e.target.value })}
-                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
-                        />
+                    {/* Variantes u Opciones (Universal y Flexible) */}
+                    <div className="space-y-2 p-3 bg-[#020508] border border-slate-850 rounded-2xl">
+                      <div className="flex items-center justify-between">
+                        <label className="text-slate-300 font-bold uppercase tracking-wider text-[10px]">
+                          Variantes u Opciones (Opcional)
+                        </label>
+                        <span className="text-[10px] text-slate-500">Dejar vacío si es producto único</span>
                       </div>
-                    )}
 
-                    {formData.category_archetype === 'GASTRO_FLASH' && (
-                      <div className="space-y-2 p-3 bg-[#020508] border border-slate-850 rounded-xl">
-                        <div className="space-y-1">
-                          <label className="text-slate-400 font-bold text-[10px] uppercase">Modalidad</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-slate-400 text-[10px] block mb-1">Nombre de la Variante</label>
                           <input
                             type="text"
-                            placeholder="En Mesa, Para Llevar"
+                            placeholder="Ej: Color, Modelo, Versión, Capacidad..."
+                            value={formData.variant_label}
+                            onChange={(e) => setFormData({ ...formData, variant_label: e.target.value })}
+                            className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-[10px] block mb-1">Opciones (separadas por coma)</label>
+                          <input
+                            type="text"
+                            placeholder="Ej: Negro, Blanco, Azul o 64GB, 128GB..."
                             value={formData.variant_options}
                             onChange={(e) => setFormData({ ...formData, variant_options: e.target.value })}
-                            className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
+                            className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
                           />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-slate-400 font-bold text-[10px]">Cupos Hoy</label>
-                            <input
-                              type="number"
-                              value={formData.stock_quota}
-                              onChange={(e) => setFormData({ ...formData, stock_quota: parseInt(e.target.value) || 10 })}
-                              className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-slate-400 font-bold text-[10px]">Válido Hasta</label>
-                            <input
-                              type="text"
-                              placeholder="Ej: 21:00"
-                              value={formData.spec_1}
-                              onChange={(e) => setFormData({ ...formData, spec_1: e.target.value })}
-                              className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
-                            />
-                          </div>
                         </div>
                       </div>
-                    )}
+                    </div>
 
-                    {formData.category_archetype === 'HIGH_TICKET' && (
-                      <div className="grid grid-cols-2 gap-2 p-3 bg-[#020508] border border-slate-850 rounded-xl">
-                        <div>
-                          <label className="text-slate-400 font-bold text-[10px]">Garantía</label>
+                    {/* Especificaciones / Ficha Técnica (Opcional) */}
+                    <div className="space-y-2 p-3 bg-[#020508] border border-slate-850 rounded-2xl">
+                      <label className="text-slate-300 font-bold uppercase tracking-wider text-[10px] block">
+                        Características Clave / Ficha Técnica (Opcional)
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="flex gap-1.5">
                           <input
                             type="text"
-                            placeholder="1 año"
-                            value={formData.spec_1}
-                            onChange={(e) => setFormData({ ...formData, spec_1: e.target.value })}
-                            className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
+                            placeholder="Propiedad (ej: Conectividad)"
+                            value={formData.spec_1_label}
+                            onChange={(e) => setFormData({ ...formData, spec_1_label: e.target.value })}
+                            className="w-1/2 p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Valor (ej: Bluetooth 5.3)"
+                            value={formData.spec_1_val}
+                            onChange={(e) => setFormData({ ...formData, spec_1_val: e.target.value })}
+                            className="w-1/2 p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="Propiedad (ej: Garantía)"
+                            value={formData.spec_2_label}
+                            onChange={(e) => setFormData({ ...formData, spec_2_label: e.target.value })}
+                            className="w-1/2 p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Valor (ej: 6 meses)"
+                            value={formData.spec_2_val}
+                            onChange={(e) => setFormData({ ...formData, spec_2_val: e.target.value })}
+                            className="w-1/2 p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gastro Flash (Restaurantes) */}
+                    {formData.category_archetype === 'GASTRO_FLASH' && (
+                      <div className="grid grid-cols-2 gap-2 p-3 bg-[#020508] border border-slate-850 rounded-2xl">
+                        <div>
+                          <label className="text-slate-400 font-bold text-[10px] uppercase block mb-1">Cupos Disponibles Hoy</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={formData.stock_quota}
+                            onChange={(e) => setFormData({ ...formData, stock_quota: parseInt(e.target.value) || 10 })}
+                            className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="text-slate-400 font-bold text-[10px]">Modelo / Voltaje</label>
+                          <label className="text-slate-400 font-bold text-[10px] uppercase block mb-1">Válido Hasta (Hora)</label>
                           <input
                             type="text"
-                            placeholder="110V"
-                            value={formData.spec_2}
-                            onChange={(e) => setFormData({ ...formData, spec_2: e.target.value })}
-                            className="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg text-white text-xs"
+                            placeholder="Ej: 21:00"
+                            value={formData.spec_1_val}
+                            onChange={(e) => setFormData({ ...formData, spec_1_val: e.target.value, spec_1_label: 'Válido Hasta' })}
+                            className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
                           />
                         </div>
                       </div>
