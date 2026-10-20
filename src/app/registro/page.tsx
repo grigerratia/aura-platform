@@ -246,8 +246,12 @@ export default function CustomerRegisterPage() {
       setSuccessRegistration(true);
 
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || 'Error al crear la cuenta. Verifica tus datos.');
+      console.error('Error en registro:', err);
+      if (err.message?.toLowerCase().includes('database error saving new user')) {
+        setErrorMsg('Error en la base de datos al guardar el usuario (trigger de perfiles). Por favor ejecuta el script de migración SQL en Supabase para reparar el disparador.');
+      } else {
+        setErrorMsg(err.message || 'Error al crear la cuenta. Verifica tus datos.');
+      }
     } finally {
       setLoading(false);
     }
