@@ -10,7 +10,7 @@ import {
   CheckCircle2, ShieldCheck
 } from 'lucide-react';
 
-function LoginContent() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get('redirect') || null;
@@ -295,12 +295,14 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
-        <Loader2 className="animate-spin text-teal-400" size={32} />
-      </div>
-    }>
-      <LoginContent />
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#020508] flex items-center justify-center">
+          <Loader2 className="animate-spin text-[#00ffb2]" size={32} />
+        </div>
+      }
+    >
+      <LoginForm />
     </Suspense>
   );
 }

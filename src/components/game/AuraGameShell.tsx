@@ -5,6 +5,7 @@ import { Product, Store } from '@/types';
 import TopHUD from './TopHUD';
 import BottomDock, { GameMode } from './BottomDock';
 import SmokeTransition from './SmokeTransition';
+import WelcomePortal from './WelcomePortal';
 import RadarMode from './modes/RadarMode';
 import RelampagoMode from './modes/RelampagoMode';
 import ManadasMode from './modes/ManadasMode';
@@ -27,8 +28,8 @@ export default function AuraGameShell({
 }: Props) {
   const { activeReservation } = useReservations();
 
-  // Modo de navegación activo (Radar, Relámpago, Manadas, Pases)
-  const [activeMode, setActiveMode] = useState<GameMode>('radar');
+  // Modo de navegación activo (Portal, Radar, Relámpago, Manadas, Pases)
+  const [activeMode, setActiveMode] = useState<GameMode>('portal');
 
   // Estado del producto seleccionado para el Bottom Sheet
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -73,12 +74,15 @@ export default function AuraGameShell({
         selectedCity={selectedCity}
         onSelectCity={setSelectedCity}
         tasa={initialTasa}
+        onGoHome={() => setActiveMode('portal')}
       />
 
       {/* 3. ÁREA CENTRAL CON TRANSICIÓN DE HUMO / MATERIALIZACIÓN */}
       <main className="relative z-10 flex-1 pt-18 sm:pt-20 max-w-6xl mx-auto w-full">
         <SmokeTransition modeKey={activeMode}>
-          {activeMode === 'radar' ? (
+          {activeMode === 'portal' ? (
+            <WelcomePortal onSelectMode={(mode) => setActiveMode(mode)} />
+          ) : activeMode === 'radar' ? (
             <RadarMode
               products={initialProducts}
               stores={initialStores}
@@ -103,12 +107,14 @@ export default function AuraGameShell({
         </SmokeTransition>
       </main>
 
-      {/* 4. BOTTOM DOCK: BARRA INFERIOR FIJA CON 4 MODOS DE JUEGO */}
-      <BottomDock
-        activeMode={activeMode}
-        onChangeMode={setActiveMode}
-        hasActiveTicket={!!activeReservation}
-      />
+      {/* 4. BOTTOM DOCK: BARRA INFERIOR FIJA CON 4 MODOS DE JUEGO (SE MUESTRA DENTRO DE LOS MODOS) */}
+      {activeMode !== 'portal' && (
+        <BottomDock
+          activeMode={activeMode}
+          onChangeMode={setActiveMode}
+          hasActiveTicket={!!activeReservation}
+        />
+      )}
 
       {/* 5. BOTTOM SHEET MODAL (AL TOCAR CUALQUIER TARJETA) */}
       <ProductBottomSheet

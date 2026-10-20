@@ -4,7 +4,7 @@ import { useGameSound } from '@/hooks/useGameSound';
 import { Compass, Zap, Users, Ticket } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export type GameMode = 'radar' | 'relampago' | 'manadas' | 'pases';
+export type GameMode = 'portal' | 'radar' | 'relampago' | 'manadas' | 'pases';
 
 interface Props {
   activeMode: GameMode;

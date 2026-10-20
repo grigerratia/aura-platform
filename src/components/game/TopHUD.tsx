@@ -9,7 +9,7 @@ import {
   Shield, Wallet, Volume2, VolumeX,
   MapPin, ChevronDown, Check, X,
   User, LogIn, UserPlus, LogOut, Store as StoreIcon,
-  ShieldCheck, Menu, Settings, DollarSign
+  ShieldCheck, Menu, Settings, DollarSign, Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -19,6 +19,7 @@ interface Props {
   selectedCity?: string;
   onSelectCity?: (city: string) => void;
   tasa?: number;
+  onGoHome?: () => void;
 }
 
 export default function TopHUD({
@@ -27,6 +28,7 @@ export default function TopHUD({
   selectedCity = 'Cumaná',
   onSelectCity,
   tasa = 500.0,
+  onGoHome,
 }: Props) {
   const router = useRouter();
   const { isMuted, toggleMute, playTap } = useGameSound();
@@ -196,6 +198,21 @@ export default function TopHUD({
               </div>
             </div>
           </div>
+
+          {/* BOTÓN HOME AURA (VOLVER A LA PORTADA) */}
+          {onGoHome && (
+            <button
+              type="button"
+              onClick={() => {
+                playTap();
+                onGoHome();
+              }}
+              className="cursor-pointer text-[11px] sm:text-xs font-light tracking-[0.25em] text-slate-300 hover:text-[#00ffb2] transition-colors uppercase px-2.5 py-1 rounded-xl border border-slate-800/60 hover:border-emerald-500/40 bg-[#030910]/60 active:scale-95"
+              title="Volver a la Portada de Inicio"
+            >
+              AURA
+            </button>
+          )}
 
           {/* 2. CENTRO: SALDO BILLETERA AURA */}
           <button
@@ -466,6 +483,21 @@ export default function TopHUD({
                   <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 px-2 pb-1">
                     Mi Espacio
                   </div>
+
+                  {onGoHome && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTap();
+                        setShowUserDrawer(false);
+                        onGoHome();
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-900/60 transition cursor-pointer text-left"
+                    >
+                      <Compass size={15} className="text-[#00ffb2]" />
+                      <span>Portada / Inicio</span>
+                    </button>
+                  )}
 
                   <Link
                     href="/perfil"

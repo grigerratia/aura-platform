@@ -64,6 +64,7 @@ export default function ThanosCard({
         scale: 1,
         y: 0,
         filter: 'none',
+        clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)',
         transition: {
           duration: 0.22,
           ease: [0.22, 1, 0.36, 1],
@@ -71,12 +72,13 @@ export default function ThanosCard({
       }}
       exit={{
         opacity: 0,
-        scale: isEpic ? 1.03 : 0.97,
+        scale: isEpic ? 1.04 : 1.01,
         y: isEpic ? -8 : -4,
-        filter: isEpic ? 'brightness(1.3) contrast(1.1)' : 'brightness(1.2)',
+        filter: isEpic ? 'brightness(1.35) contrast(1.15) blur(2px)' : 'brightness(1.25) blur(1px)',
+        clipPath: 'polygon(100% 0, 100% 0, 100% 100%, 100% 100%)',
         transition: {
-          duration: isEpic ? 0.32 : 0.2,
-          ease: [0.4, 0, 0.2, 1],
+          duration: isEpic ? 0.32 : 0.22,
+          ease: [0.35, 0.05, 0.2, 1],
         },
       }}
       className={`will-change-[transform,opacity] ${className}`}
