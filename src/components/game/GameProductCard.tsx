@@ -89,13 +89,10 @@ export default function GameProductCard({
         playTap();
         onSelect(product);
       }}
-      className="cursor-pointer group relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 flex flex-col justify-between transition-all duration-300 hover:scale-[1.02] hover:bg-[#071322]/90 hover:shadow-[0_15px_35px_rgba(0,0,0,0.65)] active:scale-[0.98] select-none"
+      className="cursor-pointer group relative flex flex-col justify-between bg-transparent p-0 transition-transform duration-300 hover:scale-[1.01] active:scale-[0.98] select-none"
     >
-      {/* Reflejo especular superior (1px de luz de alta gama sin bordes) */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
-
-      {/* 1. IMAGEN CON ESQUINAS REDONDEADAS, BADGE Y CORAZÓN DE TIENDA */}
-      <div className="relative w-full aspect-square rounded-xl sm:rounded-2xl overflow-hidden bg-slate-950/80 mb-2.5">
+      {/* 1. IMAGEN DE PRODUCTO (LLENA TODO EL ANCHO DE LA COLUMNA, MÁS GRANDE EN MÓVILES) */}
+      <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-950/80 mb-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.4)]">
         {renderBadge()}
 
         {/* Botón de seguir / favorita para la tienda */}
@@ -108,7 +105,7 @@ export default function GameProductCard({
               playTap();
               onToggleFavoriteStore();
             }}
-            className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90"
+            className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90"
           >
             <Heart
               size={13}
@@ -132,18 +129,18 @@ export default function GameProductCard({
         )}
       </div>
 
-      {/* 2. CONTENIDO MINIMALISTA (METADATOS DE TIENDA + 1 LÍNEA DE TÍTULO) */}
-      <div className="space-y-1.5 mb-2.5 px-0.5">
+      {/* 2. CONTENIDO MINIMALISTA (METADATOS DE TIENDA + TÍTULO + PRECIO) */}
+      <div className="space-y-1 mb-2 px-0.5">
         {/* Metadatos de Tienda: Nombre, Distancia y Estrellas */}
         {(storeName || distanceFormatted || storeRating) && (
           <div className="flex items-center justify-between text-[10px] text-slate-400">
             {storeName && (
-              <span className="truncate max-w-[95px] font-medium text-slate-400 group-hover:text-slate-300">
+              <span className="truncate max-w-[90px] font-medium text-slate-400 group-hover:text-slate-300">
                 {storeName}
               </span>
             )}
 
-            <div className="flex items-center gap-2 shrink-0 ml-auto font-light">
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto font-light">
               {distanceFormatted && (
                 <span className="flex items-center gap-0.5 text-slate-400">
                   <MapPin size={9} className="text-emerald-400 shrink-0" />
@@ -165,17 +162,17 @@ export default function GameProductCard({
           {product.name}
         </h3>
 
-        {/* PRECIO TACHADO + PRECIO AURA GRANDE (SIN BLANCO PURO) */}
+        {/* PRECIO TACHADO + PRECIO AURA GRANDE */}
         <div className="flex items-baseline gap-1.5 flex-wrap">
           {regularPrice > auraPrice && (
-            <span className="text-[11px] text-slate-500 line-through font-light">
+            <span className="text-[10px] text-slate-500 line-through font-light">
               ${regularPrice.toFixed(2)}
             </span>
           )}
-          <span className="text-base sm:text-lg font-black text-slate-100 tracking-tight">
+          <span className="text-sm sm:text-base font-black text-slate-100 tracking-tight">
             ${auraPrice.toFixed(2)}
           </span>
-          <span className="text-[10px] text-emerald-400/90 font-bold uppercase">USD</span>
+          <span className="text-[9px] text-emerald-400/90 font-bold uppercase">USD</span>
         </div>
       </div>
 
@@ -187,10 +184,10 @@ export default function GameProductCard({
           playTap();
           onSelect(product);
         }}
-        className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-900/90 via-emerald-700/80 to-teal-800 text-slate-100 font-black py-2 sm:py-2.5 px-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+        className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-900/90 via-emerald-700/80 to-teal-800 text-slate-100 font-bold py-1.5 sm:py-2 px-2 rounded-xl text-[11px] sm:text-xs transition flex items-center justify-center gap-1 shadow-sm active:scale-95"
       >
-        <Unlock size={13} className="text-[#00ffb2]" />
-        <span className="truncate">Desbloquea con ${unlockFee.toFixed(2)}</span>
+        <Unlock size={12} className="text-[#00ffb2]" />
+        <span className="truncate">Desbloquea ${unlockFee.toFixed(2)}</span>
       </button>
     </div>
   );

@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Product, Store } from '@/types';
 import ThanosCard from '@/components/vfx/ThanosCard';
-import CategoryIconBar from '../CategoryIconBar';
 import AuroraParticles from '../AuroraParticles';
+import GameControlBar from '../GameControlBar';
 import { AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -234,145 +234,26 @@ export default function ManadasMode({
         </div>
       </div>
 
-      {/* 2. BUSCADOR INTUITIVO: SOLO FLECHA (SIN PALABRA BUSCAR) */}
-      <div className="px-4">
-        <form
-          onSubmit={handleSearchSubmit}
-          className="relative bg-[#050b16]/85 backdrop-blur-xl rounded-2xl px-4 py-2 flex items-center gap-2.5 shadow-[0_10px_25px_rgba(0,0,0,0.5)] focus-within:shadow-[0_0_20px_-3px_rgba(139,92,246,0.35)] transition-all"
-        >
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-700/30 to-transparent" />
+      {/* 2. BARRA INTEGRADA: BUSCADOR, CATEGORÍAS Y FILTROS EN UNA SOLA FILA */}
+      <GameControlBar
+        searchPlaceholder="Buscar manadas, marcas o tiendas..."
+        searchValue={searchInputValue}
+        onSearchChange={(val) => {
+          setSearchInputValue(val);
+          if (!val.trim()) setActiveQuery('');
+        }}
+        onSearchSubmit={handleSearchSubmit}
+        onSearchClear={handleClearSearch}
+        selectedCategory={selectedCategory}
+        onSelectCategory={(catId) => setSelectedCategory(catId)}
+        activeFilters={activeFilters}
+        onToggleFilter={toggleFilter}
+        favoritesCount={favorites.length}
+        accentColor="#8b5cf6"
+      />
 
-          <Search size={16} className="text-violet-400 shrink-0" />
-
-          <input
-            type="text"
-            placeholder="Buscar manadas, marcas o tiendas..."
-            value={searchInputValue}
-            onChange={(e) => {
-              setSearchInputValue(e.target.value);
-              if (!e.target.value.trim()) {
-                setActiveQuery('');
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleSearchSubmit();
-              }
-            }}
-            className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-slate-200 placeholder-slate-500 font-light"
-          />
-
-          {searchInputValue && (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              className="text-slate-400 hover:text-slate-200 p-1 rounded-lg transition cursor-pointer"
-              title="Borrar búsqueda"
-            >
-              <X size={15} />
-            </button>
-          )}
-
-          <button
-            type="submit"
-            title="Buscar"
-            className="cursor-pointer bg-gradient-to-r from-violet-800 to-indigo-700 hover:from-violet-400 hover:to-cyan-400 text-slate-100 hover:text-black p-1.5 sm:p-2 rounded-xl flex items-center justify-center transition active:scale-95 shadow-md"
-          >
-            <ArrowRight size={15} className="stroke-[2.5]" />
-          </button>
-        </form>
-      </div>
-
-      {/* 3. FILA DE 9 CATEGORÍAS OFICIALES EN ORDEN EXACTO */}
-      <div className="space-y-0.5">
-        <CategoryIconBar
-          selectedCategory={selectedCategory}
-          onSelectCategory={(catId) => {
-            playTap();
-            setSelectedCategory(catId);
-          }}
-        />
-      </div>
-
-      {/* 4. FILTROS RÁPIDOS MULTI-SELECCIÓN (SIN PÍLDORAS) */}
-      <div className="px-4 flex items-center gap-4 sm:gap-6 overflow-x-auto no-scrollbar py-0.5">
-        <button
-          type="button"
-          onClick={() => toggleFilter('near')}
-          className={`cursor-pointer pb-2 pt-1 px-1 flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap relative outline-none ${
-            activeFilters.near
-              ? 'text-slate-100 font-medium'
-              : 'text-slate-400 hover:text-slate-300 font-light'
-          }`}
-        >
-          <MapPin
-            size={14}
-            className={`shrink-0 transition-colors ${
-              activeFilters.near
-                ? 'text-[#00ffb2] drop-shadow-[0_0_6px_rgba(0,255,178,0.5)]'
-                : 'text-slate-500'
-            }`}
-          />
-          <span className="text-xs tracking-wide">Más cerca</span>
-          {activeFilters.near && (
-            <span className="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-[#00ffb2] to-transparent rounded-full" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => toggleFilter('rating')}
-          className={`cursor-pointer pb-2 pt-1 px-1 flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap relative outline-none ${
-            activeFilters.rating
-              ? 'text-slate-100 font-medium'
-              : 'text-slate-400 hover:text-slate-300 font-light'
-          }`}
-        >
-          <Star
-            size={14}
-            className={`shrink-0 transition-colors ${
-              activeFilters.rating
-                ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]'
-                : 'text-slate-500'
-            }`}
-          />
-          <span className="text-xs tracking-wide">Mejor atención</span>
-          {activeFilters.rating && (
-            <span className="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent rounded-full" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => toggleFilter('favorites')}
-          className={`cursor-pointer pb-2 pt-1 px-1 flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap relative outline-none ${
-            activeFilters.favorites
-              ? 'text-slate-100 font-medium'
-              : 'text-slate-400 hover:text-slate-300 font-light'
-          }`}
-        >
-          <Heart
-            size={14}
-            className={`shrink-0 transition-colors ${
-              activeFilters.favorites
-                ? 'fill-rose-500 text-rose-500 drop-shadow-[0_0_6px_rgba(244,63,94,0.5)]'
-                : 'text-slate-500'
-            }`}
-          />
-          <span className="text-xs tracking-wide">Mis tiendas</span>
-          {favorites.length > 0 && (
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 font-bold">
-              {favorites.length}
-            </span>
-          )}
-          {activeFilters.favorites && (
-            <span className="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-rose-500 to-transparent rounded-full" />
-          )}
-        </button>
-      </div>
-
-      {/* 5. CUADRÍCULA DE MANADAS: 5 COLUMNAS EN PC, 2 EN MÓVIL (SIN DIV ENVOLVENTE INNECESARIO) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 px-4">
+      {/* 3. CUADRÍCULA DIRECTA: 5 COLUMNAS EN PC, 2 EN MÓVIL (SEPARACIÓN DE 4PX EN MÓVILES) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1 sm:gap-3 lg:gap-4 px-2 sm:px-4">
         <AnimatePresence mode="popLayout">
           {filteredManadaProducts.map((product, idx) => {
             const store = product.store_id ? storesMap.get(product.store_id) : undefined;
@@ -395,13 +276,11 @@ export default function ManadasMode({
                     playTap();
                     onSelectProduct(product);
                   }}
-                  className="cursor-pointer group relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 flex flex-col justify-between transition-all duration-300 hover:scale-[1.02] hover:bg-[#071322]/90 hover:shadow-[0_15px_35px_rgba(0,0,0,0.65)] active:scale-[0.98] select-none"
+                  className="cursor-pointer group relative flex flex-col justify-between bg-transparent p-0 transition-transform duration-300 hover:scale-[1.01] active:scale-[0.98] select-none"
                 >
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-violet-400/30 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
-
                   {/* Imagen y Badges */}
-                  <div className="relative w-full aspect-square rounded-xl sm:rounded-2xl overflow-hidden bg-slate-950/80 mb-2.5">
-                    <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-violet-300 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
+                  <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-950/80 mb-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.4)]">
+                    <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-violet-300 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
                       <Users size={11} className="text-violet-400" />
                       <span>{remaining <= 1 ? 'Falta 1' : `Faltan ${remaining}`}</span>
                     </div>
@@ -415,7 +294,7 @@ export default function ManadasMode({
                           playTap();
                           toggleFavorite(product.store_id!);
                         }}
-                        className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90"
+                        className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90"
                       >
                         <Heart
                           size={13}
@@ -440,16 +319,16 @@ export default function ManadasMode({
                   </div>
 
                   {/* Metadatos de Tienda */}
-                  <div className="space-y-1.5 mb-2.5 px-0.5">
+                  <div className="space-y-1 mb-2 px-0.5">
                     {(store?.name || distance || storeRating) && (
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
                         {store?.name && (
-                          <span className="truncate max-w-[95px] font-medium text-slate-400 group-hover:text-slate-300">
+                          <span className="truncate max-w-[90px] font-medium text-slate-400 group-hover:text-slate-300">
                             {store.name}
                           </span>
                         )}
 
-                        <div className="flex items-center gap-2 shrink-0 ml-auto font-light">
+                        <div className="flex items-center gap-1.5 shrink-0 ml-auto font-light">
                           {distance && (
                             <span className="flex items-center gap-0.5 text-slate-400">
                               <MapPin size={9} className="text-emerald-400 shrink-0" />
@@ -474,23 +353,23 @@ export default function ManadasMode({
                     {/* Precios */}
                     <div className="flex items-baseline gap-1.5 flex-wrap">
                       {regularPrice > auraPrice && (
-                        <span className="text-[11px] text-slate-500 line-through font-light">
+                        <span className="text-[10px] text-slate-500 line-through font-light">
                           ${regularPrice.toFixed(2)}
                         </span>
                       )}
-                      <span className="text-base sm:text-lg font-black text-slate-100 tracking-tight">
+                      <span className="text-sm sm:text-base font-black text-slate-100 tracking-tight">
                         ${auraPrice.toFixed(2)}
                       </span>
-                      <span className="text-[10px] text-violet-400/90 font-bold uppercase">USD</span>
+                      <span className="text-[9px] text-violet-400/90 font-bold uppercase">USD</span>
                     </div>
 
                     {/* Barra de progreso de la manada */}
-                    <div className="space-y-1 pt-1">
-                      <div className="flex justify-between items-center text-[10px] text-slate-400">
+                    <div className="space-y-0.5 pt-0.5">
+                      <div className="flex justify-between items-center text-[9px] text-slate-400">
                         <span className="text-violet-300 font-medium">{joinedCount}/{targetCount} unidos</span>
-                        <span className="text-slate-500">{remaining === 1 ? '¡Solo 1!' : `Faltan ${remaining}`}</span>
+                        <span className="text-slate-500">{remaining === 1 ? '¡Falta 1!' : `Faltan ${remaining}`}</span>
                       </div>
-                      <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
+                      <div className="w-full h-1 bg-slate-950 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-400 transition-all duration-500"
                           style={{ width: `${progressPercent}%` }}
@@ -507,9 +386,9 @@ export default function ManadasMode({
                       playTap();
                       onSelectProduct(product);
                     }}
-                    className="game-sweep w-full cursor-pointer bg-gradient-to-r from-violet-900/90 via-indigo-700/80 to-purple-800 text-slate-100 font-black py-2 sm:py-2.5 px-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                    className="game-sweep w-full cursor-pointer bg-gradient-to-r from-violet-900/90 via-indigo-700/80 to-purple-800 text-slate-100 font-bold py-1.5 sm:py-2 px-2 rounded-xl text-[11px] sm:text-xs transition flex items-center justify-center gap-1 shadow-sm active:scale-95"
                   >
-                    <Users size={13} className="text-violet-300" />
+                    <Users size={12} className="text-violet-300" />
                     <span className="truncate">Unirme a la Manada</span>
                   </button>
                 </div>
