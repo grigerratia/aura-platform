@@ -207,7 +207,7 @@ export default function TopHUD({
                 playTap();
                 onGoHome();
               }}
-              className="cursor-pointer text-[11px] sm:text-xs font-light tracking-[0.25em] text-slate-300 hover:text-[#00ffb2] transition-colors uppercase px-2.5 py-1 rounded-xl border border-slate-800/60 hover:border-emerald-500/40 bg-[#030910]/60 active:scale-95"
+              className="cursor-pointer text-[11px] sm:text-xs font-medium tracking-[0.25em] text-slate-300 hover:text-[#00ffb2] transition-colors uppercase px-3 py-1.5 rounded-xl hover:bg-slate-900/60 active:scale-95"
               title="Volver a la Portada de Inicio"
             >
               AURA
@@ -232,7 +232,7 @@ export default function TopHUD({
                 className={`text-sm sm:text-base font-black tracking-tight transition-all duration-300 ${
                   balanceGlow
                     ? 'text-[#00ffb2] scale-110 drop-shadow-[0_0_12px_rgba(0,255,178,0.7)]'
-                    : 'text-white'
+                    : 'text-slate-200'
                 }`}
               >
                 ${walletCreditUSD.toFixed(2)}
