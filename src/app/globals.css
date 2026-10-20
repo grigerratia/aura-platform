@@ -71,24 +71,6 @@
   box-shadow: 0 0 30px -4px rgba(168, 85, 247, 0.45);
 }
 
-/* Efecto de Desintegración y Reconstrucción en Polvo (Thanos Snap) */
-.thanos-dust-filter {
-  filter: url(#thanos-disintegrate) blur(2px);
-  will-change: transform, opacity, filter, mask-position;
-}
-
-.thanos-dust-filter-epic {
-  filter: url(#thanos-disintegrate-epic) blur(3px);
-  will-change: transform, opacity, filter, mask-position;
-}
-
-.thanos-mask-wipe {
-  -webkit-mask-image: linear-gradient(125deg, transparent 0%, black 40%, transparent 70%);
-  mask-image: linear-gradient(125deg, transparent 0%, black 40%, transparent 70%);
-  -webkit-mask-size: 240% 240%;
-  mask-size: 240% 240%;
-}
-
 /* Scrollbar ultra sutil para móviles y escritorio */
 ::-webkit-scrollbar {
   width: 5px;

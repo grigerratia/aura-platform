@@ -4,8 +4,7 @@ import { useState, useMemo } from 'react';
 import { Product, Store } from '@/types';
 import CategoryIconBar from '../CategoryIconBar';
 import GameProductCard from '../GameProductCard';
-import ThanosTransition from '@/components/vfx/ThanosTransition';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Compass, X, ArrowRight, Store as StoreIcon } from 'lucide-react';
 import { useGameSound } from '@/hooks/useGameSound';
 
@@ -188,22 +187,23 @@ export default function RadarMode({
         </div>
       </div>
 
-      {/* 4. CUADRÍCULA DE TARJETAS MINIMALISTAS CON DESINTEGRACIÓN THANOS */}
+      {/* 4. CUADRÍCULA DE TARJETAS MINIMALISTAS */}
       <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
         <AnimatePresence mode="popLayout">
           {filteredProducts.map((product) => (
-            <ThanosTransition
+            <motion.div
               key={product.id}
-              elementKey={product.id}
-              intensity={product.stock && product.stock <= 1 ? 'epic' : 'fast'}
-              mode="sync"
-              reconstructDust={false}
+              layout
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.2 }}
             >
               <GameProductCard
                 product={product}
                 onSelect={onSelectProduct}
               />
-            </ThanosTransition>
+            </motion.div>
           ))}
         </AnimatePresence>
 

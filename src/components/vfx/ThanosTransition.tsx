@@ -50,39 +50,31 @@ function ThanosItem({
       ref={ref}
       initial={{
         opacity: 0,
-        scale: 0.96,
-        filter: 'url(#thanos-disintegrate) blur(2px)',
+        scale: 0.98,
         y: 8,
-        WebkitMaskPosition: '100% 100%',
-        maskPosition: '100% 100%',
-      } as any}
+        filter: 'blur(4px)',
+      }}
       animate={{
         opacity: 1,
         scale: 1,
-        filter: 'none',
         y: 0,
-        WebkitMaskPosition: '0% 0%',
-        maskPosition: '0% 0%',
+        filter: 'blur(0px)',
         transition: {
-          duration: 0.35,
+          duration: 0.25,
           ease: [0.22, 1, 0.36, 1],
         },
-      } as any}
+      }}
       exit={{
         opacity: 0,
-        scale: isEpic ? 1.04 : 1.02,
-        filter: isEpic
-          ? 'url(#thanos-disintegrate-epic) blur(3px)'
-          : 'url(#thanos-disintegrate) blur(2px)',
-        y: isEpic ? -10 : -6,
-        WebkitMaskPosition: '100% 100%',
-        maskPosition: '100% 100%',
+        scale: isEpic ? 1.03 : 1.01,
+        y: isEpic ? -8 : -4,
+        filter: 'blur(6px)',
         transition: {
-          duration,
+          duration: duration * 0.5,
           ease: [0.35, 0.05, 0.2, 1],
         },
-      } as any}
-      className={`thanos-mask-wipe will-change-[transform,opacity,filter] ${className}`}
+      }}
+      className={`will-change-[transform,opacity] ${className}`}
     >
       {children}
     </motion.div>
