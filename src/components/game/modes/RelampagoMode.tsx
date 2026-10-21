@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Product, Store } from '@/types';
 import GameProductCard from '../GameProductCard';
 import ThanosCard from '@/components/vfx/ThanosCard';
+import AuroraParticles from '../AuroraParticles';
 import GameControlBar from '../GameControlBar';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -232,8 +233,13 @@ export default function RelampagoMode({
         {/* Reflejo especular superior fino de 1px */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-rose-400/40 to-transparent" />
 
-        {/* Halo de luz ambiental interna sin partículas pesadas */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(220px_circle_at_15%_0%,rgba(244,63,94,0.14),transparent_75%)]" />
+        {/* Halo de luz ambiental interna */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(220px_circle_at_15%_0%,rgba(244,63,94,0.12),transparent_75%)]" />
+
+        {/* Partículas vivas en el fondo del header */}
+        <div className="pointer-events-none absolute inset-0 opacity-85 overflow-hidden">
+          <AuroraParticles count={18} colors={['#f43f5e', '#fb7185', '#f59e0b', '#fbbf24', '#fda4af']} />
+        </div>
 
         <div className="relative z-10 flex items-center justify-between gap-3">
           <div className="space-y-0.5 min-w-0">
