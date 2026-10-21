@@ -89,8 +89,8 @@
   mask-size: 300% 300%;
   -webkit-mask-position: 0% 0%;
   mask-position: 0% 0%;
-  transition: -webkit-mask-position 0.88s cubic-bezier(0.32, 0.04, 0.24, 1),
-    mask-position 0.88s cubic-bezier(0.32, 0.04, 0.24, 1);
+  transition: -webkit-mask-position 0.52s cubic-bezier(0.32, 0.04, 0.24, 1),
+    mask-position 0.52s cubic-bezier(0.32, 0.04, 0.24, 1);
 }
 
 .aura-cinema-mask-exit {

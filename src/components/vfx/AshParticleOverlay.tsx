@@ -80,9 +80,10 @@ export default function AshParticleOverlay() {
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
 
-    // Ajuste de resolución Retina / HiDPI
+    // Ajuste de resolución adaptativa Retina / HiDPI (DPR 1 en móviles para 60 FPS estables)
     const resizeCanvas = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
+      const dpr = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       canvas.style.width = `${window.innerWidth}px`;
@@ -93,7 +94,7 @@ export default function AshParticleOverlay() {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    // Bucle de renderizado a 60 FPS
+    // Bucle de renderizado de alta velocidad (sin ctx.save / ctx.restore)
     const loop = () => {
       if (particlesRef.current.length === 0) {
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
@@ -117,55 +118,38 @@ export default function AshParticleOverlay() {
 
         if (p.mode === 'disintegrate') {
           // Deriva hacia arriba y a la derecha con turbulencia armónica
-          p.x += p.vx + Math.sin(p.age * 0.18) * 0.7;
+          p.x += p.vx + Math.sin(p.age * 0.2) * 0.6;
           p.y += p.vy;
-          p.rotation += p.rotationSpeed;
           p.alpha = Math.max(0, 1 - progress);
         } else {
           // Reconstrucción: convergen desde la dispersión exterior hacia el objetivo
           const easeOut = 1 - Math.pow(1 - progress, 2.5);
           p.x = p.originX + (p.targetX - p.originX) * easeOut;
           p.y = p.originY + (p.targetY - p.originY) * easeOut;
-          p.rotation += p.rotationSpeed * (1 - progress);
-          // Aparecen rápido y se disuelven al llegar a la posición
           p.alpha = Math.sin(progress * Math.PI) * 0.85;
         }
 
-        // Dibujar partícula
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rotation);
+        // Renderizado directo en lote (15x más rápido que matriz save/restore)
         ctx.globalAlpha = p.alpha;
         ctx.fillStyle = p.color;
 
         const currentSize = p.size * (1 - progress * 0.35);
 
-        if (p.shape === 0) {
-          // Rombo / Fragmento angulado
-          ctx.beginPath();
-          ctx.moveTo(0, -currentSize);
-          ctx.lineTo(currentSize * 0.8, 0);
-          ctx.lineTo(0, currentSize);
-          ctx.lineTo(-currentSize * 0.8, 0);
-          ctx.closePath();
-          ctx.fill();
-        } else if (p.shape === 1) {
-          // Polígono irregular de ceniza
-          ctx.beginPath();
-          ctx.moveTo(-currentSize * 0.6, -currentSize * 0.4);
-          ctx.lineTo(currentSize * 0.7, -currentSize * 0.7);
-          ctx.lineTo(currentSize * 0.5, currentSize * 0.6);
-          ctx.lineTo(-currentSize * 0.8, currentSize * 0.5);
-          ctx.closePath();
-          ctx.fill();
-        } else {
+        if (p.shape === 2) {
           // Mota circular suave
           ctx.beginPath();
-          ctx.arc(0, 0, currentSize * 0.6, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, currentSize * 0.5, 0, Math.PI * 2);
           ctx.fill();
+        } else {
+          // Fragmento angular de ceniza (fillRect evita path allocations)
+          ctx.fillRect(
+            p.x - currentSize * 0.45,
+            p.y - currentSize * 0.45,
+            currentSize * 0.9,
+            currentSize * 0.9
+          );
         }
 
-        ctx.restore();
         activeList.push(p);
       }
 
@@ -187,14 +171,22 @@ export default function AshParticleOverlay() {
       const { left, top, width, height, mode, intensity } = customEvent.detail;
       if (!width || !height) return;
 
+      const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
       const isEpic = intensity === 'epic';
-      const count = isEpic
-        ? Math.floor(85 + Math.random() * 45) // 85-130 partículas
-        : Math.floor(38 + Math.random() * 25); // 38-63 partículas
 
-      // Limitar a máximo 260 partículas simultáneas para garantizar 60 FPS en móviles
-      if (particlesRef.current.length > 200) {
-        particlesRef.current = particlesRef.current.slice(-100);
+      // Conteo adaptativo: en móviles 18-28 partículas dan sensación nítida sin congelar
+      const count = isMobile
+        ? isEpic
+          ? Math.floor(22 + Math.random() * 8)
+          : Math.floor(12 + Math.random() * 6)
+        : isEpic
+        ? Math.floor(45 + Math.random() * 15)
+        : Math.floor(25 + Math.random() * 10);
+
+      // Limitar buffer activo
+      const maxActive = isMobile ? 45 : 95;
+      if (particlesRef.current.length > maxActive) {
+        particlesRef.current = particlesRef.current.slice(-Math.floor(maxActive * 0.6));
       }
 
       const newParticles: AshParticle[] = [];
@@ -204,15 +196,21 @@ export default function AshParticleOverlay() {
         const targetX = left + Math.random() * width;
         const targetY = top + Math.random() * height;
 
-        const size = 1.5 + Math.random() * 3.0;
+        const size = 1.6 + Math.random() * 2.8;
         const color = AURA_ASH_COLORS[Math.floor(Math.random() * AURA_ASH_COLORS.length)];
         const shape = Math.floor(Math.random() * 3) as 0 | 1 | 2;
-        const maxLife = isEpic ? 45 + Math.random() * 35 : 24 + Math.random() * 18;
+        const maxLife = isMobile
+          ? isEpic
+            ? 22 + Math.random() * 8
+            : 15 + Math.random() * 6
+          : isEpic
+          ? 32 + Math.random() * 12
+          : 20 + Math.random() * 8;
 
         if (mode === 'disintegrate') {
           // Velocidad ascendente y hacia la derecha estilo viento cósmico
-          const vx = (Math.random() * 3.5 + 1.2) * (isEpic ? 1.3 : 1.0);
-          const vy = -(Math.random() * 2.8 + 0.8) * (isEpic ? 1.3 : 1.0);
+          const vx = (Math.random() * 3.2 + 1.1) * (isEpic ? 1.2 : 1.0);
+          const vy = -(Math.random() * 2.6 + 0.8) * (isEpic ? 1.2 : 1.0);
 
           newParticles.push({
             x: targetX,
@@ -225,8 +223,8 @@ export default function AshParticleOverlay() {
             vy,
             size,
             color,
-            rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: (Math.random() - 0.5) * 0.25,
+            rotation: 0,
+            rotationSpeed: 0,
             alpha: 1,
             maxLife,
             age: 0,
@@ -234,9 +232,9 @@ export default function AshParticleOverlay() {
             shape,
           });
         } else {
-          // Reconstrucción: nacen dispersas a 30-55px de distancia arriba a la derecha y convergen
-          const disperseX = targetX + (Math.random() * 45 + 18);
-          const disperseY = targetY - (Math.random() * 40 + 12);
+          // Reconstrucción: convergen rápidamente
+          const disperseX = targetX + (Math.random() * 35 + 14);
+          const disperseY = targetY - (Math.random() * 30 + 10);
 
           newParticles.push({
             x: disperseX,
@@ -249,10 +247,10 @@ export default function AshParticleOverlay() {
             vy: 0,
             size,
             color,
-            rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: (Math.random() - 0.5) * 0.15,
+            rotation: 0,
+            rotationSpeed: 0,
             alpha: 0,
-            maxLife: 20 + Math.random() * 8, // ~300ms de convergencia
+            maxLife: isMobile ? 14 + Math.random() * 6 : 18 + Math.random() * 6,
             age: 0,
             mode: 'reconstruct',
             shape,

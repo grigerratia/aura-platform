@@ -93,40 +93,18 @@ export default function WelcomePortal({ onSelectMode }: Props) {
 
     const rect = e.currentTarget.getBoundingClientRect();
 
-    // Disparar las 3 oleadas cinematográficas de ceniza cósmica
+    // Disparar las oleadas cinematográficas optimizadas de ceniza cósmica
     cleanupFnRef.current = triggerCinematicThanosDisintegration(
       rect,
       () => {
         onSelectMode(mode);
       },
-      960
+      540
     );
   };
 
   return (
     <div className="relative min-h-[80vh] flex flex-col items-center justify-center px-5 py-12 select-none overflow-hidden">
-      {/* FILTRO SVG INVISIBLE PARA FRAGMENTACIÓN ORGÁNICA TIPO ARENA/CENIZA */}
-      <svg className="pointer-events-none absolute w-0 h-0" aria-hidden="true">
-        <defs>
-          <filter id="aura-cinema-erosion" x="-20%" y="-20%" width="140%" height="140%">
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.065"
-              numOctaves="3"
-              seed="7"
-              result="noise"
-            />
-            <feDisplacementMap
-              in="SourceGraphic"
-              in2="noise"
-              scale="24"
-              xChannelSelector="R"
-              yChannelSelector="G"
-            />
-          </filter>
-        </defs>
-      </svg>
-
       {/* HALO ATMOSFÉRICO DE FONDO (Se apaga suavemente durante la desintegración) */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -194,22 +172,23 @@ export default function WelcomePortal({ onSelectMode }: Props) {
                   isDisintegrating
                     ? isTarget
                       ? {
-                          // EL ELEGIDO: Se ilumina y fragmenta sus bordes con el filtro SVG mientras la máscara CSS barre en diagonal
-                          opacity: [1, 0.92, 0],
-                          y: -8,
-                          filter: 'url(#aura-cinema-erosion) brightness(1.3) blur(1.5px)',
+                          // EL ELEGIDO: Destello sutil mientras la máscara CSS barre en diagonal a 60 FPS
+                          opacity: [1, 0.95, 0],
+                          y: -6,
+                          scale: [1, 1.015, 0.97],
+                          filter: 'brightness(1.25)',
                           transition: {
-                            duration: 0.88,
+                            duration: 0.52,
                             ease: CINEMATIC_EXIT_EASE,
                           },
                         }
                       : {
-                          // LOS NO ELEGIDOS: Se desvanecen silenciosamente en niebla de fondo
+                          // LOS NO ELEGIDOS: Se desvanecen suavemente
                           opacity: 0,
-                          y: 6,
-                          filter: 'blur(12px)',
+                          y: 4,
+                          filter: 'blur(8px)',
                           transition: {
-                            duration: 0.5,
+                            duration: 0.35,
                             ease: CINEMATIC_EASE,
                           },
                         }

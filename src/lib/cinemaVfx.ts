@@ -17,68 +17,55 @@ export interface SimpleRect {
 }
 
 /**
- * Dispara la desintegración cinematográfica en 3 oleadas (0ms, 180ms, 360ms)
- * simulando un frente de erosión que cruza desde la esquina inferior-izquierda hacia la superior-derecha.
+ * Dispara la desintegración cinematográfica optimizada para 60 FPS en móviles y escritorio.
+ * Genera una estela de partículas de ceniza sin saturar el bus del navegador.
  */
 export function triggerCinematicThanosDisintegration(
   rect: DOMRect | SimpleRect,
   onComplete?: () => void,
-  totalDurationMs = 960
+  totalDurationMs?: number
 ): () => void {
   if (typeof window === 'undefined' || !rect || rect.width <= 0 || rect.height <= 0) {
     onComplete?.();
     return () => {};
   }
 
+  const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
+  const finalDuration = totalDurationMs ?? (isMobile ? 520 : 580);
   const timeouts: ReturnType<typeof setTimeout>[] = [];
 
-  // OLEADA 1 (0ms): Borde inferior-izquierdo comienza a convertirse en ceniza
+  // OLEADA 1 (0ms): Núcleo principal de dispersión de ceniza cósmica
   emitThanosDust(
     {
       left: rect.left,
-      top: rect.top + rect.height * 0.45,
-      width: rect.width * 0.55,
-      height: rect.height * 0.55,
+      top: rect.top + rect.height * 0.2,
+      width: rect.width * 0.85,
+      height: rect.height * 0.8,
     },
     'disintegrate',
-    'epic'
+    isMobile ? 'fast' : 'epic'
   );
 
-  // OLEADA 2 (180ms): El frente de erosión cruza el corazón del elemento
+  // OLEADA 2 (120ms): Estela diagonal ascendente
   const t1 = setTimeout(() => {
     emitThanosDust(
       {
-        left: rect.left + rect.width * 0.15,
-        top: rect.top + rect.height * 0.15,
-        width: rect.width * 0.7,
-        height: rect.height * 0.7,
+        left: rect.left + rect.width * 0.35,
+        top: rect.top,
+        width: rect.width * 0.65,
+        height: rect.height * 0.65,
       },
       'disintegrate',
-      'epic'
+      'fast'
     );
-  }, 180);
+  }, 120);
   timeouts.push(t1);
 
-  // OLEADA 3 (360ms): La esquina superior-derecha se desvanece en el viento
-  const t2 = setTimeout(() => {
-    emitThanosDust(
-      {
-        left: rect.left + rect.width * 0.4,
-        top: rect.top,
-        width: rect.width * 0.6,
-        height: rect.height * 0.55,
-      },
-      'disintegrate',
-      'epic'
-    );
-  }, 360);
-  timeouts.push(t2);
-
-  // Callback final después de la estela completa
+  // Callback final después de la estela
   if (onComplete) {
     const tFinal = setTimeout(() => {
       onComplete();
-    }, totalDurationMs);
+    }, finalDuration);
     timeouts.push(tFinal);
   }
 

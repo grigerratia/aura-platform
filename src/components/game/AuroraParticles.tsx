@@ -59,14 +59,17 @@ export default function AuroraParticles({
 
     window.addEventListener('resize', handleResize);
 
-    // Inicializar partículas flotantes suaves (18)
-    particlesRef.current = Array.from({ length: count }, () => ({
+    const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
+    const effectiveCount = isMobile ? Math.min(count, 8) : count;
+
+    // Inicializar partículas flotantes suaves (adaptativo)
+    particlesRef.current = Array.from({ length: effectiveCount }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
       vx: (Math.random() - 0.5) * 0.45,
       vy: -0.2 - Math.random() * 0.45,
-      radius: 1 + Math.random() * 2,
-      alpha: 0.1 + Math.random() * 0.6,
+      radius: 1 + Math.random() * 1.8,
+      alpha: 0.15 + Math.random() * 0.55,
       maxAlpha: 0.3 + Math.random() * 0.5,
       color: palette[Math.floor(Math.random() * palette.length)],
     }));
@@ -74,7 +77,7 @@ export default function AuroraParticles({
     const render = () => {
       ctx.clearRect(0, 0, width, height);
 
-      // 1. Partículas flotantes de ambiente
+      // 1. Partículas flotantes de ambiente (Directo sin ctx.save/restore ni shadowBlur)
       particlesRef.current.forEach((p) => {
         p.x += p.vx;
         p.y += p.vy;
@@ -87,15 +90,11 @@ export default function AuroraParticles({
         if (p.x < -5) p.x = width + 5;
         if (p.x > width + 5) p.x = -5;
 
-        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        ctx.globalAlpha = p.alpha;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = p.color;
         ctx.fill();
-        ctx.restore();
       });
 
       // 2. Partículas de Ráfaga / Celebración (Burst)
@@ -107,15 +106,11 @@ export default function AuroraParticles({
           p.alpha -= p.decay || 0.02;
 
           if (p.alpha > 0) {
-            ctx.save();
+            ctx.globalAlpha = Math.max(0, p.alpha);
+            ctx.fillStyle = p.color;
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-            ctx.fillStyle = p.color;
-            ctx.globalAlpha = Math.max(0, p.alpha);
-            ctx.shadowBlur = 14;
-            ctx.shadowColor = p.color;
             ctx.fill();
-            ctx.restore();
           }
         });
 
