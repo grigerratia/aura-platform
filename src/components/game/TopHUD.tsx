@@ -164,97 +164,115 @@ export default function TopHUD({
       <header className="fixed top-0 inset-x-0 z-40 bg-[#020508]/85 backdrop-blur-xl border-b border-emerald-950/60 select-none">
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
           
-          {/* 1. IZQUIERDA: INSIGNIA DE NIVEL AURA + BARRA XP */}
-          <div
-            onClick={() => {
-              playTap();
-              setShowRankModal(true);
-            }}
-            className="cursor-pointer flex items-center gap-2 group transition active:scale-95"
-            title="Ver tu Nivel de Aura y Beneficios"
-          >
-            <div
-              className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl ${levelInfo.badgeBg} border ${levelInfo.badgeBorder} flex items-center justify-center transition-all group-hover:scale-105 ${levelInfo.glowClass}`}
-            >
-              <Shield size={16} color={levelInfo.iconColor} className="shrink-0" />
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1.5">
-                <span className={`text-[11px] sm:text-xs font-black tracking-tight ${levelInfo.colorClass}`}>
-                  {levelInfo.name}
-                </span>
-                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider hidden xs:inline">
-                  {levelInfo.tier}
-                </span>
-              </div>
-
-              {/* Barra de Progreso XP brillante */}
-              <div className="w-16 sm:w-24 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800/80 mt-0.5">
-                <div
-                  className={`h-full ${levelInfo.barClass} transition-all duration-500 shadow-sm`}
-                  style={{ width: `${xpPercent}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* BOTÓN HOME AURA (VOLVER A LA PORTADA) */}
-          {onGoHome && (
-            <button
-              type="button"
-              onClick={() => {
-                playTap();
-                onGoHome();
-              }}
-              className="cursor-pointer text-[11px] sm:text-xs font-medium tracking-[0.25em] text-slate-300 hover:text-[#00ffb2] transition-colors uppercase px-3 py-1.5 rounded-xl hover:bg-slate-900/60 active:scale-95"
-              title="Volver a la Portada de Inicio"
-            >
-              AURA
-            </button>
-          )}
-
-          {/* 2. CENTRO: SALDO BILLETERA AURA */}
+          {/* 1. IZQUIERDA: LOGO AURA (PORTADA / INICIO) - PRIMER LUGAR */}
           <button
+            type="button"
             onClick={() => {
               playTap();
-              onOpenWallet();
+              if (onGoHome) {
+                onGoHome();
+              } else {
+                router.push('/');
+              }
             }}
-            className="cursor-pointer flex items-center gap-2 px-2 py-1 rounded-xl transition active:scale-95 hover:bg-emerald-950/30 group"
-            title="Abrir Billetera de Protección Aura"
+            className="cursor-pointer flex items-center gap-2 px-1 py-1 rounded-xl transition active:scale-95 group shrink-0"
+            title="AURA - Inicio"
           >
-            <Wallet size={15} className="text-emerald-400 group-hover:rotate-6 transition-transform" />
-            <div className="flex items-baseline gap-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider hidden sm:inline">
-                Saldo:
+            <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-teal-500 via-emerald-400 to-[#00ffb2] flex items-center justify-center text-black font-black text-sm sm:text-base shadow-[0_0_14px_rgba(0,255,178,0.35)] group-hover:shadow-[0_0_20px_rgba(0,255,178,0.6)] group-hover:scale-105 transition-all">
+              A
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-sm sm:text-base font-black tracking-[0.2em] bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent group-hover:to-[#00ffb2] transition-colors leading-tight">
+                AURA
               </span>
-              <span
-                className={`text-sm sm:text-base font-black tracking-tight transition-all duration-300 ${
-                  balanceGlow
-                    ? 'text-[#00ffb2] scale-110 drop-shadow-[0_0_12px_rgba(0,255,178,0.7)]'
-                    : 'text-slate-200'
-                }`}
-              >
-                ${walletCreditUSD.toFixed(2)}
+              <span className="text-[8px] sm:text-[9px] text-emerald-400 font-bold tracking-widest uppercase hidden xs:inline">
+                Hiperlocal
               </span>
-              <span className="text-[10px] text-emerald-400/80 font-bold">USD</span>
             </div>
           </button>
 
-          {/* 3. DERECHA: TASA BCV + CIUDAD + LOGIN/PERFIL + MENÚ */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* 2. CENTRO: SALDO BILLETERA AURA (SOLO SI HAY SESIÓN INICIADA) */}
+          {user ? (
+            <button
+              onClick={() => {
+                playTap();
+                onOpenWallet();
+              }}
+              className="cursor-pointer flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-slate-950/60 hover:bg-emerald-950/40 border border-slate-800/60 hover:border-emerald-800/50 transition active:scale-95 group shrink-0 shadow-sm"
+              title="Abrir Billetera de Protección Aura"
+            >
+              <Wallet size={15} className="text-emerald-400 group-hover:rotate-6 transition-transform shrink-0" />
+              <div className="flex items-baseline gap-1">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider hidden sm:inline">
+                  Saldo:
+                </span>
+                <span
+                  className={`text-xs sm:text-sm font-black tracking-tight transition-all duration-300 ${
+                    balanceGlow
+                      ? 'text-[#00ffb2] scale-110 drop-shadow-[0_0_12px_rgba(0,255,178,0.7)]'
+                      : 'text-slate-200'
+                  }`}
+                >
+                  ${walletCreditUSD.toFixed(2)}
+                </span>
+                <span className="text-[9px] sm:text-[10px] text-emerald-400/90 font-bold">USD</span>
+              </div>
+            </button>
+          ) : (
+            <div className="hidden sm:block" />
+          )}
+
+          {/* 3. DERECHA: NIVEL (SI LOGUEADO) + TASA BCV + CIUDAD + PERFIL/LOGIN/DRAWER */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             
+            {/* INSIGNIA DE NIVEL AURA (SOLO VISIBLE CON SESIÓN INICIADA) */}
+            {user && (
+              <div
+                onClick={() => {
+                  playTap();
+                  setShowRankModal(true);
+                }}
+                className="cursor-pointer flex items-center gap-1.5 sm:gap-2 px-2 py-1 rounded-xl bg-slate-950/60 hover:bg-slate-900/70 border border-slate-800/60 transition active:scale-95 group shrink-0"
+                title="Ver tu Nivel de Aura y Beneficios"
+              >
+                <div
+                  className={`relative w-7 h-7 sm:w-8 sm:h-8 rounded-lg ${levelInfo.badgeBg} border ${levelInfo.badgeBorder} flex items-center justify-center transition-all group-hover:scale-105 ${levelInfo.glowClass} shrink-0`}
+                >
+                  <Shield size={14} color={levelInfo.iconColor} className="shrink-0" />
+                </div>
+
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1">
+                    <span className={`text-[10px] sm:text-xs font-black tracking-tight ${levelInfo.colorClass}`}>
+                      {levelInfo.name}
+                    </span>
+                    <span className="text-[8px] text-slate-500 uppercase font-bold tracking-wider hidden md:inline">
+                      {levelInfo.tier}
+                    </span>
+                  </div>
+
+                  {/* Barra de Progreso XP brillante */}
+                  <div className="w-12 sm:w-20 h-1 bg-slate-900 rounded-full overflow-hidden border border-slate-800/80 mt-0.5">
+                    <div
+                      className={`h-full ${levelInfo.barClass} transition-all duration-500 shadow-sm`}
+                      style={{ width: `${xpPercent}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Tasa Oficial BCV */}
             <div
-              className="hidden lg:flex items-center gap-1 px-2 py-1 rounded-xl bg-slate-950/60 border border-slate-800/60 text-xs font-bold text-slate-300"
-              title="Tasa Oficial BCV del día"
+              className="hidden md:flex items-center gap-1 px-2 py-1 rounded-xl bg-slate-950/60 border border-slate-800/60 text-xs font-bold text-slate-300 shrink-0"
+              title="Tasa Oficial BCV vigente hoy"
             >
               <span className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">BCV:</span>
-              <span className="text-[#00ffb2] font-black">{tasa} Bs.</span>
+              <span className="text-[#00ffb2] font-black">{typeof tasa === 'number' ? Number(tasa).toFixed(2) : tasa} Bs.</span>
             </div>
 
             {/* Selector de Ciudad */}
-            <div className="relative hidden xs:block">
+            <div className="relative hidden sm:block shrink-0">
               <button
                 onClick={() => {
                   playTap();
@@ -296,18 +314,6 @@ export default function TopHUD({
                 </>
               )}
             </div>
-
-            {/* Botón Mute / Unmute con Lucide */}
-            <button
-              onClick={() => {
-                playTap();
-                toggleMute();
-              }}
-              className="cursor-pointer p-2 rounded-xl text-slate-400 hover:text-[#00ffb2] bg-slate-950/60 hover:bg-emerald-950/30 border border-slate-800/60 transition active:scale-95"
-              title={isMuted ? 'Activar Efectos de Sonido' : 'Silenciar Interfaz'}
-            >
-              {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-            </button>
 
             {/* ACCIONES DE USUARIO: LOGIN / REGISTRO / AVATAR */}
             {user ? (
@@ -427,8 +433,18 @@ export default function TopHUD({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-900/80 text-xs">
-                      <span className="text-slate-400">Reputación:</span>
+                    <div
+                      onClick={() => {
+                        setShowUserDrawer(false);
+                        setShowRankModal(true);
+                      }}
+                      className="flex items-center justify-between pt-2 border-t border-slate-900/80 text-xs cursor-pointer hover:bg-slate-900/40 px-2 py-1.5 rounded-xl transition"
+                      title="Ver detalles de tu rango y beneficios"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Shield size={13} color={levelInfo.iconColor} />
+                        <span className={`font-bold ${levelInfo.colorClass}`}>{levelInfo.name}</span>
+                      </div>
                       <span className="font-black text-[#00ffb2]">{trustScore} / 100</span>
                     </div>
                   </div>
@@ -475,7 +491,9 @@ export default function TopHUD({
                     <DollarSign size={14} className="text-emerald-400" />
                     <span>Tasa Oficial BCV:</span>
                   </div>
-                  <span className="font-black text-emerald-400">{tasa} Bs.</span>
+                  <span className="font-black text-emerald-400">
+                    {typeof tasa === 'number' ? Number(tasa).toFixed(2) : tasa} Bs.
+                  </span>
                 </div>
 
                 {/* Navegación y Enlaces de Cuenta */}
@@ -575,14 +593,25 @@ export default function TopHUD({
                     Preferencias de Interfaz
                   </div>
 
-                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-950/40 text-xs">
-                    <span className="text-slate-300 font-semibold">Efectos de Sonido</span>
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-950/40 border border-slate-900/60 text-xs">
+                    <div className="flex items-center gap-2 text-slate-300 font-semibold">
+                      {isMuted ? (
+                        <VolumeX size={15} className="text-slate-500" />
+                      ) : (
+                        <Volume2 size={15} className="text-[#00ffb2]" />
+                      )}
+                      <span>Efectos de Sonido</span>
+                    </div>
                     <button
                       onClick={() => {
                         playTap();
                         toggleMute();
                       }}
-                      className="text-xs font-bold text-emerald-400 hover:text-[#00ffb2] cursor-pointer"
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        isMuted
+                          ? 'bg-slate-900 text-slate-400 hover:text-white'
+                          : 'bg-emerald-950/60 text-[#00ffb2] border border-emerald-800/40 hover:bg-emerald-900/60'
+                      }`}
                     >
                       {isMuted ? 'Silenciado' : 'Activados'}
                     </button>
