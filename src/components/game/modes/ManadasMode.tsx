@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Product, Store } from '@/types';
 import ThanosCard from '@/components/vfx/ThanosCard';
-import AuroraParticles from '../AuroraParticles';
 import GameControlBar from '../GameControlBar';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -201,10 +200,8 @@ export default function ManadasMode({
         {/* Reflejo especular superior de 1px */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-violet-400/40 to-transparent" />
 
-        {/* Partículas activas en el fondo del header */}
-        <div className="pointer-events-none absolute inset-0 opacity-40">
-          <AuroraParticles count={14} colors={['#8b5cf6', '#a78bfa', '#6366f1', '#06b6d4']} />
-        </div>
+        {/* Halo de luz ambiental interna sin partículas pesadas */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(220px_circle_at_15%_0%,rgba(139,92,246,0.14),transparent_75%)]" />
 
         <div className="relative z-10 flex items-center justify-between gap-3">
           <div className="space-y-0.5 min-w-0">

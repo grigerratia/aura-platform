@@ -12,7 +12,6 @@ import ManadasMode from './modes/ManadasMode';
 import PasesMode from './modes/PasesMode';
 import ProductBottomSheet from './ProductBottomSheet';
 import WalletModal from '../WalletModal';
-import AuroraParticles from './AuroraParticles';
 import { useReservations } from '@/store/useReservations';
 
 interface Props {
@@ -63,9 +62,6 @@ export default function AuraGameShell({
         {/* Luz Azul Glaciar */}
         <div className="absolute bottom-[-10%] right-[-10%] w-[35rem] h-[35rem] rounded-full bg-cyan-600/8 blur-[140px]" />
       </div>
-
-      {/* RÁFAGA DE CELEBRACIÓN GLOBAL */}
-      <AuroraParticles burstTrigger={burstTrigger} count={0} />
 
       {/* 2. TOP HUD: BARRA DE ESTADO DEL USUARIO FIJA ARRIBA */}
       <TopHUD

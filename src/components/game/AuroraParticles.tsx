@@ -1,169 +1,17 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-
 interface Props {
   className?: string;
   count?: number;
-  burstTrigger?: number; // Cada vez que este número cambie, dispara una ráfaga de celebración
+  burstTrigger?: number;
   colors?: string[];
 }
 
-interface Particle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  radius: number;
-  alpha: number;
-  maxAlpha: number;
-  color: string;
-  decay?: number;
+/**
+ * AuroraParticles
+ * Desactivado completamente para optimización móvil (0% CPU / 0% GPU).
+ * Los fondos ahora utilizan iluminación radial CSS nativa acelerada por hardware.
+ */
+export default function AuroraParticles(_props: Props) {
+  return null;
 }
-
-const AURORA_COLORS = [
-  '#00ffb2', // Verde Aurora Neón
-  '#10b981', // Esmeralda Boreal
-  '#38bdf8', // Azul Glaciar
-  '#c084fc', // Violeta Boreal
-  '#ffffff', // Destello Blanco
-];
-
-export default function AuroraParticles({
-  className = '',
-  count = 18,
-  burstTrigger = 0,
-  colors,
-}: Props) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const particlesRef = useRef<Particle[]>([]);
-  const burstParticlesRef = useRef<Particle[]>([]);
-
-  const palette = colors && colors.length > 0 ? colors : AURORA_COLORS;
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animId: number;
-    let width = (canvas.width = canvas.parentElement?.clientWidth || 300);
-    let height = (canvas.height = canvas.parentElement?.clientHeight || 120);
-
-    const handleResize = () => {
-      if (!canvas || !canvas.parentElement) return;
-      width = canvas.width = canvas.parentElement.clientWidth;
-      height = canvas.height = canvas.parentElement.clientHeight;
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
-    const effectiveCount = isMobile ? Math.min(count, 8) : count;
-
-    // Inicializar partículas flotantes suaves (adaptativo)
-    particlesRef.current = Array.from({ length: effectiveCount }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.45,
-      vy: -0.2 - Math.random() * 0.45,
-      radius: 1 + Math.random() * 1.8,
-      alpha: 0.15 + Math.random() * 0.55,
-      maxAlpha: 0.3 + Math.random() * 0.5,
-      color: palette[Math.floor(Math.random() * palette.length)],
-    }));
-
-    const render = () => {
-      ctx.clearRect(0, 0, width, height);
-
-      // 1. Partículas flotantes de ambiente (Directo sin ctx.save/restore ni shadowBlur)
-      particlesRef.current.forEach((p) => {
-        p.x += p.vx;
-        p.y += p.vy;
-
-        // Rebote / Reaparición suave
-        if (p.y < -5) {
-          p.y = height + 5;
-          p.x = Math.random() * width;
-        }
-        if (p.x < -5) p.x = width + 5;
-        if (p.x > width + 5) p.x = -5;
-
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      // 2. Partículas de Ráfaga / Celebración (Burst)
-      if (burstParticlesRef.current.length > 0) {
-        burstParticlesRef.current.forEach((p) => {
-          p.x += p.vx;
-          p.y += p.vy;
-          p.vy += 0.08; // Gravedad suave
-          p.alpha -= p.decay || 0.02;
-
-          if (p.alpha > 0) {
-            ctx.globalAlpha = Math.max(0, p.alpha);
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        });
-
-        // Limpiar partículas desvanecidas
-        burstParticlesRef.current = burstParticlesRef.current.filter((p) => p.alpha > 0);
-      }
-
-      animId = requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [count]);
-
-  // Manejar trigger de celebración (Ráfaga expansiva de 35 partículas luminosas)
-  useEffect(() => {
-    if (!burstTrigger || burstTrigger <= 0) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-    const centerX = width / 2;
-    const centerY = height / 2;
-
-    const newBurst: Particle[] = Array.from({ length: 36 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 1.5 + Math.random() * 4.5;
-      return {
-        x: centerX,
-        y: centerY,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 1.2,
-        radius: 1.5 + Math.random() * 2.5,
-        alpha: 1,
-        maxAlpha: 1,
-        color: AURORA_COLORS[Math.floor(Math.random() * AURORA_COLORS.length)],
-        decay: 0.015 + Math.random() * 0.02,
-      };
-    });
-
-    burstParticlesRef.current = [...burstParticlesRef.current, ...newBurst];
-  }, [burstTrigger]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className={`absolute inset-0 pointer-events-none z-10 ${className}`}
-    />
-  );
-}
-

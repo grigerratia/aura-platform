@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { Product, Store } from '@/types';
 import GameProductCard from '../GameProductCard';
 import ThanosCard from '@/components/vfx/ThanosCard';
-import AuroraParticles from '../AuroraParticles';
 import GameControlBar from '../GameControlBar';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -208,10 +207,8 @@ export default function RadarMode({
         {/* Reflejo especular superior fino */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/40 to-transparent" />
 
-        {/* Partículas activas en el fondo del header */}
-        <div className="pointer-events-none absolute inset-0 opacity-40">
-          <AuroraParticles count={14} colors={['#00ffb2', '#10b981', '#06b6d4', '#38bdf8']} />
-        </div>
+        {/* Halo de luz ambiental interna sin partículas pesadas */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(220px_circle_at_15%_0%,rgba(0,255,178,0.14),transparent_75%)]" />
 
         <div className="relative z-10 flex items-center justify-between gap-3">
           <div className="space-y-0.5 min-w-0">

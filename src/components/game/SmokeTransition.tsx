@@ -1,9 +1,7 @@
 'use client';
 
-import { ReactNode, useRef, useEffect } from 'react';
-import { motion, AnimatePresence, useIsPresent } from 'framer-motion';
-import { emitThanosDust } from '../vfx/AshParticleOverlay';
-import { useGameSound } from '@/hooks/useGameSound';
+import { ReactNode } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Props {
   children: ReactNode;
@@ -18,33 +16,8 @@ function ModeContentWrapper({
   children: ReactNode;
   className?: string;
 }) {
-  const isPresent = useIsPresent();
-  const ref = useRef<HTMLDivElement>(null);
-  const { playDustSnap } = useGameSound();
-
-  // Al desmontarse el modo anterior, emitir una ráfaga de polvo/ceniza de Thanos
-  useEffect(() => {
-    if (!isPresent && ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        emitThanosDust(
-          {
-            left: rect.left,
-            top: Math.max(rect.top, 60),
-            width: rect.width,
-            height: Math.min(rect.height, 350),
-          },
-          'disintegrate',
-          'fast'
-        );
-        playDustSnap('fast');
-      }
-    }
-  }, [isPresent, playDustSnap]);
-
   return (
     <motion.div
-      ref={ref}
       initial={{
         opacity: 0,
         y: 8,

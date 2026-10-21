@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Product, Store } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { useReservations } from '@/store/useReservations';
-import { emitThanosDust } from '@/components/vfx/AshParticleOverlay';
 import {
   X, Unlock, Clock, ShieldCheck, MapPin, Check,
   Sparkles, Store as StoreIcon, AlertCircle, Loader2, ArrowRight
@@ -34,13 +33,7 @@ export default function ProductBottomSheet({
   const [generatedPin, setGeneratedPin] = useState('');
 
   const handleCloseWithDust = () => {
-    if (typeof window !== 'undefined') {
-      const modalEl = document.getElementById('aura-bottom-sheet-content');
-      if (modalEl) {
-        emitThanosDust(modalEl.getBoundingClientRect(), 'disintegrate', 'fast');
-        playDustSnap('fast');
-      }
-    }
+    playDustSnap('fast');
     onClose();
   };
 
@@ -101,15 +94,9 @@ export default function ProductBottomSheet({
       setGeneratedPin(pin);
       setSuccessMode(true);
 
-      // Disparar sonido de éxito, partículas de reconstrucción épica y celebración
+      // Disparar sonido de éxito y celebración
       playUnlockSuccess();
       playDustSnap('epic');
-      if (typeof window !== 'undefined') {
-        const modalEl = document.getElementById('aura-bottom-sheet-content');
-        if (modalEl) {
-          emitThanosDust(modalEl.getBoundingClientRect(), 'reconstruct', 'epic');
-        }
-      }
       onSuccessUnlock();
 
     } catch (err) {
