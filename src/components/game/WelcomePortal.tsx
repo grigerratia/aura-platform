@@ -5,15 +5,13 @@ import { motion } from 'framer-motion';
 import { Compass, Zap, Users, Ticket } from 'lucide-react';
 import { useGameSound } from '@/hooks/useGameSound';
 import { GameMode } from './BottomDock';
-import {
-  CINEMATIC_EASE,
-  CINEMATIC_EXIT_EASE,
-  triggerCinematicThanosDisintegration,
-} from '@/lib/cinemaVfx';
 
 interface Props {
   onSelectMode: (mode: GameMode) => void;
 }
+
+const CINEMATIC_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+const QUANTUM_EXIT_EASE: [number, number, number, number] = [0.2, 0.9, 0.3, 1];
 
 interface PortalOption {
   id: GameMode;
@@ -87,29 +85,25 @@ export default function WelcomePortal({ onSelectMode }: Props) {
     if (isDisintegrating) return;
 
     playTap();
-    playDustSnap('epic');
+    playDustSnap('fast');
     setSelectedId(mode);
     setIsDisintegrating(true);
 
-    const rect = e.currentTarget.getBoundingClientRect();
+    // Estrategia Sci-Fi ultra-rápida (340ms): 120 FPS sin Canvas, respuesta inmediata
+    const timer = setTimeout(() => {
+      onSelectMode(mode);
+    }, 340);
 
-    // Disparar las oleadas cinematográficas optimizadas de ceniza cósmica
-    cleanupFnRef.current = triggerCinematicThanosDisintegration(
-      rect,
-      () => {
-        onSelectMode(mode);
-      },
-      540
-    );
+    cleanupFnRef.current = () => clearTimeout(timer);
   };
 
   return (
     <div className="relative min-h-[80vh] flex flex-col items-center justify-center px-5 py-12 select-none overflow-hidden">
-      {/* HALO ATMOSFÉRICO DE FONDO (Se apaga suavemente durante la desintegración) */}
+      {/* HALO ATMOSFÉRICO DE FONDO (Se desvanece sutilmente durante la transición) */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: isDisintegrating ? 0 : 0.65 }}
-        transition={{ duration: isDisintegrating ? 0.8 : 1.4, ease: CINEMATIC_EASE }}
+        transition={{ duration: isDisintegrating ? 0.3 : 1.4, ease: CINEMATIC_EASE }}
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
       >
         <div className="w-[340px] sm:w-[560px] h-[240px] sm:h-[320px] rounded-full bg-gradient-to-tr from-emerald-950/30 via-cyan-950/20 to-indigo-950/30 blur-[110px]" />
@@ -124,9 +118,9 @@ export default function WelcomePortal({ onSelectMode }: Props) {
             isDisintegrating
               ? {
                   opacity: 0,
-                  y: -14,
-                  filter: 'blur(10px)',
-                  transition: { duration: 0.65, ease: CINEMATIC_EASE },
+                  y: -10,
+                  filter: 'blur(6px)',
+                  transition: { duration: 0.24, ease: QUANTUM_EXIT_EASE },
                 }
               : {
                   opacity: 1,
@@ -149,7 +143,7 @@ export default function WelcomePortal({ onSelectMode }: Props) {
           </h1>
         </motion.div>
 
-        {/* 2. LOS CUATRO MONOLITOS (Sin bordes duros, pura luz y desintegración diagonal) */}
+        {/* 2. LOS CUATRO MONOLITOS (Sin bordes duros, pura luz y transición cuántica) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 sm:gap-4 w-full">
           {PORTAL_OPTIONS.map((opt, index) => {
             const Icon = opt.icon;
@@ -172,34 +166,34 @@ export default function WelcomePortal({ onSelectMode }: Props) {
                   isDisintegrating
                     ? isTarget
                       ? {
-                          // EL ELEGIDO: Destello sutil mientras la máscara CSS barre en diagonal a 60 FPS
-                          opacity: [1, 0.95, 0],
-                          y: -6,
-                          scale: [1, 1.015, 0.97],
-                          filter: 'brightness(1.25)',
+                          // EL ELEGIDO: Destello lumínico cuántico + contracción + disolución diagonal
+                          opacity: [1, 1, 0],
+                          scale: [1, 1.03, 0.94],
+                          filter: ['brightness(1)', 'brightness(1.5)', 'brightness(2) blur(6px)'],
                           transition: {
-                            duration: 0.52,
-                            ease: CINEMATIC_EXIT_EASE,
+                            duration: 0.34,
+                            ease: QUANTUM_EXIT_EASE,
                           },
                         }
                       : {
-                          // LOS NO ELEGIDOS: Se desvanecen suavemente
+                          // LOS NO ELEGIDOS: Se desvanecen instantáneamente
                           opacity: 0,
-                          y: 4,
-                          filter: 'blur(8px)',
+                          scale: 0.96,
+                          filter: 'blur(6px)',
                           transition: {
-                            duration: 0.35,
-                            ease: CINEMATIC_EASE,
+                            duration: 0.2,
+                            ease: QUANTUM_EXIT_EASE,
                           },
                         }
                     : {
                         // ENTRADA CINEMATOGRÁFICA INICIAL
                         opacity: 1,
                         y: 0,
+                        scale: 1,
                         filter: 'blur(0px)',
                         transition: {
-                          duration: 0.9,
-                          delay: 0.12 * (index + 1),
+                          duration: 0.8,
+                          delay: 0.1 * (index + 1),
                           ease: CINEMATIC_EASE,
                         },
                       }
@@ -208,6 +202,15 @@ export default function WelcomePortal({ onSelectMode }: Props) {
                   isDisintegrating && isTarget ? 'aura-cinema-mask-exit' : ''
                 }`}
               >
+                {/* Haz de destello cuántico al ser seleccionado */}
+                {isDisintegrating && isTarget && (
+                  <motion.div
+                    initial={{ x: '-100%', opacity: 0 }}
+                    animate={{ x: '100%', opacity: [0, 0.85, 0] }}
+                    transition={{ duration: 0.32, ease: 'easeOut' }}
+                    className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+                  />
+                )}
                 {/* Reflejo especular superior (1px de luz de alta gama) */}
                 <div
                   className={`pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r ${opt.topHighlight} opacity-40 group-hover:opacity-100 transition-opacity duration-700`}
@@ -256,7 +259,7 @@ export default function WelcomePortal({ onSelectMode }: Props) {
           initial={{ opacity: 0 }}
           animate={{ opacity: isDisintegrating ? 0 : 1 }}
           transition={{
-            duration: isDisintegrating ? 0.4 : 1.1,
+            duration: isDisintegrating ? 0.2 : 1.1,
             delay: isDisintegrating ? 0 : 0.75,
             ease: CINEMATIC_EASE,
           }}
