@@ -296,18 +296,15 @@ export default function TopHUD({
           {/* ============================================================== */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             
-            {/* CÁPSULA 1 (Condicional - Solo Dueños de Comercio) */}
+            {/* Ícono de Comercio (Condicional - Solo Dueños de Comercio): Solo ícono limpio sin pastilla */}
             {user && hasStore && (
               <Link
                 href="/negocios/dashboard"
                 onClick={playTap}
-                className="cursor-pointer flex items-center gap-1.5 sm:gap-2 bg-[#050b16]/90 hover:bg-[#071324] backdrop-blur-xl rounded-xl px-2.5 sm:px-3 py-1.5 border border-emerald-950/80 border-t-emerald-400/50 shadow-[0_0_15px_rgba(0,255,178,0.08),inset_0_1px_0_0_rgba(0,255,178,0.35)] hover:shadow-[0_0_20px_rgba(0,255,178,0.2),inset_0_1px_0_0_rgba(0,255,178,0.6)] transition-all active:scale-95 group shrink-0"
-                title="Ir al Dashboard de Mi Comercio"
+                className="cursor-pointer p-1.5 text-slate-400 hover:text-[#00ffb2] transition-colors hover:scale-110 active:scale-95 shrink-0"
+                title="Mi Comercio"
               >
-                <StoreIcon size={14} className="text-emerald-300 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-xs font-bold text-slate-200 group-hover:text-white tracking-tight">
-                  Mi Comercio
-                </span>
+                <StoreIcon size={18} />
               </Link>
             )}
 
