@@ -38,9 +38,9 @@ export async function createReservation(input: CreateReservationInput): Promise<
   const pin = generateReservationPin();
   const now = new Date();
 
-  // Vigencia según arquetipo y modalidad
-  const isLayaway = input.paymentType === 'apartado_15d';
-  const hoursValid = isLayaway ? 360 : input.paymentType === 'reserva_48h' ? 48 : input.categoryArchetype === 'HIGH_TICKET' ? 24 : 3;
+  // Vigencia según arquetipo y modalidad (apartado digital = 7 días = 168 horas)
+  const isLayaway = input.paymentType === 'apartado_7d' || input.paymentType === 'apartado_15d';
+  const hoursValid = isLayaway ? 168 : input.paymentType === 'reserva_48h' ? 48 : input.categoryArchetype === 'HIGH_TICKET' ? 24 : 3;
   const expiresAt = new Date(now.getTime() + hoursValid * 60 * 60 * 1000);
 
   const priceVes = Number((input.priceUsd * input.tasa).toFixed(2));
@@ -201,8 +201,8 @@ export function getCustomerWhatsAppLink(reservation: Reservation): string {
       ? 'Extensión de Reserva a 48 Horas'
       : reservation.payment_type === 'delivery'
       ? 'Solicitud de Delivery Inmediato'
-      : reservation.payment_type === 'apartado_15d'
-      ? 'Plan de Apartado 15 Días (30% Inicial)'
+      : reservation.payment_type === 'apartado_7d' || reservation.payment_type === 'apartado_15d'
+      ? 'Plan de Apartado 7 Días (30% Inicial)'
       : 'Pago Directo Asegurado';
 
     const message = `💰 *COMPROBANTE DE RESERVA - AURA*

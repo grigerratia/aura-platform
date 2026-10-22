@@ -291,13 +291,13 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
   const isPendingCheck = activeReservation?.status === 'pending' || activeReservation?.status === 'PENDING_STOCK_CHECK';
   const isUltimoPar = activeReservation?.status === 'ultimo_par';
-  const isApartado = activeReservation?.payment_type === 'apartado_15d' || Boolean(activeReservation?.initial_deposit);
+  const isApartado = activeReservation?.payment_type === 'apartado_7d' || activeReservation?.payment_type === 'apartado_15d' || Boolean(activeReservation?.initial_deposit);
 
   return (
     <div className="space-y-6 pb-24 px-4 max-w-xl mx-auto select-none">
       
       {/* ==============================================================================
-          1. SECCIÓN DE PASE ACTIVO (TICKET QR DE 3 HORAS / APARTADO 14-30 DÍAS)
+          1. SECCIÓN DE PASE ACTIVO (TICKET QR DE 3 HORAS / APARTADO 7 DÍAS)
           ============================================================================== */}
       {activeReservation ? (
         <ThanosCard intensity="epic">
@@ -312,7 +312,7 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
                     <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
-                      📦 Apartado Digital en Depósito (14 a 30 Días)
+                      📦 Apartado Digital en Depósito (7 Días)
                     </span>
                   </>
                 ) : isPendingCheck ? (
@@ -402,7 +402,7 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
               <div className="flex items-center justify-center gap-1.5 text-xs text-indigo-300 font-light pt-1">
                 <Clock size={13} className="text-indigo-400" />
-                <span>{isApartado ? 'Resguardado en depósito de la tienda (14 a 30 días)' : 'Precio congelado por 3 horas en estante'}</span>
+                <span>{isApartado ? 'Resguardado en depósito de la tienda (7 Días)' : 'Precio congelado por 3 horas en estante'}</span>
               </div>
             </div>
 
@@ -661,7 +661,7 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed font-light">
-              Para apartar en depósito por 14 a 30 días, abona el 5% de desbloqueo a Aura y el 30% inicial a <strong className="text-slate-100 font-semibold">{activeReservation?.store_name}</strong>. El 70% restante se liquida en caja al retirar.
+              Para apartar en depósito por 7 días, abona el 5% de desbloqueo a Aura y el 30% inicial a <strong className="text-slate-100 font-semibold">{activeReservation?.store_name}</strong>. El 70% restante se liquida en caja al retirar.
             </p>
 
             <div className="p-3.5 bg-[#030812]/90 rounded-2xl space-y-2 text-xs shadow-inner border border-slate-800">

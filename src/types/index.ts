@@ -148,7 +148,7 @@ export type ReservationStatus =
   | 'completada'
   | 'expirada';
 
-export type PaymentOption = 'reserva_3h' | 'reserva_48h' | 'delivery' | 'apartado_15d';
+export type PaymentOption = 'reserva_3h' | 'reserva_48h' | 'delivery' | 'apartado_7d' | 'apartado_15d';
 
 // Ticket de Reserva Digital
 export interface Reservation {
@@ -183,6 +183,8 @@ export interface Reservation {
   expires_at: string;
   created_at: string;
   confirmed_at?: string;
+  current_step?: string;
+  requested_modality?: 'option_a' | 'option_b';
   completed_at?: string;
 
   // Doble Cierre & Pagos Directos

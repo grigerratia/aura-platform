@@ -234,15 +234,46 @@ export default function MostradorPage() {
     }
   };
 
-  // Buscar Ticket para Cobro en Caja
-  const handleSearchTicket = (e: React.FormEvent) => {
+  // Buscar Ticket para Cobro en Caja (con fallback en vivo a Supabase)
+  const handleSearchTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticketSearch.trim()) return;
 
     const clean = ticketSearch.trim().replace('#', '').toUpperCase();
-    const found = reservations.find(
+    let found = reservations.find(
       (r) => (r.pin && r.pin.toUpperCase() === clean) || (r.pin_code && r.pin_code.toUpperCase() === clean)
     );
+
+    if (!found) {
+      try {
+        const { data: dbRes } = await supabase
+          .from('reservations')
+          .select('*, products(name, imageUrl, archetype)')
+          .or(`pin_code.eq.${clean},pin_code.eq.${ticketSearch.trim()}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (dbRes) {
+          const priceUsd = Number(dbRes.total_price || dbRes.price_usd || 0);
+          found = {
+            ...dbRes,
+            product_name: dbRes.products?.name || dbRes.product_name || 'Producto Reservado',
+            image_url: dbRes.products?.imageUrl || dbRes.image_url,
+            category_archetype: dbRes.products?.archetype || 'RETAIL_STANDARD',
+            price_usd: priceUsd,
+            aura_price_usd: dbRes.aura_price_usd ? Number(dbRes.aura_price_usd) : priceUsd,
+            unlock_fee_usd: dbRes.unlock_fee_usd ? Number(dbRes.unlock_fee_usd) : 0,
+            store_pay_balance_usd: dbRes.store_pay_balance_usd
+              ? Number(dbRes.store_pay_balance_usd)
+              : priceUsd - (Number(dbRes.unlock_fee_usd) || 0),
+            pin: dbRes.pin || dbRes.pin_code || clean
+          };
+        }
+      } catch (e) {
+        console.warn('Error buscando ticket en Supabase:', e);
+      }
+    }
 
     if (found) {
       setFoundReservation(found);

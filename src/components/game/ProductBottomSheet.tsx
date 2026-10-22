@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
   AlertCircle, ArrowRight, ShieldCheck,
-  MessageCircle, Copy, AlertTriangle, Users, CheckCircle2
+  MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -43,6 +43,7 @@ export default function ProductBottomSheet({
 
   // Estados del flujo paso a paso
   const [step, setStep] = useState<SheetStep>('SELECTION');
+  const [selectedModality, setSelectedModality] = useState<'option_a' | 'option_b'>('option_a');
   const [stockConfirmationType, setStockConfirmationType] = useState<'green' | 'yellow'>('green');
   const [layawaySubStep, setLayawaySubStep] = useState<1 | 2>(1);
   
@@ -100,18 +101,41 @@ export default function ProductBottomSheet({
       if (activeReservation.pin || activeReservation.pin_code) {
         setGeneratedPin(activeReservation.pin || activeReservation.pin_code || '');
       }
+      if (activeReservation.requested_modality) {
+        setSelectedModality(activeReservation.requested_modality);
+      } else if (activeReservation.payment_type === 'apartado_7d' || activeReservation.payment_type === 'apartado_15d') {
+        setSelectedModality('option_b');
+      }
+
       if (activeReservation.status === 'confirmed' || activeReservation.status === 'confirmada') {
-        if (activeReservation.payment_type === 'apartado_15d') {
+        // Solo ir a confirmación de apartado si ya se ingresó la referencia de pago
+        if (
+          (activeReservation.payment_type === 'apartado_7d' || activeReservation.payment_type === 'apartado_15d') &&
+          activeReservation.payment_reference
+        ) {
           setStep('OPTION_B_CONFIRMED');
-        } else {
+        } else if (activeReservation.payment_type === 'reserva_3h') {
           setStep('OPTION_A_TICKET');
+        } else if (activeReservation.current_step === 'OPTION_B_LAYAWAY') {
+          setStep('OPTION_B_LAYAWAY');
+        } else {
+          // El mostrador confirmó stock -> el cliente elige entre Opción A y Opción B
+          setStockConfirmationType('green');
+          setStep('STOCK_CONFIRMED');
         }
       } else if (activeReservation.status === 'ultimo_par') {
         setStockConfirmationType('yellow');
-        setStep('STOCK_CONFIRMED');
+        if (activeReservation.current_step === 'OPTION_B_LAYAWAY') {
+          setStep('OPTION_B_LAYAWAY');
+        } else {
+          setStep('STOCK_CONFIRMED');
+        }
       } else if (activeReservation.status === 'pending' || activeReservation.status === 'PENDING_STOCK_CHECK') {
         setStep('WAITING_VERIFICATION');
       }
+    } else {
+      setStep('SELECTION');
+      setActiveRes(null);
     }
 
     const loadAuthUser = async () => {
@@ -278,6 +302,7 @@ export default function ProductBottomSheet({
       status: 'pending',
       expires_at: expiresAt,
       created_at: new Date().toISOString(),
+      requested_modality: selectedModality,
     };
 
     setActiveRes(newReservation);
@@ -313,6 +338,7 @@ export default function ProductBottomSheet({
           pin: dbRes.pin_code || pin,
           pin_code: dbRes.pin_code || pin,
           status: dbRes.status || 'pending',
+          requested_modality: selectedModality,
         };
         setActiveRes(finalReservation);
         setActiveReservation(finalReservation);
@@ -335,6 +361,34 @@ export default function ProductBottomSheet({
 
     // Sonido suave de sonar de radar
     playRadarPing();
+  };
+
+  // Verificación / Simulación inmediata de estante para pruebas en vivo
+  const handleConfirmStockSimulated = async (type: 'green' | 'yellow' = 'green') => {
+    playUnlockSuccess();
+    setStockConfirmationType(type);
+    setStep('STOCK_CONFIRMED');
+
+    if (activeRes) {
+      const updated: Reservation = {
+        ...activeRes,
+        status: type === 'yellow' ? 'ultimo_par' : 'confirmed',
+      };
+      setActiveRes(updated);
+      setActiveReservation(updated);
+
+      try {
+        const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
+        const query = supabase
+          .from('reservations')
+          .update({ status: type === 'yellow' ? 'ultimo_par' : 'confirmed' });
+        if (isValidUUID) {
+          await query.eq('id', activeRes.id);
+        } else if (activeRes.pin_code || activeRes.pin) {
+          await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
+        }
+      } catch {}
+    }
   };
 
   // ==============================================================================
@@ -474,6 +528,7 @@ export default function ProductBottomSheet({
       payment_type: 'reserva_3h',
       unlock_fee_usd: 0,
       store_pay_balance_usd: auraPrice,
+      current_step: 'OPTION_A_TICKET',
     };
 
     setActiveRes(updatedRes);
@@ -484,22 +539,40 @@ export default function ProductBottomSheet({
 
     // Actualizar en Supabase
     try {
-      await supabase
+      const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
+      const query = supabase
         .from('reservations')
         .update({
           status: 'confirmed',
+          payment_method: 'en_tienda',
+          payment_type: 'reserva_3h',
           unlock_fee_usd: 0,
           store_pay_balance_usd: auraPrice,
-        })
-        .eq('id', activeRes.id);
+        });
+
+      if (isValidUUID) {
+        await query.eq('id', activeRes.id);
+      } else if (activeRes.pin_code || activeRes.pin) {
+        await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
+      }
     } catch {}
   };
 
   // ==============================================================================
-  // PASO 4B: ELECCIÓN CLIENTE -> OPCIÓN B (APARTADO DIGITAL - CASHEA INVERSO 30%)
+  // PASO 4B: ELECCIÓN CLIENTE -> OPCIÓN B (APARTADO DIGITAL 7 DÍAS - PASO 1 Y 2)
   // ==============================================================================
   const handleSelectOptionB = () => {
     playTap();
+    if (activeRes) {
+      const updatedRes: Reservation = {
+        ...activeRes,
+        payment_type: 'apartado_7d',
+        current_step: 'OPTION_B_LAYAWAY',
+      };
+      setActiveRes(updatedRes);
+      setActiveReservation(updatedRes);
+    }
+    setLayawaySubStep(1);
     setStep('OPTION_B_LAYAWAY');
   };
 
@@ -525,11 +598,12 @@ export default function ProductBottomSheet({
       ...activeRes,
       status: 'confirmed',
       payment_method: 'pago_movil',
-      payment_type: 'apartado_15d',
+      payment_type: 'apartado_7d',
       payment_reference: pagoMovilRef.trim(),
       unlock_fee_usd: auraUnlockFeeUSD,
       initial_deposit: deposit30USD,
       store_pay_balance_usd: remaining70USD,
+      current_step: 'OPTION_B_CONFIRMED',
     };
 
     setActiveRes(updatedRes);
@@ -554,7 +628,7 @@ export default function ProductBottomSheet({
         .update({
           status: 'confirmed',
           payment_method: 'pago_movil',
-          payment_type: 'apartado_15d',
+          payment_type: 'apartado_7d',
           payment_reference: pagoMovilRef.trim(),
           customer_phone: `${customerPhone} [PAGO_MOVIL: Ref #${pagoMovilRef.trim()} - Apartado 30% - ${auraPayDesc}]`,
           unlock_fee_usd: auraUnlockFeeUSD,
@@ -577,7 +651,7 @@ export default function ProductBottomSheet({
       `Código de Boleto: #${generatedPin}\n` +
       `Referencia Pago Móvil Tienda (30%): ${pagoMovilRef.trim()} (Bs. ${deposit30VES.toLocaleString('es-VE')} / $${deposit30USD} USD).\n` +
       `Desbloqueo Aura (5%): $${auraUnlockFeeUSD} USD (${auraPayDesc}).\n` +
-      `Saldo restante a pagar al retirar en depósito: $${remaining70USD} USD (14 a 30 días).`
+      `Saldo restante a pagar al retirar en depósito: $${remaining70USD} USD (Válido por 7 días).`
     );
     window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
   };
@@ -730,6 +804,62 @@ export default function ProductBottomSheet({
                 </div>
               </div>
 
+              {/* Selector de Modalidad: Opción A (Gratis 3h) vs Opción B (Apartado 7 Días) */}
+              <div className="space-y-2 pt-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                  Elige tu Modalidad de Apartado:
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Opción A */}
+                  <button
+                    type="button"
+                    onClick={() => { playTap(); setSelectedModality('option_a'); }}
+                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      selectedModality === 'option_a'
+                        ? 'bg-emerald-950/70 border-[#00ffb2] shadow-[0_0_15px_rgba(0,255,178,0.25)] ring-1 ring-[#00ffb2]'
+                        : 'bg-[#050b16] border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2]">
+                          Opción A
+                        </span>
+                        <span className="text-[11px] font-black text-[#00ffb2]">$0 Ahora</span>
+                      </div>
+                      <span className="text-xs font-bold text-white block">Ir hoy mismo</span>
+                      <p className="text-[10px] text-slate-400 font-light mt-1 line-clamp-2">
+                        Ticket QR de 3 horas. Pagas completo en caja física.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Opción B */}
+                  <button
+                    type="button"
+                    onClick={() => { playTap(); setSelectedModality('option_b'); }}
+                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      selectedModality === 'option_b'
+                        ? 'bg-indigo-950/70 border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.25)] ring-1 ring-indigo-400'
+                        : 'bg-[#050b16] border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">
+                          Opción B • 7 Días
+                        </span>
+                        <span className="text-[11px] font-black text-indigo-300">30% Inicial</span>
+                      </div>
+                      <span className="text-xs font-bold text-white block">Apartado Digital</span>
+                      <p className="text-[10px] text-slate-400 font-light mt-1 line-clamp-2">
+                        5% Aura + 30% inicial tienda. Guardado 7 días en depósito.
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               {/* Formulario de Contacto para el Mostrador */}
               <div className="space-y-2.5 pt-1">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
@@ -777,7 +907,11 @@ export default function ProductBottomSheet({
               >
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={18} />
-                  <span>Verificar disponibilidad / Apartar</span>
+                  <span>
+                    {selectedModality === 'option_b'
+                      ? 'Verificar disponibilidad • Apartar por 7 Días'
+                      : 'Verificar disponibilidad • Ir hoy mismo (Gratis 3h)'}
+                  </span>
                 </div>
                 <span className="text-[10px] font-normal text-slate-900 opacity-90">
                   Sin pagar nada todavía • Consulta en vivo al estante físico
@@ -810,6 +944,13 @@ export default function ProductBottomSheet({
                 <p className="text-xs text-slate-300 font-light leading-relaxed">
                   Al teléfono del mostrador llegó tu alerta. El encargado está mirando el estante físico en este momento.
                 </p>
+
+                {/* Badge de Modalidad Solicitada */}
+                <div className="inline-block mt-1 px-3 py-1 bg-slate-900/90 border border-slate-700/80 rounded-full text-[11px] text-slate-300">
+                  Modalidad solicitada: <strong className={selectedModality === 'option_b' ? 'text-indigo-300 font-bold' : 'text-emerald-400 font-bold'}>
+                    {selectedModality === 'option_b' ? 'Apartado Digital (7 Días • 30% Inicial)' : 'Ir hoy mismo (Gratis • Ticket QR 3 Horas)'}
+                  </strong>
+                </div>
               </div>
 
               <div className="p-3 bg-[#030812] border border-slate-800 rounded-2xl text-xs text-slate-400 max-w-xs mx-auto flex items-center justify-center gap-2">
@@ -817,10 +958,22 @@ export default function ProductBottomSheet({
                 <span>Esperando respuesta de semáforo...</span>
               </div>
 
+              {/* Botón rápido para demo / pruebas instantáneas */}
+              <div className="pt-1 max-w-xs mx-auto">
+                <button
+                  type="button"
+                  onClick={() => handleConfirmStockSimulated('green')}
+                  className="w-full py-2.5 px-4 bg-emerald-950/60 hover:bg-emerald-900/80 text-[#00ffb2] border border-emerald-500/40 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                >
+                  <Zap size={14} className="text-[#00ffb2]" />
+                  <span>Confirmar Disponibilidad Ahora (Demo)</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setStep('SELECTION')}
-                className="text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer transition font-light"
+                className="text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer transition font-light block mx-auto"
               >
                 Volver a la selección de producto
               </button>
@@ -865,7 +1018,11 @@ export default function ProductBottomSheet({
                 {/* OPCIÓN A: IR HOY MISMO (GRATIS) */}
                 <div
                   onClick={handleSelectOptionA}
-                  className="cursor-pointer group relative overflow-hidden bg-[#050c18] hover:bg-[#071326] border-2 border-emerald-500/40 hover:border-emerald-400 rounded-2xl p-4 transition active:scale-98 shadow-md"
+                  className={`cursor-pointer group relative overflow-hidden bg-[#050c18] hover:bg-[#071326] border-2 rounded-2xl p-4 transition active:scale-98 shadow-md ${
+                    selectedModality === 'option_a'
+                      ? 'border-[#00ffb2] ring-1 ring-[#00ffb2]/50'
+                      : 'border-emerald-500/40 hover:border-emerald-400'
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1">
@@ -887,28 +1044,32 @@ export default function ProductBottomSheet({
 
                   <button
                     type="button"
-                    className="mt-3 w-full bg-emerald-500/20 group-hover:bg-[#00ffb2] text-[#00ffb2] group-hover:text-black font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-emerald-500/40"
+                    className="mt-3 w-full bg-emerald-500/20 group-hover:bg-[#00ffb2] text-[#00ffb2] group-hover:text-black font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-emerald-500/40 cursor-pointer"
                   >
                     <span>Generar Ticket QR de 3 Horas (Gratis)</span>
                     <ArrowRight size={13} />
                   </button>
                 </div>
 
-                {/* OPCIÓN B: APARTADO DIGITAL (CASHEA INVERSO 15-30 DÍAS) */}
+                {/* OPCIÓN B: APARTADO DIGITAL (CASHEA INVERSO 7 DÍAS) */}
                 <div
                   onClick={handleSelectOptionB}
-                  className="cursor-pointer group relative overflow-hidden bg-[#070b18] hover:bg-[#0c1228] border border-indigo-500/40 hover:border-indigo-400 rounded-2xl p-4 transition active:scale-98 shadow-md"
+                  className={`cursor-pointer group relative overflow-hidden bg-[#070b18] hover:bg-[#0c1228] border-2 rounded-2xl p-4 transition active:scale-98 shadow-md ${
+                    selectedModality === 'option_b'
+                      ? 'border-indigo-400 ring-1 ring-indigo-400/50'
+                      : 'border-indigo-500/40 hover:border-indigo-400'
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                          Opción B • 15 a 30 Días
+                          Opción B • 7 Días
                         </span>
                         <span className="text-xs font-bold text-white">Apartado Digital (Cashea Inverso)</span>
                       </div>
                       <p className="text-xs text-slate-300 font-light leading-relaxed">
-                        Asegúralo transfiriendo el <strong>30% de inicial ($${deposit30USD})</strong> al Pago Móvil de la tienda. El local lo guarda en su depósito y lo retiras al pagar el 70% restante.
+                        Asegúralo con el <strong>5% de desbloqueo Aura (${auraUnlockFeeUSD})</strong> y el <strong>30% inicial (${deposit30USD})</strong> al comercio. La tienda lo resguarda en depósito por <strong>7 días</strong> hasta que retires y pagues el 70% restante.
                       </p>
                     </div>
                     <div className="text-right shrink-0">
@@ -919,9 +1080,9 @@ export default function ProductBottomSheet({
 
                   <button
                     type="button"
-                    className="mt-3 w-full bg-indigo-500/20 group-hover:bg-indigo-600 text-indigo-200 group-hover:text-white font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-indigo-500/40"
+                    className="mt-3 w-full bg-indigo-500/20 group-hover:bg-indigo-600 text-indigo-200 group-hover:text-white font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-indigo-500/40 cursor-pointer"
                   >
-                    <span>Elegir Apartado Digital (30% Inicial)</span>
+                    <span>Iniciar Apartado Digital por 7 Días (Paso 1 de 2)</span>
                     <ArrowRight size={13} />
                   </button>
                 </div>
@@ -1003,7 +1164,7 @@ export default function ProductBottomSheet({
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div>
                   <span className="text-[10px] font-black uppercase text-indigo-400">
-                    Apartado Digital • 14 a 30 Días
+                    Apartado Digital • 7 Días
                   </span>
                   <h3 className="text-base font-black text-white">
                     Asegura tu producto en depósito
@@ -1020,7 +1181,7 @@ export default function ProductBottomSheet({
                   }}
                   className="text-xs text-slate-400 hover:text-white cursor-pointer"
                 >
-                  {layawaySubStep === 2 ? '← Volver al Paso 1' : 'Volver'}
+                  {layawaySubStep === 2 ? '← Volver al Paso 1' : 'Volver a opciones'}
                 </button>
               </div>
 
@@ -1072,7 +1233,7 @@ export default function ProductBottomSheet({
                     </div>
 
                     <p className="text-[11px] text-slate-300 font-light leading-relaxed">
-                      Este pequeño arancel congela el precio en sistema y custodia tu turno durante los 14 a 30 días de apartado.
+                      Este pequeño arancel congela el precio en sistema y custodia tu turno durante los 7 días de apartado.
                     </p>
 
                     {userWalletCredit >= auraUnlockFeeUSD && (
@@ -1157,7 +1318,7 @@ export default function ProductBottomSheet({
                     </div>
 
                     <p className="text-[11px] text-slate-300 font-light leading-relaxed">
-                      Transfiere el 30% directo al comercio para que aparten tu producto físico en su depósito. El 70% restante (${remaining70USD.toFixed(2)} USD) se liquida en caja al retirar.
+                      Transfiere el 30% directo al comercio para que aparten tu producto físico en su depósito. El 70% restante (${remaining70USD.toFixed(2)} USD) se liquida en caja al retirar dentro de los 7 días.
                     </p>
 
                     <div className="p-3 bg-[#020508] border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
@@ -1270,7 +1431,7 @@ export default function ProductBottomSheet({
 
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3 py-1 rounded-full inline-block mb-1.5">
-                  📦 Apartado en Depósito Activo (14 a 30 Días)
+                  📦 Apartado en Depósito Activo (7 Días)
                 </span>
                 <h3 className="text-xl font-black text-white">
                   ¡Apartado Guardado con Éxito!
@@ -1320,7 +1481,7 @@ export default function ProductBottomSheet({
                       `Código de Boleto: #${generatedPin}\n` +
                       `Referencia Pago Móvil Tienda (30%): ${pagoMovilRef.trim()}\n` +
                       `Monto 30% Inicial: Bs. ${deposit30VES.toLocaleString('es-VE')} ($${deposit30USD} USD).\n` +
-                      `Saldo restante al retirar: $${remaining70USD} USD.`
+                      `Saldo restante al retirar: $${remaining70USD} USD (Válido por 7 días).`
                     );
                     window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
                   }}
