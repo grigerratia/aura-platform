@@ -15,9 +15,17 @@ interface Props {
   storeName?: string;
   storeRating?: number;
   distanceFormatted?: string;
+  // Favorito individual del producto
+  isFavoriteProduct?: boolean;
+  onToggleFavoriteProduct?: () => void;
+  // Seguir a la tienda
+  isFollowingStore?: boolean;
+  onToggleFollowStore?: () => void;
+  onSelectStore?: (storeId: string) => void;
+
+  // Compatibilidad hacia atrás opcional
   isFavoriteStore?: boolean;
   onToggleFavoriteStore?: () => void;
-  onSelectStore?: (storeId: string) => void;
 }
 
 export default function GameProductCard({
@@ -30,9 +38,13 @@ export default function GameProductCard({
   storeName,
   storeRating,
   distanceFormatted,
+  isFavoriteProduct,
+  onToggleFavoriteProduct,
+  isFollowingStore,
+  onToggleFollowStore,
+  onSelectStore,
   isFavoriteStore,
   onToggleFavoriteStore,
-  onSelectStore,
 }: Props) {
   const { playTap } = useGameSound();
 
@@ -97,21 +109,30 @@ export default function GameProductCard({
       <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-950/80 mb-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.4)]">
         {renderBadge()}
 
-        {/* Botón de seguir / favorita para la tienda */}
-        {onToggleFavoriteStore && (
+        {/* Botón de favorito exclusivo del producto individual (Wishlist) */}
+        {(onToggleFavoriteProduct || onToggleFavoriteStore) && (
           <button
             type="button"
-            title={isFavoriteStore ? 'Siguiendo esta tienda' : 'Seguir tienda'}
+            title={
+              (isFavoriteProduct ?? isFavoriteStore)
+                ? 'Quitar de mis favoritos'
+                : 'Guardar en mis favoritos'
+            }
             onClick={(e) => {
               e.stopPropagation();
               playTap();
-              onToggleFavoriteStore();
+              if (onToggleFavoriteProduct) onToggleFavoriteProduct();
+              else if (onToggleFavoriteStore) onToggleFavoriteStore();
             }}
-            className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90"
+            className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-[#020508]/80 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90 shadow-md cursor-pointer"
           >
             <Heart
               size={13}
-              className={isFavoriteStore ? 'fill-rose-500 text-rose-500' : 'text-slate-400 hover:text-rose-400'}
+              className={
+                (isFavoriteProduct ?? isFavoriteStore)
+                  ? 'fill-rose-500 text-rose-500'
+                  : 'text-slate-400 hover:text-rose-400'
+              }
             />
           </button>
         )}
@@ -131,29 +152,51 @@ export default function GameProductCard({
         )}
       </div>
 
-      {/* 2. CONTENIDO MINIMALISTA (METADATOS DE TIENDA + TÍTULO + PRECIO) */}
+      {/* 2. CONTENIDO MINIMALISTA (METADATOS DE TIENDA + SEGUIMIENTO + TÍTULO + PRECIO) */}
       <div className="space-y-1 mb-2 px-0.5">
-        {/* Metadatos de Tienda: Nombre, Distancia y Estrellas */}
+        {/* Metadatos de Tienda: Nombre, Seguir Tienda, Distancia y Estrellas */}
         {(storeName || distanceFormatted || storeRating) && (
           <div className="flex items-center justify-between text-[10px] text-slate-400">
             {storeName && (
-              <span
-                onClick={
-                  onSelectStore && product.store_id
-                    ? (e) => {
-                        e.stopPropagation();
-                        playTap();
-                        onSelectStore(product.store_id!);
-                      }
-                    : undefined
-                }
-                title={onSelectStore ? `Ver vitrina de ${storeName}` : storeName}
-                className={`truncate max-w-[90px] font-medium text-slate-400 group-hover:text-slate-300 ${
-                  onSelectStore ? 'hover:text-[#00ffb2] hover:underline cursor-pointer' : ''
-                }`}
-              >
-                {storeName}
-              </span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  onClick={
+                    onSelectStore && product.store_id
+                      ? (e) => {
+                          e.stopPropagation();
+                          playTap();
+                          onSelectStore(product.store_id!);
+                        }
+                      : undefined
+                  }
+                  title={onSelectStore ? `Ver vitrina de ${storeName}` : storeName}
+                  className={`truncate max-w-[75px] sm:max-w-[85px] font-medium text-slate-400 group-hover:text-slate-300 ${
+                    onSelectStore ? 'hover:text-[#00ffb2] hover:underline cursor-pointer' : ''
+                  }`}
+                >
+                  {storeName}
+                </span>
+
+                {/* Botón sutil para Seguir / Siguiendo a la Tienda */}
+                {onToggleFollowStore && (
+                  <button
+                    type="button"
+                    title={isFollowingStore ? `Dejar de seguir a ${storeName}` : `Seguir vitrina de ${storeName}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playTap();
+                      onToggleFollowStore();
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[8.5px] font-semibold transition-all flex items-center gap-0.5 cursor-pointer shrink-0 ${
+                      isFollowingStore
+                        ? 'bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30'
+                        : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/60'
+                    }`}
+                  >
+                    <span>{isFollowingStore ? 'Siguiendo' : '+ Seguir'}</span>
+                  </button>
+                )}
+              </div>
             )}
 
             <div className="flex items-center gap-1.5 shrink-0 ml-auto font-light">

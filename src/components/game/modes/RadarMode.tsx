@@ -29,6 +29,7 @@ import {
   getStoreCoordinates,
 } from '@/lib/geoDistance';
 import { useFavoriteStores } from '@/store/useFavoriteStores';
+import { useFavoriteProducts } from '@/store/useFavoriteProducts';
 import { matchProductFuzzy } from '@/lib/fuzzySearch';
 
 interface Props {
@@ -40,7 +41,8 @@ interface Props {
 export interface ActiveFiltersState {
   near: boolean;
   rating: boolean;
-  favorites: boolean;
+  favorites: boolean;      // Mis productos favoritos ❤️
+  followedStores?: boolean; // Mis vitrinas seguidas 🏪
 }
 
 export default function RadarMode({
@@ -49,7 +51,17 @@ export default function RadarMode({
   onSelectProduct,
 }: Props) {
   const { playTap } = useGameSound();
-  const { favorites, toggleFavorite, isFavorite } = useFavoriteStores();
+  const {
+    favorites: favoriteStoreIds,
+    toggleFavorite: toggleFavoriteStore,
+    isFavorite: isFavoriteStore,
+  } = useFavoriteStores();
+
+  const {
+    favorites: favoriteProductIds,
+    toggleFavorite: toggleFavoriteProduct,
+    isFavorite: isFavoriteProduct,
+  } = useFavoriteProducts();
 
   // 1. Ubicación del usuario (por defecto Centro de Cumaná, con detección GPS)
   const [userLocation, setUserLocation] = useState<GeoPoint>(CUMANA_CENTER);
@@ -109,6 +121,7 @@ export default function RadarMode({
     near: true,
     rating: false,
     favorites: false,
+    followedStores: false,
   });
 
   const toggleFilter = (key: keyof ActiveFiltersState) => {
@@ -166,12 +179,17 @@ export default function RadarMode({
       });
     }
 
-    // Filtro MULTI-SELECT 1: "Mis Tiendas"
+    // Filtro MULTI-SELECT 1: "Mis Favoritos" (Productos guardados individualmente ❤️)
     if (activeFilters.favorites) {
-      list = list.filter((p) => p.store_id && favorites.includes(p.store_id));
+      list = list.filter((p) => favoriteProductIds.includes(p.id));
     }
 
-    // Filtro MULTI-SELECT 2: "Mejor Atención" (rating >= 4.5)
+    // Filtro MULTI-SELECT 2: "Vitrinas que sigo" (Productos de comercios seguidos 🏪)
+    if (activeFilters.followedStores) {
+      list = list.filter((p) => p.store_id && favoriteStoreIds.includes(p.store_id));
+    }
+
+    // Filtro MULTI-SELECT 3: "Mejor Atención" (rating >= 4.5)
     if (activeFilters.rating) {
       list = list.filter((p) => {
         const store = p.store_id ? storesById.get(p.store_id) : undefined;
@@ -207,7 +225,8 @@ export default function RadarMode({
     selectedCategory,
     activeQuery,
     activeFilters,
-    favorites,
+    favoriteProductIds,
+    favoriteStoreIds,
     storesById,
     storeDistances,
     selectedStoreId,
@@ -301,7 +320,8 @@ export default function RadarMode({
         onSelectCategory={(cat) => setSelectedCategory(cat)}
         activeFilters={activeFilters}
         onToggleFilter={toggleFilter}
-        favoritesCount={favorites.length}
+        favoritesCount={favoriteProductIds.length}
+        followedStoresCount={favoriteStoreIds.length}
         accentColor="#00ffb2"
       />
 
@@ -367,7 +387,8 @@ export default function RadarMode({
             const store = product.store_id ? storesById.get(product.store_id) : undefined;
             const distance = product.store_id ? storeDistances.get(product.store_id)?.formatted : undefined;
             const storeRating = store?.rating ?? 4.8;
-            const isFav = product.store_id ? isFavorite(product.store_id) : false;
+            const isFavProduct = isFavoriteProduct(product.id);
+            const isFollowing = product.store_id ? isFavoriteStore(product.store_id) : false;
 
             return (
               <ThanosCard
@@ -380,9 +401,11 @@ export default function RadarMode({
                   storeName={store?.name}
                   storeRating={storeRating}
                   distanceFormatted={distance}
-                  isFavoriteStore={isFav}
-                  onToggleFavoriteStore={
-                    product.store_id ? () => toggleFavorite(product.store_id!) : undefined
+                  isFavoriteProduct={isFavProduct}
+                  onToggleFavoriteProduct={() => toggleFavoriteProduct(product.id)}
+                  isFollowingStore={isFollowing}
+                  onToggleFollowStore={
+                    product.store_id ? () => toggleFavoriteStore(product.store_id!) : undefined
                   }
                   onSelectStore={(storeId) => {
                     setSelectedStoreId(storeId);
@@ -398,26 +421,30 @@ export default function RadarMode({
             <Compass size={36} className="text-emerald-500/40 mx-auto" />
             <h4 className="text-sm font-semibold text-slate-200">
               {activeFilters.favorites
-                ? 'No tienes productos de tus tiendas seguidas'
+                ? 'No tienes productos en tus favoritos'
+                : activeFilters.followedStores
+                ? 'No hay productos de las vitrinas que sigues'
                 : selectedStore
                 ? `No encontramos productos en ${selectedStore.name} con estos criterios`
                 : 'No encontramos productos con estos criterios'}
             </h4>
             <p className="text-xs text-slate-400 max-w-sm mx-auto font-light">
               {activeFilters.favorites
-                ? 'Toca el corazón en cualquier producto para seguir tiendas y ver sus ofertas aquí.'
+                ? 'Toca el corazón en cualquier producto para guardarlo en tu lista.'
+                : activeFilters.followedStores
+                ? 'Sigue vitrinas comerciales tocando "+ Seguir" en las tarjetas de producto o en el panel de Vitrinas.'
                 : selectedStore
                 ? 'Puedes limpiar los filtros de búsqueda o ver los productos de todas las vitrinas.'
                 : 'Prueba buscando otro término, cambiando de categoría o desactivando filtros.'}
             </p>
-            {(selectedStoreId || activeQuery || selectedCategory !== 'all' || !activeFilters.near || activeFilters.rating || activeFilters.favorites) && (
+            {(selectedStoreId || activeQuery || selectedCategory !== 'all' || !activeFilters.near || activeFilters.rating || activeFilters.favorites || activeFilters.followedStores) && (
               <button
                 type="button"
                 onClick={() => {
                   setSelectedStoreId(null);
                   setSelectedCategory('all');
                   handleClearSearch();
-                  setActiveFilters({ near: true, rating: false, favorites: false });
+                  setActiveFilters({ near: true, rating: false, favorites: false, followedStores: false });
                 }}
                 className="mt-2 cursor-pointer bg-gradient-to-r from-emerald-800 to-teal-700 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-100 hover:text-black font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95"
               >
@@ -493,6 +520,7 @@ export default function RadarMode({
 
                 {registeredStores.map((store) => {
                   const isSelected = selectedStoreId === store.id;
+                  const isFollowing = isFavoriteStore(store.id);
                   const storeProductsCount = products.filter((p) => p.store_id === store.id).length;
                   const distance = storeDistances.get(store.id)?.formatted;
 
@@ -535,6 +563,26 @@ export default function RadarMode({
                             </div>
                           </div>
                         </div>
+
+                        {/* Botón Seguir / Siguiendo Tienda en el Modal */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTap();
+                            toggleFavoriteStore(store.id);
+                          }}
+                          className={`px-2.5 py-1 rounded-xl text-[10.5px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                            isFollowing
+                              ? 'bg-emerald-500/20 text-[#00ffb2] border-emerald-500/40 shadow-sm'
+                              : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/80'
+                          }`}
+                        >
+                          <Heart
+                            size={12}
+                            className={isFollowing ? 'fill-emerald-400 text-emerald-400' : 'text-slate-400'}
+                          />
+                          <span>{isFollowing ? 'Siguiendo' : 'Seguir'}</span>
+                        </button>
                       </div>
 
                       {/* Botones de Acción para este comercio */}

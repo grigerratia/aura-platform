@@ -28,6 +28,7 @@ import {
   getStoreCoordinates,
 } from '@/lib/geoDistance';
 import { useFavoriteStores } from '@/store/useFavoriteStores';
+import { useFavoriteProducts } from '@/store/useFavoriteProducts';
 import { matchProductFuzzy } from '@/lib/fuzzySearch';
 import Image from 'next/image';
 
@@ -40,7 +41,8 @@ interface Props {
 export interface ActiveFiltersState {
   near: boolean;
   rating: boolean;
-  favorites: boolean;
+  favorites: boolean;      // Mis favoritos ❤️
+  followedStores?: boolean; // Vitrinas que sigo 🏪
 }
 
 export default function ManadasMode({
@@ -49,7 +51,17 @@ export default function ManadasMode({
   onSelectProduct,
 }: Props) {
   const { playTap } = useGameSound();
-  const { favorites, toggleFavorite, isFavorite } = useFavoriteStores();
+  const {
+    favorites: favoriteStoreIds,
+    toggleFavorite: toggleFavoriteStore,
+    isFavorite: isFavoriteStore,
+  } = useFavoriteStores();
+
+  const {
+    favorites: favoriteProductIds,
+    toggleFavorite: toggleFavoriteProduct,
+    isFavorite: isFavoriteProduct,
+  } = useFavoriteProducts();
 
   // 1. Ubicación del usuario (por defecto Centro de Cumaná, con detección GPS)
   const [userLocation, setUserLocation] = useState<GeoPoint>(CUMANA_CENTER);
@@ -94,6 +106,7 @@ export default function ManadasMode({
     near: true,
     rating: false,
     favorites: false,
+    followedStores: false,
   });
 
   const toggleFilter = (key: keyof ActiveFiltersState) => {
@@ -143,12 +156,17 @@ export default function ManadasMode({
       });
     }
 
-    // Filtro MULTI-SELECT 1: "Mis Tiendas"
+    // Filtro MULTI-SELECT 1: "Mis Favoritos" (Productos guardados individualmente ❤️)
     if (activeFilters.favorites) {
-      list = list.filter((p) => p.store_id && favorites.includes(p.store_id));
+      list = list.filter((p) => favoriteProductIds.includes(p.id));
     }
 
-    // Filtro MULTI-SELECT 2: "Mejor Atención"
+    // Filtro MULTI-SELECT 2: "Vitrinas que sigo" (Productos de comercios seguidos 🏪)
+    if (activeFilters.followedStores) {
+      list = list.filter((p) => p.store_id && favoriteStoreIds.includes(p.store_id));
+    }
+
+    // Filtro MULTI-SELECT 3: "Mejor Atención"
     if (activeFilters.rating) {
       list = list.filter((p) => {
         const store = p.store_id ? storesMap.get(p.store_id) : undefined;
@@ -184,7 +202,8 @@ export default function ManadasMode({
     selectedCategory,
     activeQuery,
     activeFilters,
-    favorites,
+    favoriteProductIds,
+    favoriteStoreIds,
     storesMap,
     storeDistances,
   ]);
@@ -247,7 +266,8 @@ export default function ManadasMode({
         onSelectCategory={(catId) => setSelectedCategory(catId)}
         activeFilters={activeFilters}
         onToggleFilter={toggleFilter}
-        favoritesCount={favorites.length}
+        favoritesCount={favoriteProductIds.length}
+        followedStoresCount={favoriteStoreIds.length}
         accentColor="#8b5cf6"
       />
 
@@ -258,7 +278,8 @@ export default function ManadasMode({
             const store = product.store_id ? storesMap.get(product.store_id) : undefined;
             const distance = product.store_id ? storeDistances.get(product.store_id)?.formatted : undefined;
             const storeRating = store?.rating ?? 4.8;
-            const isFav = product.store_id ? isFavorite(product.store_id) : false;
+            const isFavProduct = isFavoriteProduct(product.id);
+            const isFollowing = product.store_id ? isFavoriteStore(product.store_id) : false;
 
             const targetCount = 3;
             const joinedCount = (idx % 2 === 0) ? 2 : 1;
@@ -284,23 +305,22 @@ export default function ManadasMode({
                       <span>{remaining <= 1 ? 'Falta 1' : `Faltan ${remaining}`}</span>
                     </div>
 
-                    {product.store_id && (
-                      <button
-                        type="button"
-                        title={isFav ? 'Siguiendo esta tienda' : 'Seguir tienda'}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playTap();
-                          toggleFavorite(product.store_id!);
-                        }}
-                        className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90"
-                      >
-                        <Heart
-                          size={13}
-                          className={isFav ? 'fill-rose-500 text-rose-500' : 'text-slate-400 hover:text-rose-400'}
-                        />
-                      </button>
-                    )}
+                    {/* Botón de favorito individual del producto */}
+                    <button
+                      type="button"
+                      title={isFavProduct ? 'Quitar de mis favoritos' : 'Guardar en mis favoritos'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        playTap();
+                        toggleFavoriteProduct(product.id);
+                      }}
+                      className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-[#020508]/75 backdrop-blur-md text-rose-400 hover:scale-115 transition-transform active:scale-90 cursor-pointer"
+                    >
+                      <Heart
+                        size={13}
+                        className={isFavProduct ? 'fill-rose-500 text-rose-500' : 'text-slate-400 hover:text-rose-400'}
+                      />
+                    </button>
 
                     {product.imageUrl || product.image_url ? (
                       <Image
@@ -322,9 +342,29 @@ export default function ManadasMode({
                     {(store?.name || distance || storeRating) && (
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
                         {store?.name && (
-                          <span className="truncate max-w-[90px] font-medium text-slate-400 group-hover:text-slate-300">
-                            {store.name}
-                          </span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="truncate max-w-[75px] sm:max-w-[85px] font-medium text-slate-400 group-hover:text-slate-300">
+                              {store.name}
+                            </span>
+                            {product.store_id && (
+                              <button
+                                type="button"
+                                title={isFollowing ? `Dejar de seguir a ${store.name}` : `Seguir a ${store.name}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  playTap();
+                                  toggleFavoriteStore(product.store_id!);
+                                }}
+                                className={`px-1.5 py-0.5 rounded text-[8.5px] font-semibold transition-all flex items-center gap-0.5 cursor-pointer shrink-0 ${
+                                  isFollowing
+                                    ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                                    : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/60'
+                                }`}
+                              >
+                                <span>{isFollowing ? 'Siguiendo' : '+ Seguir'}</span>
+                              </button>
+                            )}
+                          </div>
                         )}
 
                         <div className="flex items-center gap-1.5 shrink-0 ml-auto font-light">
@@ -401,21 +441,25 @@ export default function ManadasMode({
             <Compass size={36} className="text-violet-400/50 mx-auto" />
             <h4 className="text-sm font-semibold text-slate-200">
               {activeFilters.favorites
-                ? 'No hay manadas activas de tus tiendas seguidas'
+                ? 'No tienes productos en tus favoritos'
+                : activeFilters.followedStores
+                ? 'No hay manadas activas de tus vitrinas seguidas'
                 : 'No encontramos compras grupales con estos criterios'}
             </h4>
             <p className="text-xs text-slate-400 max-w-sm mx-auto font-light">
               {activeFilters.favorites
-                ? 'Sigue tiendas con el corazón para ver sus compras grupales aquí.'
+                ? 'Toca el corazón en cualquier producto para guardarlo en tu lista.'
+                : activeFilters.followedStores
+                ? 'Sigue vitrinas comerciales tocando "+ Seguir" para ver sus compras grupales aquí.'
                 : 'Prueba cambiando de categoría, borrando la búsqueda o desactivando filtros.'}
             </p>
-            {(selectedCategory !== 'all' || activeQuery || !activeFilters.near || activeFilters.rating || activeFilters.favorites) && (
+            {(selectedCategory !== 'all' || activeQuery || !activeFilters.near || activeFilters.rating || activeFilters.favorites || activeFilters.followedStores) && (
               <button
                 type="button"
                 onClick={() => {
                   setSelectedCategory('all');
                   handleClearSearch();
-                  setActiveFilters({ near: true, rating: false, favorites: false });
+                  setActiveFilters({ near: true, rating: false, favorites: false, followedStores: false });
                 }}
                 className="mt-2 cursor-pointer bg-gradient-to-r from-violet-800 to-indigo-700 hover:from-violet-400 hover:to-cyan-400 text-slate-100 hover:text-black font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95"
               >

@@ -12,6 +12,7 @@ import {
   MapPin,
   Star,
   Heart,
+  Store as StoreIcon,
 } from 'lucide-react';
 import { AURA_OFFICIAL_CATEGORIES } from '@/lib/categories';
 import { useGameSound } from '@/hooks/useGameSound';
@@ -19,7 +20,8 @@ import { useGameSound } from '@/hooks/useGameSound';
 export interface ActiveFiltersState {
   near: boolean;
   rating: boolean;
-  favorites: boolean;
+  favorites: boolean;      // Mis productos favoritos guardados ❤️
+  followedStores?: boolean; // Mis vitrinas / tiendas seguidas 🏪
 }
 
 interface Props {
@@ -33,6 +35,7 @@ interface Props {
   activeFilters: ActiveFiltersState;
   onToggleFilter: (key: keyof ActiveFiltersState) => void;
   favoritesCount?: number;
+  followedStoresCount?: number;
   accentColor?: string; // hex para el acento del modo (radar: #00ffb2, relampago: #f43f5e, manadas: #8b5cf6)
 }
 
@@ -49,6 +52,7 @@ export default function GameControlBar({
   activeFilters,
   onToggleFilter,
   favoritesCount = 0,
+  followedStoresCount = 0,
   accentColor = '#00ffb2',
 }: Props) {
   const { playTap } = useGameSound();
@@ -577,7 +581,7 @@ export default function GameControlBar({
                   </div>
                 </button>
 
-                {/* OPCIÓN 3: MIS TIENDAS FAVORITAS */}
+                {/* OPCIÓN 3: MIS FAVORITOS (PRODUCTOS GUARDADOS CON ❤️) */}
                 <button
                   type="button"
                   onClick={() => {
@@ -600,7 +604,7 @@ export default function GameControlBar({
                       size={16}
                       className={`stroke-[1.6] transition-colors duration-500 ${
                         activeFilters.favorites
-                          ? 'text-rose-300 fill-rose-300/20'
+                          ? 'text-rose-300 fill-rose-500'
                           : 'text-slate-500 group-hover:text-slate-300'
                       }`}
                     />
@@ -613,7 +617,7 @@ export default function GameControlBar({
                               : 'text-slate-300 font-light'
                           }`}
                         >
-                          Mis vitrinas
+                          Mis favoritos
                         </span>
                         {favoritesCount > 0 && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-normal">
@@ -622,7 +626,7 @@ export default function GameControlBar({
                         )}
                       </div>
                       <span className="block text-[10px] text-slate-500 font-light">
-                        Locales que sigues
+                        Productos que guardaste
                       </span>
                     </div>
                   </div>
@@ -638,6 +642,73 @@ export default function GameControlBar({
                       className={`w-3 h-3 rounded-full ${
                         activeFilters.favorites
                           ? 'bg-rose-300 shadow-[0_0_8px_#f43f5e]'
+                          : 'bg-slate-600'
+                      }`}
+                    />
+                  </div>
+                </button>
+
+                {/* OPCIÓN 4: VITRINAS QUE SIGO (LOCALES SEGUIDOS 🏪) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTap();
+                    onToggleFilter('followedStores');
+                  }}
+                  className="w-full relative overflow-hidden cursor-pointer px-3.5 py-3 rounded-2xl bg-[#070f1f]/75 text-left flex items-center justify-between transition-colors duration-500 group outline-none"
+                >
+                  <div
+                    className="pointer-events-none absolute inset-0 transition-opacity duration-500"
+                    style={{
+                      background:
+                        'radial-gradient(120px circle at 15% 50%, rgba(0, 255, 178, 0.2), transparent 80%)',
+                      opacity: activeFilters.followedStores ? 1 : 0.1,
+                    }}
+                  />
+
+                  <div className="relative z-10 flex items-center gap-3">
+                    <StoreIcon
+                      size={16}
+                      className={`stroke-[1.6] transition-colors duration-500 ${
+                        activeFilters.followedStores
+                          ? 'text-[#00ffb2]'
+                          : 'text-slate-500 group-hover:text-slate-300'
+                      }`}
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs tracking-wide transition-colors ${
+                            activeFilters.followedStores
+                              ? 'text-slate-100 font-normal'
+                              : 'text-slate-300 font-light'
+                          }`}
+                        >
+                          Vitrinas que sigo
+                        </span>
+                        {followedStoresCount > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2] font-normal">
+                            {followedStoresCount}
+                          </span>
+                        )}
+                      </div>
+                      <span className="block text-[10px] text-slate-500 font-light">
+                        Novedades de tiendas seguidas
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`relative z-10 w-8 h-4 rounded-full p-0.5 transition-colors duration-500 flex items-center ${
+                      activeFilters.followedStores ? 'bg-emerald-500/30' : 'bg-slate-900'
+                    }`}
+                  >
+                    <motion.div
+                      animate={{ x: activeFilters.followedStores ? 16 : 0 }}
+                      transition={{ duration: 0.35, ease: CINEMATIC_EASE }}
+                      className={`w-3 h-3 rounded-full ${
+                        activeFilters.followedStores
+                          ? 'bg-[#00ffb2] shadow-[0_0_8px_#00ffb2]'
                           : 'bg-slate-600'
                       }`}
                     />

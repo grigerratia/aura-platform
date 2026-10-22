@@ -28,6 +28,7 @@ import {
   getStoreCoordinates,
 } from '@/lib/geoDistance';
 import { useFavoriteStores } from '@/store/useFavoriteStores';
+import { useFavoriteProducts } from '@/store/useFavoriteProducts';
 import { matchProductFuzzy } from '@/lib/fuzzySearch';
 
 interface Props {
@@ -39,7 +40,8 @@ interface Props {
 export interface ActiveFiltersState {
   near: boolean;
   rating: boolean;
-  favorites: boolean;
+  favorites: boolean;      // Mis favoritos ❤️
+  followedStores?: boolean; // Vitrinas que sigo 🏪
 }
 
 export default function RelampagoMode({
@@ -48,7 +50,17 @@ export default function RelampagoMode({
   onSelectProduct,
 }: Props) {
   const { playTap } = useGameSound();
-  const { favorites, toggleFavorite, isFavorite } = useFavoriteStores();
+  const {
+    favorites: favoriteStoreIds,
+    toggleFavorite: toggleFavoriteStore,
+    isFavorite: isFavoriteStore,
+  } = useFavoriteStores();
+
+  const {
+    favorites: favoriteProductIds,
+    toggleFavorite: toggleFavoriteProduct,
+    isFavorite: isFavoriteProduct,
+  } = useFavoriteProducts();
 
   // 1. Reloj de Cuenta Regresiva al final del día
   const [timeLeft, setTimeLeft] = useState({ hours: 4, minutes: 28, seconds: 45 });
@@ -110,6 +122,7 @@ export default function RelampagoMode({
     near: true,
     rating: false,
     favorites: false,
+    followedStores: false,
   });
 
   const toggleFilter = (key: keyof ActiveFiltersState) => {
@@ -172,12 +185,17 @@ export default function RelampagoMode({
       });
     }
 
-    // Filtro MULTI-SELECT 1: "Mis Tiendas"
+    // Filtro MULTI-SELECT 1: "Mis Favoritos" (Productos guardados individualmente ❤️)
     if (activeFilters.favorites) {
-      list = list.filter((p) => p.store_id && favorites.includes(p.store_id));
+      list = list.filter((p) => favoriteProductIds.includes(p.id));
     }
 
-    // Filtro MULTI-SELECT 2: "Mejor Atención" (rating >= 4.5)
+    // Filtro MULTI-SELECT 2: "Vitrinas que sigo" (Productos de comercios seguidos 🏪)
+    if (activeFilters.followedStores) {
+      list = list.filter((p) => p.store_id && favoriteStoreIds.includes(p.store_id));
+    }
+
+    // Filtro MULTI-SELECT 3: "Mejor Atención" (rating >= 4.5)
     if (activeFilters.rating) {
       list = list.filter((p) => {
         const store = p.store_id ? storesMap.get(p.store_id) : undefined;
@@ -216,7 +234,8 @@ export default function RelampagoMode({
     selectedCategory,
     activeQuery,
     activeFilters,
-    favorites,
+    favoriteProductIds,
+    favoriteStoreIds,
     storesMap,
     storeDistances,
   ]);
@@ -284,7 +303,8 @@ export default function RelampagoMode({
         onSelectCategory={(catId) => setSelectedCategory(catId)}
         activeFilters={activeFilters}
         onToggleFilter={toggleFilter}
-        favoritesCount={favorites.length}
+        favoritesCount={favoriteProductIds.length}
+        followedStoresCount={favoriteStoreIds.length}
         accentColor="#f43f5e"
       />
 
@@ -295,7 +315,8 @@ export default function RelampagoMode({
             const store = product.store_id ? storesMap.get(product.store_id) : undefined;
             const distance = product.store_id ? storeDistances.get(product.store_id)?.formatted : undefined;
             const storeRating = store?.rating ?? 4.8;
-            const isFav = product.store_id ? isFavorite(product.store_id) : false;
+            const isFavProduct = isFavoriteProduct(product.id);
+            const isFollowing = product.store_id ? isFavoriteStore(product.store_id) : false;
 
             return (
               <ThanosCard key={product.id} intensity="epic">
@@ -307,9 +328,11 @@ export default function RelampagoMode({
                   storeName={store?.name}
                   storeRating={storeRating}
                   distanceFormatted={distance}
-                  isFavoriteStore={isFav}
-                  onToggleFavoriteStore={
-                    product.store_id ? () => toggleFavorite(product.store_id!) : undefined
+                  isFavoriteProduct={isFavProduct}
+                  onToggleFavoriteProduct={() => toggleFavoriteProduct(product.id)}
+                  isFollowingStore={isFollowing}
+                  onToggleFollowStore={
+                    product.store_id ? () => toggleFavoriteStore(product.store_id!) : undefined
                   }
                 />
               </ThanosCard>
@@ -322,21 +345,25 @@ export default function RelampagoMode({
             <Compass size={36} className="text-rose-400/50 mx-auto" />
             <h4 className="text-sm font-semibold text-slate-200">
               {activeFilters.favorites
-                ? 'No tienes ofertas relámpago de tus tiendas seguidas'
+                ? 'No tienes productos en tus favoritos'
+                : activeFilters.followedStores
+                ? 'No hay liquidaciones de tus vitrinas seguidas'
                 : 'No encontramos remates activos con estos criterios'}
             </h4>
             <p className="text-xs text-slate-400 max-w-sm mx-auto font-light">
               {activeFilters.favorites
-                ? 'Toca el corazón en cualquier producto para seguir tiendas y ver sus ofertas aquí.'
+                ? 'Toca el corazón en cualquier producto para guardarlo en tus favoritos.'
+                : activeFilters.followedStores
+                ? 'Sigue vitrinas comerciales tocando "+ Seguir" para ver sus remates exclusivos aquí.'
                 : 'Prueba cambiando de categoría, borrando la búsqueda o desactivando filtros.'}
             </p>
-            {(selectedCategory !== 'all' || activeQuery || !activeFilters.near || activeFilters.rating || activeFilters.favorites) && (
+            {(selectedCategory !== 'all' || activeQuery || !activeFilters.near || activeFilters.rating || activeFilters.favorites || activeFilters.followedStores) && (
               <button
                 type="button"
                 onClick={() => {
                   setSelectedCategory('all');
                   handleClearSearch();
-                  setActiveFilters({ near: true, rating: false, favorites: false });
+                  setActiveFilters({ near: true, rating: false, favorites: false, followedStores: false });
                 }}
                 className="mt-2 cursor-pointer bg-gradient-to-r from-emerald-800 to-teal-700 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-100 hover:text-black font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95"
               >
