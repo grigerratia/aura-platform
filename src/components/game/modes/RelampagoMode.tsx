@@ -129,14 +129,6 @@ export default function RelampagoMode({
     setActiveQuery('');
   };
 
-  // Búsqueda en vivo reactiva (debounce a 250ms)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setActiveQuery(searchInputValue.trim());
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [searchInputValue]);
-
   // 5. Filtrado y Ordenamiento Multi-Criterio de Productos Flash
   const filteredFlashProducts = useMemo(() => {
     const q = activeQuery.trim();

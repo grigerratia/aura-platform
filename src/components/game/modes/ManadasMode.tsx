@@ -113,14 +113,6 @@ export default function ManadasMode({
     setActiveQuery('');
   };
 
-  // Búsqueda en vivo reactiva (debounce a 250ms)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setActiveQuery(searchInputValue.trim());
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [searchInputValue]);
-
   // 4. Filtrado y ordenamiento de Manadas
   const filteredManadaProducts = useMemo(() => {
     const q = activeQuery.trim();

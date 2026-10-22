@@ -128,14 +128,6 @@ export default function RadarMode({
     setActiveQuery('');
   };
 
-  // Búsqueda en vivo reactiva (debounce suave a 250ms mientras escribe)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setActiveQuery(inputValue.trim());
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [inputValue]);
-
   // 4. Filtrado y ordenamiento de productos en Radar (con deduplicación para evitar duplicados como "Camisa Cubo")
   const filteredProducts = useMemo(() => {
     const q = activeQuery.trim();
