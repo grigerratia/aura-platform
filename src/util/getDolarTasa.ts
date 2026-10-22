@@ -1,3 +1,7 @@
+let cachedTasa = 883.3963;
+let lastFetchAttempt = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos de memoria
+
 /**
  * Obtiene la tasa oficial del BCV vigente para el día de HOY.
  * En Venezuela, el BCV publica en la tarde la tasa con 'Fecha Valor' del día hábil siguiente.
@@ -5,6 +9,12 @@
  * para garantizar que siempre se muestre la tasa legalmente vigente de HOY y no la de mañana.
  */
 export default async function getDolarTasa(): Promise<number> {
+  const now = Date.now();
+  if (now - lastFetchAttempt < CACHE_TTL_MS) {
+    return cachedTasa;
+  }
+  lastFetchAttempt = now;
+
   try {
     const todayCaracas = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Caracas',
@@ -29,7 +39,8 @@ export default async function getDolarTasa(): Promise<number> {
         if (validForToday.length > 0) {
           const currentRate = validForToday[validForToday.length - 1].promedio;
           if (currentRate && currentRate > 0) {
-            return Number(currentRate);
+            cachedTasa = Number(currentRate);
+            return cachedTasa;
           }
         }
       }
@@ -43,13 +54,14 @@ export default async function getDolarTasa(): Promise<number> {
     if (res.ok) {
       const data = await res.json();
       if (data?.promedio && data.promedio > 0) {
-        return Number(data.promedio);
+        cachedTasa = Number(data.promedio);
+        return cachedTasa;
       }
     }
 
-    return 883.3963;
+    return cachedTasa;
   } catch (error) {
     console.error('Error al obtener la tasa BCV:', error);
-    return 883.3963;
+    return cachedTasa;
   }
 }
