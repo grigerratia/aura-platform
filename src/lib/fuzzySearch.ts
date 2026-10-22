@@ -85,6 +85,12 @@ export function levenshteinDistance(a: string, b: string): number {
   return prevRow[la];
 }
 
+// Palabras vacías en español que no deben generar falsos positivos
+const STOP_WORDS = new Set([
+  'de', 'la', 'el', 'en', 'un', 'una', 'con', 'por', 'para',
+  'es', 'al', 'los', 'las', 'del', 'se', 'su', 'y', 'o', 'a'
+]);
+
 /**
  * Evalúa si un token individual coincide de manera exacta, fonética, condensada o fuzzy.
  */
@@ -99,40 +105,47 @@ function matchSingleToken(
 
   // 1. Coincidencia condensada (palabras pegadas ej: 'camisacubo' vs 'camisa cubo')
   const qCondensed = normQ.replace(/\s+/g, '');
-  if (qCondensed.length >= 3 && rawTargetCondensed.includes(qCondensed)) return true;
+  if (qCondensed.length >= 4 && rawTargetCondensed.includes(qCondensed)) return true;
 
   // 2. Coincidencia fonética condensada (ej: 'traquicubos' vs 'traki cubo')
   const qPhonetic = spanishPhonetic(normQ).replace(/\s+/g, '');
-  if (qPhonetic.length >= 3 && phoneticTargetCondensed.includes(qPhonetic)) return true;
+  if (qPhonetic.length >= 4 && phoneticTargetCondensed.includes(qPhonetic)) return true;
 
   // 3. Verificación token por token
   for (const t of targetTokens) {
     const normT = normalizeSearchText(t);
-    if (!normT) continue;
+    if (!normT || STOP_WORDS.has(normT)) continue;
 
-    // Subcadena directa o prefijo
-    if (normT.includes(normQ) || normQ.includes(normT)) return true;
+    // Subcadena directa: la palabra del producto contiene la consulta (ej: 'relojes' contiene 'reloj')
+    if (normT.includes(normQ)) return true;
 
-    // Fonética directa
+    // Prefijo: si el usuario escribió la palabra en plural o alargada (ej: 'auriculares' y producto tiene 'auricular')
+    if (normT.length >= 4 && normQ.startsWith(normT)) return true;
+
+    // Fonética
     const phonT = spanishPhonetic(normT);
     const phonQ = spanishPhonetic(normQ);
-    if (phonT.includes(phonQ) || phonQ.includes(phonT)) return true;
+    if (phonT.includes(phonQ)) return true;
+    if (phonT.length >= 4 && phonQ.startsWith(phonT)) return true;
 
     // Tolerancia por distancia Levenshtein
     const minLen = Math.min(normQ.length, normT.length);
     const maxLen = Math.max(normQ.length, normT.length);
 
-    // Para palabras de 3 a 6 caracteres (ej: 'traki' vs 'tranki', 'cubo' vs 'tubo'): distancia <= 1
-    if (minLen >= 3 && maxLen <= 6) {
-      if (levenshteinDistance(phonQ, phonT) <= 1 || levenshteinDistance(normQ, normT) <= 1) return true;
-    }
-    // Para palabras de 5 a 10 caracteres: distancia <= 2
-    else if (minLen >= 5 && maxLen <= 10) {
-      if (levenshteinDistance(phonQ, phonT) <= 2 || levenshteinDistance(normQ, normT) <= 2) return true;
-    }
-    // Para palabras largas (8+ caracteres): distancia <= 3
-    else if (minLen >= 8) {
-      if (levenshteinDistance(phonQ, phonT) <= 3 || levenshteinDistance(normQ, normT) <= 2) return true;
+    // Solo comparamos Levenshtein si las longitudes son similares (diferencia <= 2)
+    if (Math.abs(normQ.length - normT.length) <= 2) {
+      // Para palabras de 3 a 6 caracteres (ej: 'traki' vs 'tranki', 'cubo' vs 'tubo'): distancia <= 1
+      if (minLen >= 3 && maxLen <= 6) {
+        if (levenshteinDistance(phonQ, phonT) <= 1 || levenshteinDistance(normQ, normT) <= 1) return true;
+      }
+      // Para palabras de 5 a 10 caracteres: distancia <= 2
+      else if (minLen >= 5 && maxLen <= 10) {
+        if (levenshteinDistance(phonQ, phonT) <= 2 || levenshteinDistance(normQ, normT) <= 2) return true;
+      }
+      // Para palabras largas (8+ caracteres): distancia <= 2
+      else if (minLen >= 8) {
+        if (levenshteinDistance(phonQ, phonT) <= 2 || levenshteinDistance(normQ, normT) <= 2) return true;
+      }
     }
   }
 
@@ -172,10 +185,10 @@ export function matchProductFuzzy(
 
   // 1. Verificación rápida de la consulta completa condensada
   const qCondensed = normQuery.replace(/\s+/g, '');
-  if (qCondensed.length >= 3 && rawTargetCondensed.includes(qCondensed)) return true;
+  if (qCondensed.length >= 4 && rawTargetCondensed.includes(qCondensed)) return true;
 
   const qPhoneticCondensed = spanishPhonetic(normQuery).replace(/\s+/g, '');
-  if (qPhoneticCondensed.length >= 3 && phoneticTargetCondensed.includes(qPhoneticCondensed)) return true;
+  if (qPhoneticCondensed.length >= 4 && phoneticTargetCondensed.includes(qPhoneticCondensed)) return true;
 
   // 2. Verificación de cada token escrito por el usuario
   const queryTokens = normQuery.split(' ').filter(Boolean);
@@ -185,3 +198,4 @@ export function matchProductFuzzy(
     matchSingleToken(qTok, targetTokens, rawTargetCondensed, phoneticTargetCondensed)
   );
 }
+
