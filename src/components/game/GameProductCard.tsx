@@ -17,6 +17,7 @@ interface Props {
   distanceFormatted?: string;
   isFavoriteStore?: boolean;
   onToggleFavoriteStore?: () => void;
+  onSelectStore?: (storeId: string) => void;
 }
 
 export default function GameProductCard({
@@ -31,6 +32,7 @@ export default function GameProductCard({
   distanceFormatted,
   isFavoriteStore,
   onToggleFavoriteStore,
+  onSelectStore,
 }: Props) {
   const { playTap } = useGameSound();
 
@@ -135,7 +137,21 @@ export default function GameProductCard({
         {(storeName || distanceFormatted || storeRating) && (
           <div className="flex items-center justify-between text-[10px] text-slate-400">
             {storeName && (
-              <span className="truncate max-w-[90px] font-medium text-slate-400 group-hover:text-slate-300">
+              <span
+                onClick={
+                  onSelectStore && product.store_id
+                    ? (e) => {
+                        e.stopPropagation();
+                        playTap();
+                        onSelectStore(product.store_id!);
+                      }
+                    : undefined
+                }
+                title={onSelectStore ? `Ver vitrina de ${storeName}` : storeName}
+                className={`truncate max-w-[90px] font-medium text-slate-400 group-hover:text-slate-300 ${
+                  onSelectStore ? 'hover:text-[#00ffb2] hover:underline cursor-pointer' : ''
+                }`}
+              >
                 {storeName}
               </span>
             )}
