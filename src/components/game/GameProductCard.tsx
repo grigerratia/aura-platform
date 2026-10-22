@@ -25,6 +25,8 @@ interface Props {
   // Compatibilidad hacia atrás opcional
   isFavoriteStore?: boolean;
   onToggleFavoriteStore?: () => void;
+  // Ocultar descuentos (para Radar, que es exclusivamente buscador a precio normal)
+  hideDiscounts?: boolean;
 }
 
 export default function GameProductCard({
@@ -44,6 +46,7 @@ export default function GameProductCard({
   onSelectStore,
   isFavoriteStore,
   onToggleFavoriteStore,
+  hideDiscounts = false,
 }: Props) {
   const { playTap } = useGameSound();
 
@@ -84,7 +87,7 @@ export default function GameProductCard({
       );
     }
 
-    if (product.discount_percent && product.discount_percent > 0) {
+    if (!hideDiscounts && product.discount_percent && product.discount_percent > 0) {
       return (
         <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-[#00ffb2] px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
           <Zap size={11} className="text-[#00ffb2]" />
@@ -219,15 +222,15 @@ export default function GameProductCard({
           {product.name}
         </h3>
 
-        {/* PRECIO TACHADO + PRECIO AURA GRANDE */}
+        {/* PRECIO REGULAR EN RADAR O PRECIO TACHADO + OFERTA EN RELÁMPAGO */}
         <div className="flex items-baseline gap-1.5 flex-wrap">
-          {regularPrice > auraPrice && (
+          {!hideDiscounts && regularPrice > auraPrice && (
             <span className="text-[10px] text-slate-500 line-through font-light">
               ${regularPrice.toFixed(2)}
             </span>
           )}
           <span className="text-sm sm:text-base font-black text-slate-100 tracking-tight">
-            ${auraPrice.toFixed(2)}
+            ${(hideDiscounts ? regularPrice : auraPrice).toFixed(2)}
           </span>
           <span className="text-[9px] text-emerald-400/90 font-bold uppercase">USD</span>
         </div>

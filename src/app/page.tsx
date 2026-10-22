@@ -20,6 +20,10 @@ export default async function HomePage() {
         price,
         stock,
         discount_percent,
+        has_discount,
+        is_wholesale,
+        wholesale_min_units,
+        wholesale_price_usd,
         store_id,
         products (*)
       `)
@@ -47,9 +51,31 @@ export default async function HomePage() {
     );
 
     const price = sp.price || sp.products?.price || 10;
+    const regularPrice = sp.products?.regular_price_usd || price;
     const discountPercent = sp.discount_percent || sp.products?.discount_percent || 0;
     const auraPrice = sp.products?.aura_price_usd || (discountPercent > 0 ? Number((price * (1 - discountPercent / 100)).toFixed(2)) : price);
     const unlockFee = sp.products?.unlock_fee_usd !== undefined ? sp.products?.unlock_fee_usd : Number((auraPrice * 0.10).toFixed(2));
+
+    const isWholesale = Boolean(
+      sp.is_wholesale ||
+      sp.products?.is_wholesale ||
+      sp.products?.specs?.is_wholesale
+    );
+    const wholesaleMinUnits = Number(
+      sp.wholesale_min_units ||
+      sp.products?.wholesale_min_units ||
+      sp.products?.specs?.wholesale_min_units ||
+      1
+    );
+    const wholesalePriceUsd = sp.wholesale_price_usd || sp.products?.wholesale_price_usd || sp.products?.specs?.wholesale_price_usd || null;
+
+    const hasDiscount = Boolean(
+      sp.has_discount ||
+      sp.products?.has_discount ||
+      discountPercent > 0 ||
+      (regularPrice > auraPrice) ||
+      sp.products?.is_clearance
+    );
 
     return {
       ...sp.products,
@@ -57,7 +83,7 @@ export default async function HomePage() {
       store_id: sp.store_id,
       store_product_id: sp.id,
       price: price,
-      regular_price_usd: sp.products?.regular_price_usd || price,
+      regular_price_usd: regularPrice,
       aura_price_usd: auraPrice,
       unlock_fee_usd: unlockFee,
       category_archetype: archetype,
@@ -71,6 +97,10 @@ export default async function HomePage() {
       sizes: sp.products?.sizes || [],
       is_clearance: (discountPercent >= 15) || (sp.stock && sp.stock <= 2),
       clearance_badge: discountPercent ? `-${discountPercent}%` : undefined,
+      is_wholesale: isWholesale,
+      wholesale_min_units: wholesaleMinUnits,
+      wholesale_price_usd: wholesalePriceUsd ? Number(wholesalePriceUsd) : undefined,
+      has_discount: hasDiscount,
     };
   });
 

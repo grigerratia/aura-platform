@@ -75,6 +75,11 @@ export default function OwnerDashboard() {
     is_clearance: boolean;
     is_sponsored: boolean;
     is_active: boolean;
+    // Distinción de Canales: Radar, Relámpago y Manadas
+    has_discount: boolean;
+    is_wholesale: boolean;
+    wholesale_min_units: number;
+    wholesale_price: string;
   }>({
     product_id: '',
     name: '',
@@ -99,7 +104,11 @@ export default function OwnerDashboard() {
     stock_status: 'available',
     is_clearance: false,
     is_sponsored: false,
-    is_active: true
+    is_active: true,
+    has_discount: false,
+    is_wholesale: false,
+    wholesale_min_units: 6,
+    wholesale_price: ''
   });
 
   const fetchInventory = useCallback(async (sId: string) => {
@@ -550,12 +559,28 @@ export default function OwnerDashboard() {
       const priceNum = parseFloat(formData.price);
       const regularPriceNum = formData.regular_price ? parseFloat(formData.regular_price) : priceNum;
       const salePriceNum = formData.sale_price ? parseFloat(formData.sale_price) : null;
-      const finalAuraPrice = salePriceNum || priceNum;
+      
+      const hasDiscount = Boolean(formData.has_discount && salePriceNum && salePriceNum < regularPriceNum);
+      const finalAuraPrice = hasDiscount && salePriceNum ? salePriceNum : priceNum;
 
       const rawFee = finalAuraPrice * 0.10;
       const unlockFeeCalculated = formData.is_clearance 
         ? Math.min(rawFee, archetypeConfig.maxUnlockFeeCap) 
         : 0;
+
+      const discountPercent = (hasDiscount && regularPriceNum > finalAuraPrice)
+        ? Math.round(((regularPriceNum - finalAuraPrice) / regularPriceNum) * 100)
+        : formData.is_clearance ? 25 : 0;
+
+      const isWholesale = Boolean(formData.is_wholesale);
+      const wholesaleMinUnits = isWholesale ? (Number(formData.wholesale_min_units) || 6) : 1;
+      const wholesalePriceNum = isWholesale && formData.wholesale_price ? parseFloat(formData.wholesale_price) : null;
+
+      // Respaldo estructural en specs para soporte retrocompatible
+      specsPayload.is_wholesale = isWholesale;
+      specsPayload.wholesale_min_units = wholesaleMinUnits;
+      if (wholesalePriceNum) specsPayload.wholesale_price_usd = wholesalePriceNum;
+      specsPayload.has_discount = hasDiscount;
 
       if (!currentProductId) {
         const uniqueSlug = `${formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
@@ -578,17 +603,17 @@ export default function OwnerDashboard() {
             auto_confirm_stock: formData.auto_confirm_stock,
             is_sponsored: formData.is_sponsored,
             published_at: new Date().toISOString(),
-            price: regularPriceNum || finalAuraPrice
+            price: regularPriceNum || finalAuraPrice,
+            is_wholesale: isWholesale,
+            wholesale_min_units: wholesaleMinUnits,
+            wholesale_price_usd: wholesalePriceNum,
+            has_discount: hasDiscount,
           }])
           .select()
           .single();
         if (pError) throw pError;
         currentProductId = newP.id;
       }
-
-      const discountPercent = regularPriceNum > finalAuraPrice
-        ? Math.round(((regularPriceNum - finalAuraPrice) / regularPriceNum) * 100)
-        : formData.is_clearance ? 25 : 0;
 
       const finalStock = Number(formData.stock) > 0 
         ? Number(formData.stock) 
@@ -602,12 +627,16 @@ export default function OwnerDashboard() {
           price: finalAuraPrice,
           stock: finalStock,
           discount_percent: discountPercent,
-          is_active: formData.is_active
+          is_active: formData.is_active,
+          is_wholesale: isWholesale,
+          wholesale_min_units: wholesaleMinUnits,
+          wholesale_price_usd: wholesalePriceNum,
+          has_discount: hasDiscount,
         }]);
 
       if (spError) throw spError;
 
-      alert(`✓ Producto publicado en tu vitrina.`);
+      alert(`✓ Producto publicado exitosamente en ${hasDiscount ? 'Ofertas Relámpago' : 'Radar'}${isWholesale ? ' y Manadas' : ''}.`);
       setIsAdding(false);
       setFormData({
         product_id: '',
@@ -633,7 +662,11 @@ export default function OwnerDashboard() {
         stock_status: 'available',
         is_clearance: false,
         is_sponsored: false,
-        is_active: true
+        is_active: true,
+        has_discount: false,
+        is_wholesale: false,
+        wholesale_min_units: 6,
+        wholesale_price: ''
       });
       fetchInventory(storeId);
     } catch (error: any) {
@@ -1377,10 +1410,27 @@ export default function OwnerDashboard() {
                           </div>
                         )}
 
-                        <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900 text-slate-400">
-                            {archetype.name.split(',')[0]}
-                          </span>
+                        <div className="flex items-start justify-between gap-2 mb-1.5 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900 text-slate-400">
+                              {archetype.name.split(',')[0]}
+                            </span>
+                            {/* Badges de Canal */}
+                            {item.has_discount || item.discount_percent > 0 ? (
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                <Zap size={10} /> Relámpago (-{item.discount_percent}%)
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30 flex items-center gap-1">
+                                <span>🧭 Radar</span>
+                              </span>
+                            )}
+                            {(item.is_wholesale || item.products?.is_wholesale || item.products?.specs?.is_wholesale) && (
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                                <Users size={10} /> Manadas (Min {item.wholesale_min_units || item.products?.wholesale_min_units || item.products?.specs?.wholesale_min_units || 6} uds)
+                              </span>
+                            )}
+                          </div>
                           <span className={`w-2 h-2 rounded-full ${item.is_active ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                         </div>
 
@@ -1618,10 +1668,21 @@ export default function OwnerDashboard() {
                       />
                     </div>
 
-                    {/* Precios */}
-                    <div className="grid grid-cols-2 gap-2.5">
+                    {/* Sección: Estrategia de Precio & Canales (Radar, Relámpago, Manadas) */}
+                    <div className="space-y-3 p-3.5 bg-[#020508] border border-slate-800 rounded-2xl">
+                      <div className="flex items-center justify-between">
+                        <label className="text-slate-300 font-bold uppercase tracking-wider text-[10px]">
+                          Estrategia de Precio y Modalidad Aura
+                        </label>
+                        <span className="text-[10px] text-slate-500 font-medium">Define dónde se publicará</span>
+                      </div>
+
+                      {/* Precio Regular (Obligatorio) */}
                       <div className="space-y-1">
-                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Precio Regular ($)</label>
+                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center justify-between">
+                          <span>Precio Regular de Venta en Tienda ($ USD)</span>
+                          <span className="text-[9px] text-emerald-400 font-normal">Obligatorio</span>
+                        </label>
                         <input
                           type="number"
                           step="0.01"
@@ -1629,20 +1690,117 @@ export default function OwnerDashboard() {
                           placeholder="35.00"
                           value={formData.price}
                           onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                          className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500 font-black text-sm"
                         />
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Precio Oferta Aura ($)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="Opcional"
-                          value={formData.sale_price}
-                          onChange={(e) => setFormData({ ...formData, sale_price: e.target.value })}
-                          className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
-                        />
+                      {/* 1. Opción Descuento / Oferta Flash (Para Relámpago) */}
+                      <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-xl space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer text-amber-200 font-bold text-xs">
+                          <input
+                            type="checkbox"
+                            checked={formData.has_discount}
+                            onChange={(e) => setFormData({ ...formData, has_discount: e.target.checked })}
+                            className="w-4 h-4 rounded text-amber-500 cursor-pointer"
+                          />
+                          <Zap size={14} className="text-amber-400 shrink-0" />
+                          <span>¿Tiene Descuento / Oferta Flash? (Publicar en Relámpago)</span>
+                        </label>
+
+                        {formData.has_discount && (
+                          <div className="space-y-2 pt-1.5 animate-in fade-in">
+                            <div className="space-y-1">
+                              <label className="text-amber-300/80 font-bold uppercase tracking-wider text-[10px] block">
+                                Precio con Descuento ($ USD)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="Ej: 28.00"
+                                value={formData.sale_price}
+                                onChange={(e) => setFormData({ ...formData, sale_price: e.target.value })}
+                                className="w-full p-2 bg-slate-950 border border-amber-500/40 rounded-xl text-white outline-none focus:border-amber-400 text-xs"
+                              />
+                            </div>
+                            <div className="p-2 bg-amber-500/10 rounded-lg text-[10px] text-amber-300 font-medium leading-relaxed">
+                              ⚡ <strong>Atención:</strong> Al aplicar descuento, este producto aparecerá en <strong>Ofertas Relámpago</strong>. Como Radar es un buscador de catálogo estándar, los productos en oferta no aparecerán en Radar.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 2. Opción Venta al Mayor (Para Manadas) */}
+                      <div className="p-3 bg-purple-950/20 border border-purple-500/30 rounded-xl space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer text-purple-200 font-bold text-xs">
+                          <input
+                            type="checkbox"
+                            checked={formData.is_wholesale}
+                            onChange={(e) => setFormData({ ...formData, is_wholesale: e.target.checked })}
+                            className="w-4 h-4 rounded text-purple-500 cursor-pointer"
+                          />
+                          <Users size={14} className="text-purple-400 shrink-0" />
+                          <span>¿Se vende al mayor? (Publicar en Manadas para compras grupales)</span>
+                        </label>
+
+                        {formData.is_wholesale && (
+                          <div className="space-y-2 pt-1.5 animate-in fade-in">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-purple-300/80 font-bold uppercase tracking-wider text-[10px] block">
+                                  Mínimo de Unidades
+                                </label>
+                                <input
+                                  type="number"
+                                  min="2"
+                                  placeholder="6"
+                                  value={formData.wholesale_min_units}
+                                  onChange={(e) => setFormData({ ...formData, wholesale_min_units: parseInt(e.target.value) || 2 })}
+                                  className="w-full p-2 bg-slate-950 border border-purple-500/40 rounded-xl text-white outline-none focus:border-purple-400 text-xs font-bold"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-purple-300/80 font-bold uppercase tracking-wider text-[10px] block">
+                                  Precio Mayorista ($/ud)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Ej: 22.00"
+                                  value={formData.wholesale_price}
+                                  onChange={(e) => setFormData({ ...formData, wholesale_price: e.target.value })}
+                                  className="w-full p-2 bg-slate-950 border border-purple-500/40 rounded-xl text-white outline-none focus:border-purple-400 text-xs font-bold"
+                                />
+                              </div>
+                            </div>
+                            <div className="p-2 bg-purple-500/10 rounded-lg text-[10px] text-purple-300 font-medium leading-relaxed">
+                              👥 <strong>Compras en Manada:</strong> Los clientes podrán coordinarse en grupos para sumar las {formData.wholesale_min_units || 6} unidades y desbloquear tu precio mayorista.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Resumen de Canales de Publicación */}
+                      <div className="p-2.5 bg-slate-950 border border-slate-850 rounded-xl text-[10px] space-y-1">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider block">
+                          Canales donde aparecerá este producto:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {!formData.has_discount ? (
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30 font-bold flex items-center gap-1">
+                              <span>🧭 Radar (Buscador y Vitrina)</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold flex items-center gap-1">
+                              <span>⚡ Relámpago (Oferta con Descuento)</span>
+                            </span>
+                          )}
+
+                          {formData.is_wholesale && (
+                            <span className="px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold flex items-center gap-1">
+                              <span>👥 Manadas (Mayor: a partir de {formData.wholesale_min_units || 6} uds)</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 

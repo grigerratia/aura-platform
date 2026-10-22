@@ -44,8 +44,14 @@ export interface Product {
   discount_percent?: number | null;
   discount_percentage?: number | null;
   isOffer?: boolean;
+  has_discount?: boolean; // Oferta o Descuento activo (Aparece en Relámpago, no en Radar)
   is_clearance?: boolean; // Flash Outlet / Remate de liquidación
   clearance_badge?: string; // ej: "Últimas Tallas", "50% OFF", "Combo Flash"
+
+  // Venta al Mayor & Compras en Manada
+  is_wholesale?: boolean; // Se vende al mayor
+  wholesale_min_units?: number; // A partir de cuántas unidades (ej: 6, 12)
+  wholesale_price_usd?: number; // Precio al mayor por unidad
 
   // Polimorfismo Multi-Rubro
   category_archetype?: CategoryArchetype;

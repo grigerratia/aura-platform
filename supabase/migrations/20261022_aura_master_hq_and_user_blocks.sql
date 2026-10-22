@@ -21,3 +21,4 @@ ALTER TABLE public.reservations
 CREATE INDEX IF NOT EXISTS idx_profiles_is_blocked ON public.profiles(is_blocked);
 CREATE INDEX IF NOT EXISTS idx_reservations_aura_fee_status ON public.reservations(aura_fee_status);
 CREATE INDEX IF NOT EXISTS idx_reservations_aura_fee_mode ON public.reservations(aura_fee_mode);
+

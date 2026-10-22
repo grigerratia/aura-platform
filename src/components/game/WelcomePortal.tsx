@@ -28,7 +28,7 @@ const PORTAL_OPTIONS: PortalOption[] = [
   {
     id: 'radar',
     title: 'Radar',
-    subtitle: 'Explorar ciudad',
+    subtitle: 'Buscador de vitrinas',
     icon: Compass,
     accentHex: '#10b981',
     iconColor: 'text-emerald-300',
@@ -38,7 +38,7 @@ const PORTAL_OPTIONS: PortalOption[] = [
   {
     id: 'relampago',
     title: 'Relámpago',
-    subtitle: 'Ofertas fugaces',
+    subtitle: 'Ofertas con descuento',
     icon: Zap,
     accentHex: '#f43f5e',
     iconColor: 'text-rose-300',
@@ -48,7 +48,7 @@ const PORTAL_OPTIONS: PortalOption[] = [
   {
     id: 'manadas',
     title: 'Manada',
-    subtitle: 'Compra grupal',
+    subtitle: 'Compras al mayor',
     icon: Users,
     accentHex: '#8b5cf6',
     iconColor: 'text-violet-300',

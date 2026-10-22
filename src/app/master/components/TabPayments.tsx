@@ -590,3 +590,4 @@ export default function TabPayments({ onBlockUser }: { onBlockUser?: (userId: st
     </div>
   );
 }
+

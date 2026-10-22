@@ -798,23 +798,38 @@ export default function ProductBottomSheet({
                 </div>
               )}
 
-              {/* Precios: Regular vs Precio Especial Aura */}
+              {/* Precios: Regular o Descuento si aplica */}
               <div className="bg-[#050b16] border border-slate-800/80 rounded-2xl p-3.5 space-y-2 shadow-inner">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400">Precio Regular en Tienda:</span>
-                  <span className="line-through text-slate-500 font-bold">${regularPrice.toFixed(2)} USD</span>
-                </div>
+                {regularPrice > auraPrice && (product.has_discount || (product.discount_percent && product.discount_percent > 0)) ? (
+                  <>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Precio Regular en Tienda:</span>
+                      <span className="line-through text-slate-500 font-bold">${regularPrice.toFixed(2)} USD</span>
+                    </div>
 
-                <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Precio Especial Aura:</span>
-                    <span className="text-[10px] text-emerald-400">Congelado en vitrina de mostrador</span>
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                      <div>
+                        <span className="text-xs font-bold text-slate-200 block">Precio Oferta Relámpago:</span>
+                        <span className="text-[10px] text-emerald-400">Descuento aplicado</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xl font-black text-[#00ffb2]">${auraPrice.toFixed(2)} USD</span>
+                        <span className="block text-[10px] text-slate-400 font-mono">≈ Bs. {totalVES.toLocaleString('es-VE')}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 block">Precio del Producto:</span>
+                      <span className="text-[10px] text-emerald-400">Precio de vitrina en tienda</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xl font-black text-[#00ffb2]">${auraPrice.toFixed(2)} USD</span>
+                      <span className="block text-[10px] text-slate-400 font-mono">≈ Bs. {totalVES.toLocaleString('es-VE')}</span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xl font-black text-[#00ffb2]">${auraPrice.toFixed(2)} USD</span>
-                    <span className="block text-[10px] text-slate-400 font-mono">≈ Bs. {totalVES.toLocaleString('es-VE')}</span>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Selector de Modalidad: Opción A (Gratis 3h) vs Opción B (Apartado 7 Días) */}

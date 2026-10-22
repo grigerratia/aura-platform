@@ -158,6 +158,22 @@ export default function RadarMode({
 
     let list = deduplicatedList;
 
+    // DISTINCIÓN OFICIAL: Radar es exclusivamente un buscador de productos a precio regular.
+    // Los productos con descuento pertenecen a Relámpago (y Manadas) y no aparecen en Radar.
+    list = list.filter((p) => {
+      const isDiscounted = Boolean(
+        p.has_discount ||
+        (p.discount_percent && p.discount_percent > 0) ||
+        (p.discount_percentage && p.discount_percentage > 0) ||
+        p.is_clearance ||
+        p.isOffer ||
+        (p.regular_price_usd && p.aura_price_usd && p.aura_price_usd < p.regular_price_usd) ||
+        (p.regular_price_usd && p.price && p.price < p.regular_price_usd) ||
+        (p.sale_price && p.regular_price_usd && p.sale_price < p.regular_price_usd)
+      );
+      return !isDiscounted;
+    });
+
     // Filtro por Vitrina Comercial Activa (si el usuario seleccionó una tienda específica)
     if (selectedStoreId) {
       list = list.filter((p) => p.store_id === selectedStoreId);
@@ -401,6 +417,7 @@ export default function RadarMode({
                 <GameProductCard
                   product={product}
                   onSelect={onSelectProduct}
+                  hideDiscounts={true}
                   storeName={store?.name}
                   storeRating={storeRating}
                   distanceFormatted={distance}

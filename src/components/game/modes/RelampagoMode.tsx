@@ -151,18 +151,21 @@ export default function RelampagoMode({
 
     let list = dedupeProducts;
 
-    if (!q) {
-      const clearanceList = list.filter(
-        (p) =>
-          p.is_clearance ||
-          (p.discount_percent && p.discount_percent >= 10) ||
-          (p.stock && p.stock <= 4) ||
-          p.category_archetype === 'GASTRO_FLASH'
+    // RELÁMPAGO: EXCLUSIVAMENTE PRODUCTOS CON DESCUENTO U OFERTA FLASH
+    // Distinción oficial: Las ofertas y descuentos viven aquí, nunca en Radar.
+    list = list.filter((p) => {
+      const hasDiscount = Boolean(
+        p.has_discount ||
+        (p.discount_percent && p.discount_percent > 0) ||
+        (p.discount_percentage && p.discount_percentage > 0) ||
+        p.is_clearance ||
+        p.isOffer ||
+        (p.regular_price_usd && p.aura_price_usd && p.aura_price_usd < p.regular_price_usd) ||
+        (p.regular_price_usd && p.price && p.price < p.regular_price_usd) ||
+        (p.sale_price && p.regular_price_usd && p.sale_price < p.regular_price_usd)
       );
-      if (clearanceList.length > 0) {
-        list = clearanceList;
-      }
-    }
+      return hasDiscount;
+    });
 
     // Filtro por categoría oficial
     if (selectedCategory !== 'all') {

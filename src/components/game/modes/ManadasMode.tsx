@@ -141,6 +141,23 @@ export default function ManadasMode({
 
     let list = dedupeProducts;
 
+    // MANADAS: PRODUCTOS CON VENTA AL MAYOR (Y COMPRAS GRUPALES COLECTIVAS)
+    // Los comercios activan "Venta al mayor" para que sus productos aparezcan en Manadas
+    const wholesaleList = list.filter((p) => {
+      const isWholesale = Boolean(
+        p.is_wholesale ||
+        (p.wholesale_min_units && p.wholesale_min_units > 1) ||
+        p.specs?.is_wholesale ||
+        (p.specs?.wholesale_min_units && p.specs.wholesale_min_units > 1)
+      );
+      return isWholesale;
+    });
+
+    // Si hay productos con venta al mayor activa, mostramos exclusivamente ese catálogo mayorista
+    if (wholesaleList.length > 0) {
+      list = wholesaleList;
+    }
+
     // Filtro por categoría oficial
     if (selectedCategory !== 'all') {
       list = list.filter((p) =>
@@ -285,13 +302,15 @@ export default function ManadasMode({
             const isFavProduct = isFavoriteProduct(product.id);
             const isFollowing = product.store_id ? isFavoriteStore(product.store_id) : false;
 
-            const targetCount = 3;
-            const joinedCount = (idx % 2 === 0) ? 2 : 1;
-            const remaining = targetCount - joinedCount;
-            const progressPercent = Math.round((joinedCount / targetCount) * 100);
+            const targetCount = product.wholesale_min_units && product.wholesale_min_units > 1
+              ? product.wholesale_min_units
+              : 6;
+            const joinedCount = (idx % 2 === 0) ? Math.max(1, targetCount - 1) : Math.max(1, Math.floor(targetCount / 2));
+            const remaining = Math.max(1, targetCount - joinedCount);
+            const progressPercent = Math.min(100, Math.round((joinedCount / targetCount) * 100));
 
             const regularPrice = product.regular_price_usd || product.price;
-            const auraPrice = product.aura_price_usd || product.price;
+            const wholesalePrice = product.wholesale_price_usd || product.aura_price_usd || product.price;
 
             return (
               <ThanosCard key={product.id} intensity="fast">
@@ -306,7 +325,7 @@ export default function ManadasMode({
                   <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-950/80 mb-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.4)]">
                     <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-[#020508]/85 backdrop-blur-md text-violet-300 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md">
                       <Users size={11} className="text-violet-400" />
-                      <span>{remaining <= 1 ? 'Falta 1' : `Faltan ${remaining}`}</span>
+                      <span>Mayor: {targetCount} uds</span>
                     </div>
 
                     {/* Botón de favorito individual del producto */}
@@ -393,17 +412,17 @@ export default function ManadasMode({
                       {product.name}
                     </h3>
 
-                    {/* Precios */}
+                    {/* Precios Mayoristas */}
                     <div className="flex items-baseline gap-1.5 flex-wrap">
-                      {regularPrice > auraPrice && (
+                      {regularPrice > wholesalePrice && (
                         <span className="text-[10px] text-slate-500 line-through font-light">
                           ${regularPrice.toFixed(2)}
                         </span>
                       )}
                       <span className="text-sm sm:text-base font-black text-slate-100 tracking-tight">
-                        ${auraPrice.toFixed(2)}
+                        ${wholesalePrice.toFixed(2)}
                       </span>
-                      <span className="text-[9px] text-violet-400/90 font-bold uppercase">USD</span>
+                      <span className="text-[9px] text-violet-400 font-bold uppercase">/ud al mayor</span>
                     </div>
 
                     {/* Barra de progreso de la manada */}
