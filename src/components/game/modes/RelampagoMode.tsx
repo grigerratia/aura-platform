@@ -185,14 +185,18 @@ export default function RelampagoMode({
       });
     }
 
-    // Filtro MULTI-SELECT 1: "Mis Favoritos" (Productos guardados individualmente ❤️)
-    if (activeFilters.favorites) {
+    // Filtro Personal Multi-Select: "Mis Favoritos" (❤️) y/o "Vitrinas que sigo" (🏪)
+    // Cuando ambos están activos, se unen (OR): muestra tanto las ofertas favoritas como las liquidaciones de tiendas seguidas
+    if (activeFilters.favorites && activeFilters.followedStores) {
+      list = list.filter(
+        (p) =>
+          favoriteProductIds.includes(p.id) ||
+          Boolean(p.store_id && favoriteStoreIds.includes(p.store_id))
+      );
+    } else if (activeFilters.favorites) {
       list = list.filter((p) => favoriteProductIds.includes(p.id));
-    }
-
-    // Filtro MULTI-SELECT 2: "Vitrinas que sigo" (Productos de comercios seguidos 🏪)
-    if (activeFilters.followedStores) {
-      list = list.filter((p) => p.store_id && favoriteStoreIds.includes(p.store_id));
+    } else if (activeFilters.followedStores) {
+      list = list.filter((p) => Boolean(p.store_id && favoriteStoreIds.includes(p.store_id)));
     }
 
     // Filtro MULTI-SELECT 3: "Mejor Atención" (rating >= 4.5)
@@ -344,14 +348,18 @@ export default function RelampagoMode({
           <div className="col-span-full py-16 text-center space-y-3 bg-[#050b16]/75 backdrop-blur-xl rounded-3xl p-6 shadow-xl">
             <Compass size={36} className="text-rose-400/50 mx-auto" />
             <h4 className="text-sm font-semibold text-slate-200">
-              {activeFilters.favorites
+              {activeFilters.favorites && activeFilters.followedStores
+                ? 'No encontramos ofertas de tus favoritos ni de tus vitrinas seguidas'
+                : activeFilters.favorites
                 ? 'No tienes productos en tus favoritos'
                 : activeFilters.followedStores
                 ? 'No hay liquidaciones de tus vitrinas seguidas'
                 : 'No encontramos remates activos con estos criterios'}
             </h4>
             <p className="text-xs text-slate-400 max-w-sm mx-auto font-light">
-              {activeFilters.favorites
+              {activeFilters.favorites && activeFilters.followedStores
+                ? 'Guarda ofertas con el corazón o sigue vitrinas para ver sus liquidaciones juntas aquí.'
+                : activeFilters.favorites
                 ? 'Toca el corazón en cualquier producto para guardarlo en tus favoritos.'
                 : activeFilters.followedStores
                 ? 'Sigue vitrinas comerciales tocando "+ Seguir" para ver sus remates exclusivos aquí.'

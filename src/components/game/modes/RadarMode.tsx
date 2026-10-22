@@ -179,14 +179,18 @@ export default function RadarMode({
       });
     }
 
-    // Filtro MULTI-SELECT 1: "Mis Favoritos" (Productos guardados individualmente ❤️)
-    if (activeFilters.favorites) {
+    // Filtro Personal Multi-Select: "Mis Favoritos" (❤️) y/o "Vitrinas que sigo" (🏪)
+    // Cuando ambos están activos, se unen (OR): muestra tanto los productos favoritos como todo el catálogo de las tiendas seguidas
+    if (activeFilters.favorites && activeFilters.followedStores) {
+      list = list.filter(
+        (p) =>
+          favoriteProductIds.includes(p.id) ||
+          Boolean(p.store_id && favoriteStoreIds.includes(p.store_id))
+      );
+    } else if (activeFilters.favorites) {
       list = list.filter((p) => favoriteProductIds.includes(p.id));
-    }
-
-    // Filtro MULTI-SELECT 2: "Vitrinas que sigo" (Productos de comercios seguidos 🏪)
-    if (activeFilters.followedStores) {
-      list = list.filter((p) => p.store_id && favoriteStoreIds.includes(p.store_id));
+    } else if (activeFilters.followedStores) {
+      list = list.filter((p) => Boolean(p.store_id && favoriteStoreIds.includes(p.store_id)));
     }
 
     // Filtro MULTI-SELECT 3: "Mejor Atención" (rating >= 4.5)
@@ -420,7 +424,9 @@ export default function RadarMode({
           <div className="col-span-full py-16 text-center space-y-3 bg-[#050b16]/75 backdrop-blur-xl rounded-3xl p-6 shadow-xl">
             <Compass size={36} className="text-emerald-500/40 mx-auto" />
             <h4 className="text-sm font-semibold text-slate-200">
-              {activeFilters.favorites
+              {activeFilters.favorites && activeFilters.followedStores
+                ? 'No encontramos productos de tus favoritos ni de tus vitrinas seguidas'
+                : activeFilters.favorites
                 ? 'No tienes productos en tus favoritos'
                 : activeFilters.followedStores
                 ? 'No hay productos de las vitrinas que sigues'
@@ -429,7 +435,9 @@ export default function RadarMode({
                 : 'No encontramos productos con estos criterios'}
             </h4>
             <p className="text-xs text-slate-400 max-w-sm mx-auto font-light">
-              {activeFilters.favorites
+              {activeFilters.favorites && activeFilters.followedStores
+                ? 'Guarda productos con el corazón o sigue vitrinas con "+ Seguir" para verlos juntos aquí.'
+                : activeFilters.favorites
                 ? 'Toca el corazón en cualquier producto para guardarlo en tu lista.'
                 : activeFilters.followedStores
                 ? 'Sigue vitrinas comerciales tocando "+ Seguir" en las tarjetas de producto o en el panel de Vitrinas.'
