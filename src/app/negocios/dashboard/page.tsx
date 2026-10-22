@@ -12,7 +12,7 @@ import {
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
   DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight,
-  Upload, Image as ImageIcon, Camera
+  Upload, Image as ImageIcon, Camera, Compass
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -696,19 +696,23 @@ export default function OwnerDashboard() {
         
         {/* Cabecera del Comercio */}
         <div className="p-4 md:p-5 border-b border-slate-900 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center font-black text-base text-black shrink-0">
+          <Link
+            href="/"
+            className="flex items-center gap-3 min-w-0 group cursor-pointer"
+            title="Volver a Portada Aura (Modo Cliente)"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center font-black text-base text-black shrink-0 group-hover:shadow-[0_0_12px_rgba(0,255,178,0.4)] group-hover:scale-105 transition-all">
               A
             </div>
             <div className="min-w-0">
-              <h2 className="font-bold text-white text-sm tracking-tight truncate max-w-[130px]">
+              <h2 className="font-bold text-white text-sm tracking-tight truncate max-w-[130px] group-hover:text-[#00ffb2] transition-colors">
                 {store?.name || 'Mi Comercio'}
               </h2>
               <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">
                 Plan {planName}
               </span>
             </div>
-          </div>
+          </Link>
 
           <button
             onClick={() => supabase.auth.signOut().then(() => router.push('/negocios'))}
@@ -761,6 +765,15 @@ export default function OwnerDashboard() {
             <QrCode size={16} className={activeTab === 'qr' ? 'text-emerald-400' : ''} />
             <span className="whitespace-nowrap">Hablador QR</span>
           </button>
+
+          <Link
+            href="/"
+            className="cursor-pointer flex items-center gap-2.5 w-full p-2.5 rounded-xl font-bold text-xs text-slate-400 hover:bg-slate-900/50 hover:text-[#00ffb2] transition"
+            title="Volver a Portada Aura (Modo Cliente)"
+          >
+            <Compass size={16} className="text-emerald-400" />
+            <span className="whitespace-nowrap">Ir a Portada</span>
+          </Link>
 
           {/* MODO MOSTRADOR */}
           <div className="p-3 bg-[#020508] border border-slate-900 rounded-xl mt-4 space-y-2">
@@ -837,6 +850,16 @@ export default function OwnerDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* BOTÓN RETORNO A PORTADA (MODO CLIENTE) */}
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400 hover:text-black bg-emerald-950/40 hover:bg-[#00ffb2] border border-emerald-800/50 px-3 py-2 rounded-xl transition-all shadow-[0_0_12px_rgba(0,255,178,0.12)] group cursor-pointer"
+              title="Volver a la Portada de Aura (Modo Cliente)"
+            >
+              <Compass size={14} className="text-emerald-400 group-hover:text-black transition-colors" />
+              <span>Ir a Portada</span>
+            </Link>
+
             {storeSlug && (
               <Link
                 href={`/${storeSlug}`}
