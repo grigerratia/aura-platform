@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Reservation, Store } from '@/types';
 import { logLostDemand, refundFeeToWallet } from '@/lib/monetization';
+import { useGameSound } from '@/hooks/useGameSound';
 import {
   Store as StoreIcon, Lock, CheckCircle2, AlertCircle,
   Clock, Check, X, ShieldCheck, RefreshCw, LogOut,
@@ -16,6 +17,7 @@ export default function MostradorPage() {
   const params = useParams();
   const storeId = params?.store_id as string;
   const router = useRouter();
+  const { playAlertChime, playUnlockSuccess } = useGameSound();
 
   // Estados de la tienda y autenticación por PIN
   const [store, setStore] = useState<Store | null>(null);
@@ -30,6 +32,7 @@ export default function MostradorPage() {
   // Reservas pendientes y en curso
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loadingReservations, setLoadingReservations] = useState(false);
+  const prevPendingCount = useRef<number>(0);
 
   // Validación de Ticket en Caja
   const [ticketSearch, setTicketSearch] = useState('');
@@ -98,6 +101,18 @@ export default function MostradorPage() {
             pin: r.pin || r.pin_code || (r.id ? r.id.slice(0, 4).toUpperCase() : '0000')
           };
         });
+
+        // Contar pendientes actuales
+        const currentPending = mapped.filter(
+          (r) => r.status === 'pending' || r.status === 'pendiente' || r.status === 'PENDING_STOCK_CHECK'
+        ).length;
+
+        // Si llegó una nueva solicitud de verificación de estante, sonar alerta
+        if (currentPending > prevPendingCount.current) {
+          playAlertChime();
+        }
+        prevPendingCount.current = currentPending;
+
         setReservations(mapped);
       }
     } catch (err) {
@@ -105,7 +120,7 @@ export default function MostradorPage() {
     } finally {
       setLoadingReservations(false);
     }
-  }, [storeId, isAuthenticated]);
+  }, [storeId, isAuthenticated, playAlertChime]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -159,14 +174,19 @@ export default function MostradorPage() {
   ) => {
     setActionLoading(true);
     try {
-      const targetDbStatus = newStatus === 'cancelled' ? 'cancelled' : 'confirmed';
+      // Preservar exactamente el estado elegido: Verde ('confirmed'), Amarillo ('ultimo_par'), Rojo ('cancelled')
+      const targetDbStatus = newStatus === 'cancelled'
+        ? 'cancelled'
+        : newStatus === 'ultimo_par'
+        ? 'ultimo_par'
+        : 'confirmed';
 
       await supabase
         .from('reservations')
         .update({ status: targetDbStatus })
         .eq('id', reservation.id);
 
-      // Si es último par
+      // Si es último par (Amarillo): bloquea stock en 1 para que el cliente lo tome y abra fila de espera
       if (newStatus === 'ultimo_par') {
         await supabase
           .from('store_products')
@@ -174,7 +194,7 @@ export default function MostradorPage() {
           .eq('store_id', reservation.store_id)
           .eq('product_id', reservation.product_id);
       } else if (newStatus === 'cancelled') {
-        // Registrar demanda perdida
+        // Rojo: Registrar demanda perdida y apagar el producto en la app
         await logLostDemand({
           storeId: reservation.store_id,
           productId: reservation.product_id,
@@ -217,7 +237,7 @@ export default function MostradorPage() {
     }
   };
 
-  // Cobro y Entrega en Mostrador
+  // Cobro y Entrega en Mostrador: Aumenta nivel de confianza (trust_score) en Aura
   const handleCompleteSale = async (reservation: Reservation) => {
     if (!confirm(`¿Confirmar cobro de $${reservation.store_pay_balance_usd?.toFixed(2) || reservation.price_usd?.toFixed(2)} y entrega del producto?`)) return;
     setActionLoading(true);
@@ -230,7 +250,28 @@ export default function MostradorPage() {
         })
         .eq('id', reservation.id);
 
-      setValidationSuccessMsg(`✓ Venta completada con éxito. Producto entregado a ${reservation.customer_name}.`);
+      // Si el cliente tiene cuenta de usuario en Aura, incrementar su nivel de confianza (+10 puntos)
+      if (reservation.user_id) {
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('trust_score')
+            .eq('id', reservation.user_id)
+            .maybeSingle();
+          if (profile) {
+            const newScore = Math.min(200, (profile.trust_score || 100) + 10);
+            await supabase
+              .from('profiles')
+              .update({ trust_score: newScore })
+              .eq('id', reservation.user_id);
+          }
+        } catch {
+          // No romper si el perfil no existe
+        }
+      }
+
+      playUnlockSuccess();
+      setValidationSuccessMsg(`✓ Venta completada con éxito. Producto entregado a ${reservation.customer_name}. ¡Nivel de confianza en Aura actualizado!`);
       setFoundReservation(null);
       setTicketSearch('');
       await fetchReservations();

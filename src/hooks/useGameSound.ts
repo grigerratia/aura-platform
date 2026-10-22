@@ -213,6 +213,73 @@ export function useGameSound() {
     noiseSource.stop(now + duration + 0.02);
   };
 
+  // 5. playAlertChime(): Campana de notificación de dos tonos (Mi5 -> Si5, 659Hz -> 987Hz) para mostrador y confirmación
+  const playAlertChime = () => {
+    if (isMuted) return;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([20, 50, 20]);
+      }
+    } catch {}
+
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(659.25, now); // E5
+    gain1.gain.setValueAtTime(0.09, now);
+    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.36);
+
+    // Segundo tono más alto
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(987.77, now + 0.09); // B5
+    gain2.gain.setValueAtTime(0.12, now + 0.09);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.09);
+    osc2.stop(now + 0.56);
+  };
+
+  // 6. playRadarPing(): Sonar ping suave para escaneo en tiempo real de estante físico (440Hz -> 880Hz)
+  const playRadarPing = () => {
+    if (isMuted) return;
+
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(520, now);
+    osc.frequency.exponentialRampToValueAtTime(840, now + 0.08);
+
+    gain.gain.setValueAtTime(0.05, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.36);
+  };
+
   return {
     isMuted,
     toggleMute,
@@ -220,6 +287,8 @@ export function useGameSound() {
     playSweep,
     playUnlockSuccess,
     playDustSnap,
+    playAlertChime,
+    playRadarPing,
   };
 }
 

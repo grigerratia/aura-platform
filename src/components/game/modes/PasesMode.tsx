@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import ThanosCard from '@/components/vfx/ThanosCard';
+import QRCodeView from '@/components/QRCodeView';
 
 interface Props {
   onOpenWallet: () => void;
@@ -88,17 +89,25 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
             </div>
 
             {/* CÓDIGO PIN DESTACADO & QR */}
-            <div className="relative overflow-hidden bg-[#030812]/90 backdrop-blur-xl rounded-2xl p-5 text-center space-y-2 shadow-inner">
+            <div className="relative overflow-hidden bg-[#030812]/90 backdrop-blur-xl rounded-2xl p-5 text-center space-y-3 shadow-inner">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-emerald-400/20 to-transparent" />
-              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 block">
-                Muestra este código PIN al cajero en tienda:
-              </span>
-              <div className="font-mono text-3xl sm:text-4xl font-black text-[#00ffb2] tracking-widest drop-shadow-[0_0_12px_rgba(0,255,178,0.5)]">
-                {activeReservation.pin}
+              
+              <div className="flex justify-center">
+                <QRCodeView value={activeReservation.pin} size={140} />
               </div>
+
+              <div>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 block">
+                  Muestra este código PIN al cajero en tienda:
+                </span>
+                <div className="font-mono text-3xl sm:text-4xl font-black text-[#00ffb2] tracking-widest drop-shadow-[0_0_12px_rgba(0,255,178,0.5)]">
+                  #{activeReservation.pin}
+                </div>
+              </div>
+
               <div className="flex items-center justify-center gap-1.5 text-xs text-indigo-300 font-light pt-1">
                 <Clock size={13} className="text-indigo-400" />
-                <span>Reserva garantizada por 3 horas en estante</span>
+                <span>Reserva congelada por 3 horas en estante</span>
               </div>
             </div>
 

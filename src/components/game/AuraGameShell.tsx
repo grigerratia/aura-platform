@@ -120,6 +120,7 @@ export default function AuraGameShell({
         onClose={() => setSelectedProduct(null)}
         onSuccessUnlock={handleSuccessUnlock}
         stores={initialStores}
+        tasa={initialTasa}
       />
 
       {/* 6. MODAL DE BILLETERA DE SALDO A FAVOR */}
