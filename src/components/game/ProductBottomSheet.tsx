@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
   AlertCircle, Loader2, ArrowRight, ShieldCheck, QrCode,
-  Calendar, Phone, MessageCircle, Copy, AlertTriangle, Users
+  Calendar, Phone, MessageCircle, Copy, AlertTriangle, Users, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -27,6 +27,7 @@ type SheetStep =
   | 'STOCK_CONFIRMED'
   | 'OPTION_A_TICKET'
   | 'OPTION_B_LAYAWAY'
+  | 'OPTION_B_CONFIRMED'
   | 'OUT_OF_STOCK';
 
 export default function ProductBottomSheet({
@@ -53,7 +54,11 @@ export default function ProductBottomSheet({
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [generatedPin, setGeneratedPin] = useState<string>('');
   const [pagoMovilRef, setPagoMovilRef] = useState<string>('');
+  const [pagoMovilAuraRef, setPagoMovilAuraRef] = useState<string>('');
   const [copiedBankData, setCopiedBankData] = useState<boolean>(false);
+  const [copiedAuraBankData, setCopiedAuraBankData] = useState<boolean>(false);
+  const [payAuraWithWallet, setPayAuraWithWallet] = useState<boolean>(false);
+  const [userWalletCredit, setUserWalletCredit] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Contador regresivo para ticket de 3 horas
@@ -93,6 +98,20 @@ export default function ProductBottomSheet({
           if (name && !customerName) setCustomerName(name);
           const phone = user.phone || user.user_metadata?.phone || '';
           if (phone && !customerPhone) setCustomerPhone(phone);
+
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('wallet_credit_usd')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (prof?.wallet_credit_usd) {
+            const credit = Number(prof.wallet_credit_usd);
+            setUserWalletCredit(credit);
+            if (credit >= Number((auraPrice * 0.05).toFixed(2))) {
+              setPayAuraWithWallet(true);
+            }
+          }
         }
       } catch {}
     };
@@ -122,15 +141,16 @@ export default function ProductBottomSheet({
   // Cálculos seguros con fallbacks para evitar cualquier error de tipo o runtime
   const auraPrice = Number(product?.aura_price_usd || product?.price || 10);
   const regularPrice = Number(product?.regular_price_usd || product?.price || auraPrice);
-  const unlockFee =
-    product?.unlock_fee_usd !== undefined && product?.unlock_fee_usd !== null
-      ? Number(product.unlock_fee_usd)
-      : Number((auraPrice * 0.1).toFixed(2));
   
-  // Cálculo de apartado 30% inicial
-  const deposit30USD = Number((auraPrice * 0.3).toFixed(2));
+  // 5% de tarifa de desbloqueo oficial Aura (NO se descuenta del precio que recibe la tienda)
+  const auraUnlockFeeUSD = Number((auraPrice * 0.05).toFixed(2));
+  const auraUnlockFeeVES = Math.round(auraUnlockFeeUSD * (tasa || 883));
+  
+  // Cálculo de apartado 30% inicial directo para el comercio
+  const deposit30USD = Number((auraPrice * 0.30).toFixed(2));
   const remaining70USD = Number((auraPrice - deposit30USD).toFixed(2));
   const deposit30VES = Math.round(deposit30USD * (tasa || 883));
+  const remaining70VES = Math.round(remaining70USD * (tasa || 883));
   const totalVES = Math.round(auraPrice * (tasa || 883));
 
   // Tienda asociada
@@ -412,12 +432,19 @@ export default function ProductBottomSheet({
     e.preventDefault();
     if (!product || !activeRes) return;
     if (!pagoMovilRef.trim()) {
-      alert('Por favor ingresa los dígitos de la referencia de tu Pago Móvil.');
+      alert('Por favor ingresa los dígitos de la referencia de tu Pago Móvil al comercio.');
+      return;
+    }
+    if (!payAuraWithWallet && !pagoMovilAuraRef.trim()) {
+      alert('Por favor ingresa los dígitos de la referencia del desbloqueo a Aura (5%).');
       return;
     }
 
     playTap();
-    if (!activeRes) return;
+
+    const auraPayDesc = payAuraWithWallet
+      ? 'Aura 5%: Billetera'
+      : `Aura 5%: Ref #${pagoMovilAuraRef.trim()}`;
 
     const updatedRes: Reservation = {
       ...activeRes,
@@ -425,7 +452,7 @@ export default function ProductBottomSheet({
       payment_method: 'pago_movil',
       payment_type: 'apartado_15d',
       payment_reference: pagoMovilRef.trim(),
-      unlock_fee_usd: unlockFee,
+      unlock_fee_usd: auraUnlockFeeUSD,
       initial_deposit: deposit30USD,
       store_pay_balance_usd: remaining70USD,
     };
@@ -433,36 +460,66 @@ export default function ProductBottomSheet({
     setActiveRes(updatedRes);
     setActiveReservation(updatedRes);
     playUnlockSuccess();
-    onSuccessUnlock();
+    setStep('OPTION_B_CONFIRMED');
+
+    // Descontar saldo de billetera si aplica
+    if (payAuraWithWallet && currentUserId && userWalletCredit >= auraUnlockFeeUSD) {
+      try {
+        const newCredit = Number((userWalletCredit - auraUnlockFeeUSD).toFixed(2));
+        await supabase.from('profiles').update({ wallet_credit_usd: newCredit }).eq('id', currentUserId);
+        setUserWalletCredit(newCredit);
+      } catch {}
+    }
 
     // Actualizar en Supabase
     try {
-      await supabase
+      const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
+      let query = supabase
         .from('reservations')
         .update({
           status: 'confirmed',
-          customer_phone: `${customerPhone} [PAGO_MOVIL: Ref #${pagoMovilRef} - Apartado 30%]`,
-          unlock_fee_usd: unlockFee,
+          payment_method: 'pago_movil',
+          payment_type: 'apartado_15d',
+          payment_reference: pagoMovilRef.trim(),
+          customer_phone: `${customerPhone} [PAGO_MOVIL: Ref #${pagoMovilRef.trim()} - Apartado 30% - ${auraPayDesc}]`,
+          unlock_fee_usd: auraUnlockFeeUSD,
+          initial_deposit: deposit30USD,
           store_pay_balance_usd: remaining70USD,
-        })
-        .eq('id', activeRes.id);
-    } catch {}
+        });
+
+      if (isValidUUID) {
+        await query.eq('id', activeRes.id);
+      } else if (activeRes.pin_code || activeRes.pin) {
+        await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
+      }
+    } catch (err) {
+      console.warn('Error actualizando reserva en Supabase:', err);
+    }
 
     // Enviar mensaje directo por WhatsApp a la tienda
     const waText = encodeURIComponent(
       `Hola ${storeName}, acabo de realizar el apartado digital en Aura para "${product.name}" (${selectedVariant}).\n` +
       `Código de Boleto: #${generatedPin}\n` +
-      `Referencia Pago Móvil: ${pagoMovilRef.trim()}\n` +
-      `Monto 30% Inicial: Bs. ${deposit30VES.toLocaleString('es-VE')} ($${deposit30USD} USD).\n` +
-      `Saldo restante a pagar al retirar: $${remaining70USD} USD.`
+      `Referencia Pago Móvil Tienda (30%): ${pagoMovilRef.trim()} (Bs. ${deposit30VES.toLocaleString('es-VE')} / $${deposit30USD} USD).\n` +
+      `Desbloqueo Aura (5%): $${auraUnlockFeeUSD} USD (${auraPayDesc}).\n` +
+      `Saldo restante a pagar al retirar en depósito: $${remaining70USD} USD (14 a 30 días).`
     );
     window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
+  };
+
+  // Copiar datos de Pago Móvil de Aura (5% Desbloqueo)
+  const handleCopyAuraBankData = () => {
+    playTap();
+    const text = `Pago Móvil Desbloqueo Aura:\nBanco: 0102 Banco de Venezuela\nTeléfono: 04140857379\nRIF: J-50348291-0\nMonto Desbloqueo (5%): Bs. ${auraUnlockFeeVES.toLocaleString('es-VE')} ($${auraUnlockFeeUSD} USD)`;
+    navigator.clipboard.writeText(text);
+    setCopiedAuraBankData(true);
+    setTimeout(() => setCopiedAuraBankData(false), 2500);
   };
 
   // Copiar datos de Pago Móvil de la tienda
   const handleCopyBankData = () => {
     playTap();
-    const text = `Pago Móvil ${storeName}:\nBanco: 0102 Banco de Venezuela\nTeléfono: ${storePhoneClean}\nRIF: J-40812345-0\nMonto 30%: Bs. ${deposit30VES.toLocaleString('es-VE')} ($${deposit30USD} USD)`;
+    const text = `Pago Móvil ${storeName}:\nBanco: 0102 Banco de Venezuela\nTeléfono: ${storePhoneClean}\nRIF: J-40812345-0\nMonto Inicial (30%): Bs. ${deposit30VES.toLocaleString('es-VE')} ($${deposit30USD} USD)`;
     navigator.clipboard.writeText(text);
     setCopiedBankData(true);
     setTimeout(() => setCopiedBankData(false), 2500);
@@ -860,88 +917,239 @@ export default function ProductBottomSheet({
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div>
                   <span className="text-[10px] font-black uppercase text-indigo-400">
-                    Apartado Digital • 15 a 30 Días
+                    Apartado Digital • 14 a 30 Días
                   </span>
                   <h3 className="text-base font-black text-white">
-                    Pago Móvil Directo al Comercio
+                    Asegura tu producto en depósito
                   </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setStep('STOCK_CONFIRMED')}
-                  className="text-xs text-slate-400 hover:text-white"
+                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
                 >
                   Volver
                 </button>
               </div>
 
-              {/* Datos bancarios del comercio */}
-              <div className="bg-[#030812] border border-indigo-500/30 rounded-2xl p-4 space-y-2.5 text-xs shadow-inner">
-                <div className="flex justify-between items-center text-slate-300">
-                  <span className="font-bold">Comercio:</span>
-                  <span className="text-white font-medium">{storeName}</span>
+              {/* Resumen Ecuación Financiera */}
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="bg-[#030812] border border-emerald-500/30 p-2.5 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-light">1. Desbloqueo Aura:</span>
+                  <strong className="text-[#00ffb2] font-black text-xs sm:text-sm">${auraUnlockFeeUSD.toFixed(2)} USD</strong>
+                  <span className="block text-[9px] text-slate-500 font-mono">5% de custodia</span>
                 </div>
-                <div className="flex justify-between items-center text-slate-300">
-                  <span className="font-bold">Banco Destino:</span>
-                  <span className="text-white font-medium">0102 Banco de Venezuela</span>
+                <div className="bg-[#030812] border border-indigo-500/30 p-2.5 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-light">2. Inicial Tienda:</span>
+                  <strong className="text-indigo-300 font-black text-xs sm:text-sm">${deposit30USD.toFixed(2)} USD</strong>
+                  <span className="block text-[9px] text-slate-500 font-mono">30% en depósito</span>
                 </div>
-                <div className="flex justify-between items-center text-slate-300">
-                  <span className="font-bold">Teléfono / Pago Móvil:</span>
-                  <span className="text-[#00ffb2] font-mono font-bold">{storePhoneClean}</span>
+                <div className="bg-[#030812] border border-slate-800 p-2.5 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-light">3. Al Retirar:</span>
+                  <strong className="text-white font-black text-xs sm:text-sm">${remaining70USD.toFixed(2)} USD</strong>
+                  <span className="block text-[9px] text-slate-500 font-mono">70% en caja</span>
                 </div>
-                <div className="flex justify-between items-center text-slate-300">
-                  <span className="font-bold">RIF / Cédula:</span>
-                  <span className="text-white font-mono">J-40812345-0</span>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800 flex justify-between items-center">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">30% Inicial a Transferir:</span>
-                    <span className="text-sm font-black text-indigo-300">${deposit30USD} USD</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">En Bolívares (Tasa BCV):</span>
-                    <span className="text-sm font-black text-[#00ffb2]">Bs. {deposit30VES.toLocaleString('es-VE')}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleCopyBankData}
-                  className="w-full mt-1 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Copy size={12} />
-                  <span>{copiedBankData ? '¡Datos Copiados al Portapapeles!' : 'Copiar Datos Bancarios'}</span>
-                </button>
               </div>
 
-              {/* Formulario de Confirmación con Referencia */}
-              <form onSubmit={handleConfirmApartadoPagoMovil} className="space-y-3">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                    Ingresa el Número de Referencia del Pago Móvil:
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: 4892 (últimos 4 o 6 dígitos)"
-                    value={pagoMovilRef}
-                    onChange={(e) => setPagoMovilRef(e.target.value)}
-                    className="w-full p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-indigo-400"
-                  />
+              <form onSubmit={handleConfirmApartadoPagoMovil} className="space-y-4">
+                
+                {/* 1. SECCIÓN: PAGO DEL 5% DESBLOQUEO AURA */}
+                <div className="bg-[#030812] border border-emerald-500/30 rounded-2xl p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[#00ffb2] flex items-center gap-1.5">
+                      <Sparkles size={13} />
+                      Paso 1: Desbloqueo y Custodia Aura (5%)
+                    </span>
+                    <span className="font-black text-white text-xs">${auraUnlockFeeUSD.toFixed(2)} USD</span>
+                  </div>
+
+                  {userWalletCredit >= auraUnlockFeeUSD ? (
+                    <label className="flex items-center gap-2 p-2 bg-emerald-950/40 border border-emerald-500/40 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={payAuraWithWallet}
+                        onChange={(e) => setPayAuraWithWallet(e.target.checked)}
+                        className="accent-emerald-400 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-[11px] text-emerald-200 font-bold">
+                        Pagar con saldo de Billetera Aura (${userWalletCredit.toFixed(2)} USD disponible)
+                      </span>
+                    </label>
+                  ) : null}
+
+                  {!payAuraWithWallet && (
+                    <div className="space-y-2 pt-1 border-t border-slate-800/80">
+                      <div className="text-[11px] text-slate-300 space-y-0.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Banco / Teléfono Aura:</span>
+                          <span className="text-white font-mono">0102 BDV • 04140857379</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">RIF / Monto en Bs:</span>
+                          <span className="text-[#00ffb2] font-mono font-bold">J-50348291-0 • Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopyAuraBankData}
+                          className="py-1 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          <Copy size={11} />
+                          <span>{copiedAuraBankData ? '¡Copiado!' : 'Copiar Pago Móvil Aura'}</span>
+                        </button>
+                        <input
+                          type="text"
+                          required={!payAuraWithWallet}
+                          placeholder="Ref Pago Móvil Aura (4 dígitos)"
+                          value={pagoMovilAuraRef}
+                          onChange={(e) => setPagoMovilAuraRef(e.target.value)}
+                          className="flex-1 p-1.5 bg-[#020508] border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-emerald-400"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. SECCIÓN: PAGO DEL 30% INICIAL AL COMERCIO */}
+                <div className="bg-[#030812] border border-indigo-500/30 rounded-2xl p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-indigo-300 flex items-center gap-1.5">
+                      <StoreIcon size={13} />
+                      Paso 2: Abono 30% Inicial para {storeName}
+                    </span>
+                    <span className="font-black text-white text-xs">${deposit30USD.toFixed(2)} USD</span>
+                  </div>
+
+                  <div className="text-[11px] text-slate-300 space-y-0.5 pt-1 border-t border-slate-800/80">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Banco / Teléfono Comercio:</span>
+                      <span className="text-white font-mono">0102 BDV • {storePhoneClean}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">RIF / Monto Inicial en Bs:</span>
+                      <span className="text-[#00ffb2] font-mono font-bold">J-40812345-0 • Bs. {deposit30VES.toLocaleString('es-VE')}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleCopyBankData}
+                      className="py-1 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Copy size={11} />
+                      <span>{copiedBankData ? '¡Copiado!' : 'Copiar Pago Móvil Tienda'}</span>
+                    </button>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ref Pago Móvil Tienda (4 dígitos)"
+                      value={pagoMovilRef}
+                      onChange={(e) => setPagoMovilRef(e.target.value)}
+                      className="flex-1 p-1.5 bg-[#020508] border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-indigo-400"
+                    />
+                  </div>
                 </div>
 
                 <p className="text-[11px] text-slate-400 font-light leading-relaxed">
-                  Al confirmar, se abrirá WhatsApp con el comprobante pre-redactado para {storeName}. El producto quedará en depósito con el 70% restante (${remaining70USD} USD) a liquidar al retirar.
+                  Al confirmar, tu boleto quedará guardado en tu teléfono y en el sistema de {storeName}. El producto queda en depósito con el 70% restante (${remaining70USD.toFixed(2)} USD) a liquidar al retirar dentro de los 14 a 30 días.
                 </p>
 
                 <button
                   type="submit"
                   className="game-sweep w-full cursor-pointer bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:brightness-110 text-white font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-indigo-600/25 active:scale-95"
                 >
-                  Confirmar Apartado y Enviar Comprobante
+                  Confirmar Apartado y Guardar Boleto
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* =====================================================================
+              4C. PANTALLA: APARTADO CONFIRMADO CON ÉXITO (RECIBO Y QR ACTIVO)
+              ===================================================================== */}
+          {step === 'OPTION_B_CONFIRMED' && (
+            <div className="space-y-4 py-2 text-center animate-in zoom-in-95 duration-200">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-500 to-indigo-600 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/30">
+                <CheckCircle2 size={32} />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3 py-1 rounded-full inline-block mb-1.5">
+                  📦 Apartado en Depósito Activo (14 a 30 Días)
+                </span>
+                <h3 className="text-xl font-black text-white">
+                  ¡Apartado Guardado con Éxito!
+                </h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                  Tu producto <strong className="text-white">{product?.name}</strong> está resguardado en el depósito de <strong className="text-emerald-400">{storeName}</strong>.
+                </p>
+              </div>
+
+              {/* CÓDIGO QR Y PIN */}
+              <div className="bg-[#030812] border border-indigo-500/30 rounded-2xl p-4 space-y-2">
+                <div className="flex justify-center">
+                  <QRCodeView value={generatedPin} size={130} />
+                </div>
+                <div className="font-mono text-3xl font-black text-[#00ffb2] tracking-widest">
+                  #{generatedPin}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Muestra este PIN o QR en el mostrador para retirar tu producto.
+                </p>
+              </div>
+
+              {/* RESUMEN FINANCIERO */}
+              <div className="bg-[#020508] border border-slate-800 rounded-2xl p-3 text-xs space-y-1.5 text-left">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Desbloqueo Aura (5%):</span>
+                  <span className="text-[#00ffb2] font-bold">${auraUnlockFeeUSD.toFixed(2)} USD</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">30% Inicial Tienda:</span>
+                  <span className="text-indigo-300 font-bold">${deposit30USD.toFixed(2)} USD (Ref: #{pagoMovilRef})</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-800">
+                  <span className="text-white font-bold">70% Restante a Pagar al Retirar:</span>
+                  <span className="text-white font-black">${remaining70USD.toFixed(2)} USD (Bs. {remaining70VES.toLocaleString('es-VE')})</span>
+                </div>
+              </div>
+
+              {/* BOTONES DE ACCIÓN */}
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTap();
+                    const waText = encodeURIComponent(
+                      `Hola ${storeName}, acabo de realizar el apartado digital en Aura para "${product?.name}" (${selectedVariant}).\n` +
+                      `Código de Boleto: #${generatedPin}\n` +
+                      `Referencia Pago Móvil Tienda (30%): ${pagoMovilRef.trim()}\n` +
+                      `Monto 30% Inicial: Bs. ${deposit30VES.toLocaleString('es-VE')} ($${deposit30USD} USD).\n` +
+                      `Saldo restante al retirar: $${remaining70USD} USD.`
+                    );
+                    window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
+                  }}
+                  className="w-full bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] border border-[#25D366]/40 font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition"
+                >
+                  <MessageCircle size={15} />
+                  <span>Reabrir WhatsApp del Comercio</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTap();
+                    onSuccessUnlock();
+                    handleClose();
+                  }}
+                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black py-3.5 rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
+                >
+                  Listo • Ver Mi Boleto en Mis Pases
+                </button>
+              </div>
             </div>
           )}
 

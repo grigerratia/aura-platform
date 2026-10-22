@@ -304,11 +304,9 @@ export default function OwnerDashboard() {
     newStatus: 'confirmed' | 'ultimo_par' | 'cancelled'
   ) => {
     try {
-      const targetDbStatus = newStatus === 'cancelled' ? 'cancelled' : 'confirmed';
-
       await supabase
         .from('reservations')
-        .update({ status: targetDbStatus })
+        .update({ status: newStatus })
         .eq('id', reservation.id);
 
       if (newStatus === 'ultimo_par') {
@@ -400,6 +398,21 @@ export default function OwnerDashboard() {
       }
     } else {
       alert('PIN no encontrado o ya expirado. Verifica los 4 dígitos.');
+    }
+  };
+
+  // Cobro directo en caja de una reserva confirmada
+  const handleCompleteReservation = async (reservation: Reservation) => {
+    try {
+      await supabase
+        .from('reservations')
+        .update({ status: 'completed' })
+        .eq('id', reservation.id);
+
+      setPinSuccessMessage(`✓ Venta cobrada y entregada: PIN #${reservation.pin} (${reservation.customer_name}).`);
+      if (storeId) fetchReservations(storeId);
+    } catch (err) {
+      console.error('Error completando reserva:', err);
     }
   };
 
@@ -1095,46 +1108,76 @@ export default function OwnerDashboard() {
                           </div>
                         </div>
 
-                        {/* SEMÁFORO DE ACCIÓN */}
-                        <div className="pt-2 border-t border-slate-900 space-y-2">
-                          <div className="grid grid-cols-3 gap-1.5">
+                        {/* ACCIONES DE ESTADO: SI YA ESTÁ CONFIRMADA O ES PAGO MÓVIL, MOSTRAR BOTÓN DE COBRAR/ENTREGAR */}
+                        {res.status === 'confirmed' || res.status === 'confirmada' || res.status === 'ultimo_par' || hasPagoMovil ? (
+                          <div className="pt-2 border-t border-slate-900 space-y-2">
+                            <div className="p-2 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between text-xs">
+                              <span className="text-emerald-300 font-bold flex items-center gap-1.5 text-[11px]">
+                                <Check size={14} className="text-[#00ffb2]" />
+                                {hasPagoMovil ? 'Apartado en Depósito (Pago Móvil)' : 'Stock Confirmado en Mostrador'}
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-400">PIN #{res.pin}</span>
+                            </div>
+
                             <button
-                              onClick={() => handleUpdateReservationStatus(res, 'confirmed')}
-                              className="cursor-pointer bg-emerald-600/80 hover:bg-emerald-600 text-white py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
-                              title="Hay stock disponible"
+                              type="button"
+                              onClick={() => handleCompleteReservation(res)}
+                              className="w-full cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 active:scale-95"
                             >
-                              <Check size={13} />
-                              <span>Sí Hay</span>
+                              <CheckCircle2 size={15} />
+                              <span>Cobrar y Entregar Producto en Caja</span>
                             </button>
 
                             <button
-                              onClick={() => handleUpdateReservationStatus(res, 'ultimo_par')}
-                              className="cursor-pointer bg-amber-500/80 hover:bg-amber-500 text-black py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
-                              title="Última unidad disponible"
+                              type="button"
+                              onClick={() => handleAttendedNoSale(res)}
+                              className="w-full text-slate-400 hover:text-white bg-[#020508] hover:bg-slate-900 border border-slate-850 rounded-xl py-1.5 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
                             >
-                              <AlertCircle size={13} />
-                              <span>Último</span>
-                            </button>
-
-                            <button
-                              onClick={() => handleUpdateReservationStatus(res, 'cancelled')}
-                              className="cursor-pointer bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-300 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
-                              title="Agotado"
-                            >
-                              <X size={13} />
-                              <span>Agotado</span>
+                              <ShieldCheck size={12} className="text-emerald-400" />
+                              <span>Cliente no llevó: Liberar stock a Billetera</span>
                             </button>
                           </div>
+                        ) : (
+                          <div className="pt-2 border-t border-slate-900 space-y-2">
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <button
+                                onClick={() => handleUpdateReservationStatus(res, 'confirmed')}
+                                className="cursor-pointer bg-emerald-600/80 hover:bg-emerald-600 text-white py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                                title="Hay stock disponible"
+                              >
+                                <Check size={13} />
+                                <span>Sí Hay</span>
+                              </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleAttendedNoSale(res)}
-                            className="w-full text-slate-400 hover:text-white bg-[#020508] hover:bg-slate-900 border border-slate-850 rounded-xl py-1.5 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <ShieldCheck size={12} className="text-emerald-400" />
-                            <span>Cliente no llevó: Liberar stock a Billetera</span>
-                          </button>
-                        </div>
+                              <button
+                                onClick={() => handleUpdateReservationStatus(res, 'ultimo_par')}
+                                className="cursor-pointer bg-amber-500/80 hover:bg-amber-500 text-black py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                                title="Última unidad disponible"
+                              >
+                                <AlertCircle size={13} />
+                                <span>Último</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleUpdateReservationStatus(res, 'cancelled')}
+                                className="cursor-pointer bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-300 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                                title="Agotado"
+                              >
+                                <X size={13} />
+                                <span>Agotado</span>
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAttendedNoSale(res)}
+                              className="w-full text-slate-400 hover:text-white bg-[#020508] hover:bg-slate-900 border border-slate-850 rounded-xl py-1.5 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <ShieldCheck size={12} className="text-emerald-400" />
+                              <span>Cliente no llevó: Liberar stock a Billetera</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

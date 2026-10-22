@@ -178,28 +178,43 @@ export default function AuraGameShell({
       }
     };
 
+    const targetPin = activeReservation.pin_code || activeReservation.pin;
+    const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
+
     // A. Suscripción por Postgres Changes Realtime
     const channel = supabase
-      .channel(`active_res_dock_${resId}`)
+      .channel(`active_res_dock_${targetPin || resId}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'reservations', filter: `id=eq.${resId}` },
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'reservations', 
+          filter: isValidUUID ? `id=eq.${resId}` : undefined 
+        },
         (payload: any) => {
           if (payload.new) {
-            handleReservationStateChange(payload.new);
+            if (payload.new.pin_code === targetPin || payload.new.id === resId) {
+              handleReservationStateChange(payload.new);
+            }
           }
         }
       )
       .subscribe();
 
-    // B. Sondeo de respaldo cada 2.5s (garantiza sincronización sin depender de WebSockets)
+    // B. Sondeo de respaldo cada 2.5s (busca por UUID o por PIN de 4 dígitos)
     const pollInterval = setInterval(async () => {
       try {
-        const { data } = await supabase
-          .from('reservations')
-          .select('id, status, pin_code, pin')
-          .eq('id', resId)
-          .maybeSingle();
+        let query = supabase.from('reservations').select('*');
+        if (isValidUUID) {
+          query = query.or(`id.eq.${resId},pin_code.eq.${targetPin}`);
+        } else if (targetPin) {
+          query = query.eq('pin_code', targetPin);
+        } else {
+          return;
+        }
+
+        const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
 
         if (data) {
           handleReservationStateChange(data);

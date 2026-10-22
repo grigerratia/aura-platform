@@ -84,23 +84,102 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
     return () => window.removeEventListener('aura_trust_score_updated', handleScoreUpdated);
   }, [loadUserData]);
 
+  // Verificación en vivo automática cada 2.5s mientras el usuario ve sus pases
+  useEffect(() => {
+    if (!activeReservation) return;
+
+    const targetPin = activeReservation.pin_code || activeReservation.pin;
+    const targetId = activeReservation.id;
+    const isValidUUID = Boolean(targetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId));
+
+    const checkLive = async () => {
+      try {
+        let query = supabase.from('reservations').select('*');
+        if (isValidUUID) {
+          query = query.or(`id.eq.${targetId},pin_code.eq.${targetPin}`);
+        } else if (targetPin) {
+          query = query.eq('pin_code', targetPin);
+        } else {
+          return;
+        }
+
+        const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+        if (data) {
+          if (data.status === 'COMPLETED_IN_STORE' || data.status === 'completed' || data.status === 'completada') {
+            // Guardar en historial local de pases concretados
+            try {
+              const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
+              const history = JSON.parse(historyRaw);
+              if (!history.some((h: any) => h.id === data.id || h.pin === data.pin_code)) {
+                history.unshift({
+                  ...activeReservation,
+                  status: 'COMPLETED_IN_STORE',
+                  completed_at: new Date().toISOString(),
+                });
+                localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
+              }
+            } catch {}
+
+            clearActiveReservation();
+            loadUserData();
+            window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
+          } else if (data.status === 'ATTENDED_NO_SALE' || data.status === 'cancelled' || data.status === 'cancelada') {
+            clearActiveReservation();
+          } else if (data.status !== activeReservation.status || (isValidUUID && data.id !== activeReservation.id)) {
+            setActiveReservation({
+              ...activeReservation,
+              id: data.id,
+              status: data.status,
+            });
+          }
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(checkLive, 2500);
+    return () => clearInterval(interval);
+  }, [activeReservation, clearActiveReservation, loadUserData, setActiveReservation]);
+
   // Comprobar manualmente estado en vivo con el mostrador
   const handleCheckLiveStatus = async () => {
-    if (!activeReservation?.id) return;
+    if (!activeReservation) return;
     playTap();
     setIsRefreshing(true);
     try {
-      const { data } = await supabase
-        .from('reservations')
-        .select('id, status, pin_code, pin, store_name, customer_name, confirmed_at')
-        .eq('id', activeReservation.id)
-        .maybeSingle();
+      const targetPin = activeReservation.pin_code || activeReservation.pin;
+      const targetId = activeReservation.id;
+      const isValidUUID = Boolean(targetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId));
+
+      let query = supabase.from('reservations').select('id, status, pin_code, pin, store_name, customer_name, confirmed_at');
+      if (isValidUUID) {
+        query = query.or(`id.eq.${targetId},pin_code.eq.${targetPin}`);
+      } else if (targetPin) {
+        query = query.eq('pin_code', targetPin);
+      }
+
+      const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
 
       if (data) {
         if (data.status === 'COMPLETED_IN_STORE' || data.status === 'completed' || data.status === 'completada') {
+          // Guardar en historial
+          try {
+            const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
+            const history = JSON.parse(historyRaw);
+            if (!history.some((h: any) => h.id === data.id || h.pin === data.pin_code)) {
+              history.unshift({
+                ...activeReservation,
+                status: 'COMPLETED_IN_STORE',
+                completed_at: new Date().toISOString(),
+              });
+              localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
+            }
+          } catch {}
+
           alert('¡Tu ticket ya fue cobrado y entregado en mostrador! 🎉 Se sumaron +10 puntos a tu Nivel de Confianza.');
           clearActiveReservation();
           loadUserData();
+          window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
         } else if (data.status === 'ATTENDED_NO_SALE') {
           alert('Mostrador: El stock fue liberado. Tu saldo ha sido acreditado en tu Billetera Aura.');
           clearActiveReservation();
@@ -154,12 +233,13 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
   const isPendingCheck = activeReservation?.status === 'pending' || activeReservation?.status === 'PENDING_STOCK_CHECK';
   const isUltimoPar = activeReservation?.status === 'ultimo_par';
+  const isApartado = activeReservation?.payment_type === 'apartado_15d' || Boolean(activeReservation?.initial_deposit);
 
   return (
     <div className="space-y-6 pb-24 px-4 max-w-xl mx-auto select-none">
       
       {/* ==============================================================================
-          1. SECCIÓN DE PASE ACTIVO (TICKET QR DE 3 HORAS)
+          1. SECCIÓN DE PASE ACTIVO (TICKET QR DE 3 HORAS / APARTADO 14-30 DÍAS)
           ============================================================================== */}
       {activeReservation ? (
         <ThanosCard intensity="epic">
@@ -170,7 +250,14 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
             {/* Header del Ticket con Estado en Vivo */}
             <div className="relative z-10 flex items-center justify-between pb-3 border-b border-slate-800/40">
               <div className="flex items-center gap-2">
-                {isPendingCheck ? (
+                {isApartado ? (
+                  <>
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
+                      📦 Apartado Digital en Depósito (14 a 30 Días)
+                    </span>
+                  </>
+                ) : isPendingCheck ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
                     <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
@@ -257,39 +344,86 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
               <div className="flex items-center justify-center gap-1.5 text-xs text-indigo-300 font-light pt-1">
                 <Clock size={13} className="text-indigo-400" />
-                <span>Precio congelado por 3 horas en estante</span>
+                <span>{isApartado ? 'Resguardado en depósito de la tienda (14 a 30 días)' : 'Precio congelado por 3 horas en estante'}</span>
               </div>
             </div>
 
             {/* DESGLOSE FINANCIERO */}
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
-                <span className="text-[10px] text-slate-500 block uppercase font-light">Anticipo Desbloqueo:</span>
-                <span className="font-bold text-[#00ffb2] text-sm sm:text-base">
-                  ${(activeReservation.unlock_fee_usd || 0).toFixed(2)} USD
-                </span>
-              </div>
+            {isApartado ? (
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="p-3 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-emerald-500/30">
+                  <span className="text-[10px] text-slate-500 block uppercase font-light">Desbloqueo Aura:</span>
+                  <span className="font-bold text-[#00ffb2] text-xs sm:text-sm">
+                    ${(activeReservation.unlock_fee_usd || 2).toFixed(2)} USD
+                  </span>
+                  <span className="block text-[9px] text-slate-500 font-mono">5% custodia</span>
+                </div>
 
-              <div className="p-3.5 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
-                <span className="text-[10px] text-slate-500 block uppercase font-light">A Pagar en Caja:</span>
-                <span className="font-bold text-slate-100 text-sm sm:text-base">
-                  ${(activeReservation.store_pay_balance_usd || activeReservation.price_usd).toFixed(2)} USD
-                </span>
-              </div>
-            </div>
+                <div className="p-3 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-indigo-500/30">
+                  <span className="text-[10px] text-slate-500 block uppercase font-light">Abono Inicial:</span>
+                  <span className="font-bold text-indigo-300 text-xs sm:text-sm">
+                    ${(activeReservation.initial_deposit || 12).toFixed(2)} USD
+                  </span>
+                  <span className="block text-[9px] text-slate-500 font-mono">30% tienda</span>
+                </div>
 
-            {/* BOTÓN APARTADO DIGITAL 30% */}
-            <button
-              type="button"
-              onClick={() => {
-                playTap();
-                setShowPagoMovilModal(true);
-              }}
-              className="game-sweep w-full bg-gradient-to-r from-indigo-900/90 via-indigo-700/80 to-purple-800 text-slate-100 font-black py-3 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-95"
-            >
-              <span>Asegurar Ya con Pago Móvil Directo (15-30 Días)</span>
-              <ArrowRight size={14} />
-            </button>
+                <div className="p-3 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
+                  <span className="text-[10px] text-slate-500 block uppercase font-light">A Pagar en Caja:</span>
+                  <span className="font-bold text-slate-100 text-xs sm:text-sm">
+                    ${(activeReservation.store_pay_balance_usd || (activeReservation.price_usd * 0.7)).toFixed(2)} USD
+                  </span>
+                  <span className="block text-[9px] text-slate-500 font-mono">70% al retirar</span>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
+                  <span className="text-[10px] text-slate-500 block uppercase font-light">Anticipo Desbloqueo:</span>
+                  <span className="font-bold text-[#00ffb2] text-sm sm:text-base">
+                    $0.00 USD
+                  </span>
+                </div>
+
+                <div className="p-3.5 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
+                  <span className="text-[10px] text-slate-500 block uppercase font-light">A Pagar en Caja:</span>
+                  <span className="font-bold text-slate-100 text-sm sm:text-base">
+                    ${(activeReservation.price_usd).toFixed(2)} USD
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* ACCIÓN SEGÚN TIPO DE PASE */}
+            {isApartado ? (
+              <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl text-xs text-indigo-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-[#00ffb2] shrink-0" />
+                  <span>Guardado en depósito de {activeReservation.store_name}.</span>
+                </div>
+                {activeReservation.store_whatsapp && (
+                  <a
+                    href={`https://wa.me/${activeReservation.store_whatsapp.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 font-bold hover:underline shrink-0 ml-2"
+                  >
+                    WhatsApp ↗
+                  </a>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  playTap();
+                  setShowPagoMovilModal(true);
+                }}
+                className="game-sweep w-full bg-gradient-to-r from-indigo-900/90 via-indigo-700/80 to-purple-800 text-slate-100 font-black py-3 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-95"
+              >
+                <span>Asegurar Ya con Apartado Digital (14-30 Días)</span>
+                <ArrowRight size={14} />
+              </button>
+            )}
 
             {/* Cancelar Reserva */}
             <div className="text-center pt-1">
@@ -469,14 +603,22 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed font-light">
-              Transfiere directamente de tu banco al banco de la tienda <strong className="text-slate-100 font-semibold">{activeReservation?.store_name}</strong> para asegurar tu apartado de 15 a 30 días.
+              Para apartar en depósito por 14 a 30 días, abona el 5% de desbloqueo a Aura y el 30% inicial a <strong className="text-slate-100 font-semibold">{activeReservation?.store_name}</strong>. El 70% restante se liquida en caja al retirar.
             </p>
 
-            <div className="p-3.5 bg-[#030812]/90 rounded-2xl space-y-1 text-xs shadow-inner border border-slate-800">
-              <div className="text-slate-500 text-[10px] font-light uppercase">Banco Destino:</div>
-              <div className="font-medium text-slate-200">0102 Banco de Venezuela</div>
-              <div className="text-slate-500 text-[10px] font-light uppercase mt-2">Teléfono / Pago Móvil:</div>
-              <div className="font-mono font-bold text-teal-300">{activeReservation?.store_whatsapp || '0414-798-1234'}</div>
+            <div className="p-3.5 bg-[#030812]/90 rounded-2xl space-y-2 text-xs shadow-inner border border-slate-800">
+              <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                <span className="text-slate-400">Desbloqueo Aura (5%):</span>
+                <span className="text-[#00ffb2] font-mono font-bold">${((activeReservation?.price_usd || 10) * 0.05).toFixed(2)} USD</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                <span className="text-slate-400">Abono Inicial Tienda (30%):</span>
+                <span className="text-indigo-300 font-mono font-bold">${((activeReservation?.price_usd || 10) * 0.30).toFixed(2)} USD</span>
+              </div>
+              <div className="pt-0.5 space-y-0.5">
+                <div className="text-slate-500 text-[10px] uppercase">Pago Móvil Comercio:</div>
+                <div className="font-mono font-bold text-teal-300">{activeReservation?.store_whatsapp || '0414-798-1234'} (0102 BDV)</div>
+              </div>
             </div>
 
             <button
