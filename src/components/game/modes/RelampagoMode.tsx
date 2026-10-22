@@ -28,6 +28,7 @@ import {
   getStoreCoordinates,
 } from '@/lib/geoDistance';
 import { useFavoriteStores } from '@/store/useFavoriteStores';
+import { matchProductFuzzy } from '@/lib/fuzzySearch';
 
 interface Props {
   products: Product[];
@@ -128,9 +129,17 @@ export default function RelampagoMode({
     setActiveQuery('');
   };
 
+  // Búsqueda en vivo reactiva (debounce a 250ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setActiveQuery(searchInputValue.trim());
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchInputValue]);
+
   // 5. Filtrado y Ordenamiento Multi-Criterio de Productos Flash
   const filteredFlashProducts = useMemo(() => {
-    const q = activeQuery.toLowerCase().trim();
+    const q = activeQuery.trim();
 
     // Deduplicación preventiva por ID o Nombre
     const seen = new Set<string>();
@@ -163,16 +172,11 @@ export default function RelampagoMode({
       );
     }
 
-    // Filtro por búsqueda textual (nombre, descripción, categoría, subcategoría y tienda)
+    // Filtro por búsqueda inteligente y fonética (nombre, descripción, marca, categoría, tienda)
     if (q) {
       list = list.filter((p) => {
-        const matchName = (p.name || '').toLowerCase().includes(q);
-        const matchDesc = (p.description || '').toLowerCase().includes(q);
-        const matchCat = (p.category || '').toLowerCase().includes(q);
-        const matchSub = (p.subcategory || '').toLowerCase().includes(q);
         const store = p.store_id ? storesMap.get(p.store_id) : undefined;
-        const matchStore = store ? store.name.toLowerCase().includes(q) : false;
-        return matchName || matchDesc || matchCat || matchSub || matchStore;
+        return matchProductFuzzy(p, q, store?.name);
       });
     }
 
