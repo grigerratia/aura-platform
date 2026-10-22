@@ -6,4 +6,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://yzjxskbmcmz
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_zP2h7DGfpcWN_W1RukXw7A_SxlGTvbe';
 
 // Exportamos el cliente para usarlo en toda la app
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// La función lock directa ejecuta las operaciones sin bloquear el navegador con Web Locks API (navigator.locks)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => await fn(),
+  },
+});

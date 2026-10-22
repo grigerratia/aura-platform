@@ -53,45 +53,67 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
+    let isMounted = true;
+
     const loadProfile = async () => {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        let activeUser = session?.user || null;
 
-      if (!user) {
-        router.push('/login?redirect=/perfil');
-        return;
+        if (!activeUser) {
+          const { data: userData } = await supabase.auth.getUser();
+          activeUser = userData?.user || null;
+        }
+
+        if (!isMounted) return;
+
+        if (!activeUser) {
+          router.push('/login?redirect=/perfil');
+          return;
+        }
+
+        setUser(activeUser);
+
+        // Cargar datos de la tabla profiles
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', activeUser.id)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        const meta = activeUser.user_metadata || {};
+
+        setProfile({
+          full_name: profileData?.full_name || meta.full_name || '',
+          id_doc: profileData?.id_doc || meta.id_doc || '',
+          phone: profileData?.phone || meta.phone || '',
+          phone_alt: profileData?.phone_alt || meta.phone_alt || '',
+          zone: profileData?.zone || meta.favorite_zone || 'Centro de Cumaná',
+          delivery_address: profileData?.delivery_address || meta.delivery_address || '',
+          shoe_size: profileData?.shoe_size || meta.preferred_shoe_size || '',
+          clothing_size: profileData?.clothing_size || meta.preferred_clothing_size || '',
+          wallet_credit_usd: profileData?.wallet_credit_usd ?? 0,
+          trust_score: profileData?.trust_score ?? 100,
+          is_vip: profileData?.is_vip ?? false,
+          role: profileData?.role || 'customer'
+        });
+      } catch (err) {
+        console.error('Error cargando perfil:', err);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
-
-      setUser(user);
-
-      // Cargar datos de la tabla profiles
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      const meta = user.user_metadata || {};
-
-      setProfile({
-        full_name: profileData?.full_name || meta.full_name || '',
-        id_doc: profileData?.id_doc || meta.id_doc || '',
-        phone: profileData?.phone || meta.phone || '',
-        phone_alt: profileData?.phone_alt || meta.phone_alt || '',
-        zone: profileData?.zone || meta.favorite_zone || 'Centro de Cumaná',
-        delivery_address: profileData?.delivery_address || meta.delivery_address || '',
-        shoe_size: profileData?.shoe_size || meta.preferred_shoe_size || '',
-        clothing_size: profileData?.clothing_size || meta.preferred_clothing_size || '',
-        wallet_credit_usd: profileData?.wallet_credit_usd ?? 0,
-        trust_score: profileData?.trust_score ?? 100,
-        is_vip: profileData?.is_vip ?? false,
-        role: profileData?.role || 'customer'
-      });
-
-      setLoading(false);
     };
 
     loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -149,8 +171,14 @@ export default function ProfilePage() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    setUser(null);
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Error cerrando sesión en perfil:', err);
+    }
     router.push('/');
+    router.refresh();
   };
 
   if (loading) {

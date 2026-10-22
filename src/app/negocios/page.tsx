@@ -20,26 +20,38 @@ export default function OwnerLogin() {
 
   // Detección automática si el usuario ya tiene sesión iniciada en el navegador
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
+    const checkMerchantSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        let user: any = session?.user;
+        if (!user) {
+          const { data: userData } = await supabase.auth.getUser();
+          user = userData?.user;
+        }
+        if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, store_id')
-        .eq('id', user.id)
-        .maybeSingle();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, store_id')
+          .eq('id', user.id)
+          .maybeSingle();
 
-      const { data: userStore } = await supabase
-        .from('stores')
-        .select('id')
-        .eq('owner_id', user.id)
-        .limit(1)
-        .maybeSingle();
+        const { data: userStore } = await supabase
+          .from('stores')
+          .select('id')
+          .eq('owner_id', user.id)
+          .limit(1)
+          .maybeSingle();
 
-      if (userStore?.id || profile?.store_id) {
-        router.push('/negocios/dashboard');
+        if (userStore?.id || profile?.store_id) {
+          router.push('/negocios/dashboard');
+        }
+      } catch (err) {
+        console.error('Error comprobando sesión de comercio:', err);
       }
-    });
+    };
+
+    checkMerchantSession();
   }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {

@@ -54,76 +54,87 @@ export default function TopHUD({
 
   // Cargar usuario autenticado, tienda y escuchar cambios
   useEffect(() => {
-    const loadUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) {
-        const { data } = await supabase
+    let isMounted = true;
+
+    const loadUserData = async (userId: string) => {
+      try {
+        const { data: profileData } = await supabase
           .from('profiles')
           .select('full_name, role, id_doc, trust_score, wallet_credit_usd, store_id')
-          .eq('id', user.id)
+          .eq('id', userId)
           .maybeSingle();
 
-        if (data) {
-          setProfile(data);
-          if (data.trust_score !== undefined) {
-            setTrustScore(data.trust_score);
-            setXp(Math.min(1000, data.trust_score * 10));
+        if (!isMounted) return;
+
+        if (profileData) {
+          setProfile(profileData);
+          if (profileData.trust_score !== undefined) {
+            setTrustScore(profileData.trust_score);
+            setXp(Math.min(1000, profileData.trust_score * 10));
           }
         }
 
-        // Verificación Real de Tienda asociada al usuario
-        if (data?.role === 'owner' || data?.store_id) {
+        // Verificación de Tienda (por store_id / role owner, o en tabla stores)
+        if (profileData?.store_id || profileData?.role === 'owner') {
           setHasStore(true);
         } else {
           const { data: storeData } = await supabase
             .from('stores')
             .select('id')
-            .eq('owner_id', user.id)
+            .eq('owner_id', userId)
             .limit(1)
             .maybeSingle();
+          if (!isMounted) return;
           setHasStore(Boolean(storeData));
         }
-      } else {
-        setProfile(null);
-        setHasStore(false);
+      } catch (err) {
+        console.error('Error cargando perfil en TopHUD:', err);
       }
     };
-    loadUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const currentUser = session?.user || null;
-      setUser(currentUser);
-      if (currentUser) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name, role, id_doc, trust_score, wallet_credit_usd, store_id')
-          .eq('id', currentUser.id)
-          .maybeSingle();
-        setProfile(data);
-        if (data?.trust_score !== undefined) {
-          setTrustScore(data.trust_score);
-          setXp(Math.min(1000, data.trust_score * 10));
+    const initAuth = async () => {
+      try {
+        // Usar getSession() primero (instantáneo, sin lock, lee almacenamiento local)
+        const { data: { session } } = await supabase.auth.getSession();
+        let currentUser = session?.user || null;
+
+        if (!currentUser) {
+          const { data: userData } = await supabase.auth.getUser();
+          currentUser = userData?.user || null;
         }
 
-        if (data?.role === 'owner' || data?.store_id) {
-          setHasStore(true);
+        if (!isMounted) return;
+        setUser(currentUser);
+
+        if (currentUser) {
+          await loadUserData(currentUser.id);
         } else {
-          const { data: storeData } = await supabase
-            .from('stores')
-            .select('id')
-            .eq('owner_id', currentUser.id)
-            .limit(1)
-            .maybeSingle();
-          setHasStore(Boolean(storeData));
+          setProfile(null);
+          setHasStore(false);
         }
-      } else {
+      } catch (err) {
+        console.error('Error inicializando auth en TopHUD:', err);
+      }
+    };
+
+    initAuth();
+
+    // Escuchar cambios de autenticación sin llamadas bloqueantes en el callback
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setUser(null);
         setProfile(null);
         setHasStore(false);
+      } else if (session?.user) {
+        setUser(session.user);
+        loadUserData(session.user.id);
       }
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -137,11 +148,17 @@ export default function TopHUD({
 
   const handleSignOut = async () => {
     playTap();
-    await supabase.auth.signOut();
+    setShowUserDropdown(false);
     setUser(null);
     setProfile(null);
     setHasStore(false);
-    setShowUserDropdown(false);
+
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Error al cerrar sesión:', err);
+    }
+
     router.push('/');
     router.refresh();
   };
@@ -192,7 +209,10 @@ export default function TopHUD({
 
   const levelInfo = getAuraLevel();
   const xpPercent = Math.min(100, Math.round((xp / maxXp) * 100));
-  const displayName = profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || '';
+  const displayName = profile?.full_name?.split(' ')[0]
+    || user?.user_metadata?.full_name?.split(' ')[0]
+    || user?.email?.split('@')[0]
+    || '';
 
   return (
     <>

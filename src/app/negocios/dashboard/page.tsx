@@ -180,7 +180,18 @@ export default function OwnerDashboard() {
   }, [store?.name]);
 
   const checkUser = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    let user: any = null;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      user = session?.user;
+      if (!user) {
+        const { data: userData } = await supabase.auth.getUser();
+        user = userData?.user;
+      }
+    } catch (err) {
+      console.error('Error obteniendo sesión en dashboard:', err);
+    }
+
     if (!user) return router.push('/negocios');
 
     // 1. Buscar en stores por owner_id

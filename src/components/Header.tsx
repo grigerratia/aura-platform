@@ -28,49 +28,83 @@ export default function Header({ stores, initialTasa = 500.0 }: Props) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   useEffect(() => {
-    const loadUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) {
+    let isMounted = true;
+
+    const loadUserData = async (userId: string) => {
+      try {
         const { data } = await supabase
           .from('profiles')
           .select('full_name, role')
-          .eq('id', user.id)
+          .eq('id', userId)
           .maybeSingle();
-        setProfile(data);
+        if (isMounted) setProfile(data);
+      } catch (err) {
+        console.error('Error cargando perfil en Header:', err);
       }
     };
-    loadUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user || null);
-      if (session?.user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name, role')
-          .eq('id', session.user.id)
-          .maybeSingle();
-        setProfile(data);
-      } else {
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        let currentUser = session?.user || null;
+
+        if (!currentUser) {
+          const { data: userData } = await supabase.auth.getUser();
+          currentUser = userData?.user || null;
+        }
+
+        if (!isMounted) return;
+        setUser(currentUser);
+
+        if (currentUser) {
+          await loadUserData(currentUser.id);
+        } else {
+          setProfile(null);
+        }
+      } catch (err) {
+        console.error('Error inicializando auth en Header:', err);
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setUser(null);
         setProfile(null);
+      } else if (session?.user) {
+        setUser(session.user);
+        loadUserData(session.user.id);
       }
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    setUserMenuOpen(false);
     setUser(null);
     setProfile(null);
-    setUserMenuOpen(false);
+
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Error al cerrar sesión en Header:', err);
+    }
+
     router.push('/');
     router.refresh();
   };
 
-  const displayName = profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Mi Cuenta';
+  const displayName = profile?.full_name?.split(' ')[0]
+    || user?.user_metadata?.full_name?.split(' ')[0]
+    || user?.email?.split('@')[0]
+    || 'Mi Cuenta';
 
   return (
     <>

@@ -23,35 +23,47 @@ function LoginForm() {
 
   // Si ya tiene sesión activa, redirigir inteligentemente
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
+    const checkActiveSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        let user: any = session?.user;
+        if (!user) {
+          const { data: userData } = await supabase.auth.getUser();
+          user = userData?.user;
+        }
+        if (!user) return;
 
-      if (redirectUrl) {
-        router.push(redirectUrl);
-        return;
+        if (redirectUrl) {
+          router.push(redirectUrl);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, store_id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        const { data: store } = await supabase
+          .from('stores')
+          .select('id')
+          .eq('owner_id', user.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (profile?.role === 'admin') {
+          router.push('/master');
+        } else if (profile?.role === 'owner' || store?.id || profile?.store_id) {
+          router.push('/negocios/dashboard');
+        } else {
+          router.push('/');
+        }
+      } catch (err) {
+        console.error('Error verificando sesión en login:', err);
       }
+    };
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, store_id')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      const { data: store } = await supabase
-        .from('stores')
-        .select('id')
-        .eq('owner_id', user.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (profile?.role === 'admin') {
-        router.push('/master');
-      } else if (profile?.role === 'owner' || store?.id || profile?.store_id) {
-        router.push('/negocios/dashboard');
-      } else {
-        router.push('/');
-      }
-    });
+    checkActiveSession();
   }, [router, redirectUrl]);
 
   const handleLogin = async (e: React.FormEvent) => {
