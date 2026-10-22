@@ -27,7 +27,7 @@ export default function MostradorPage() {
   const [pinError, setPinError] = useState(false);
 
   // Pestañas del Mostrador
-  const [activeTab, setActiveTab] = useState<'semaphore' | 'validate'>('semaphore');
+  const [activeTab, setActiveTab] = useState<'semaphore' | 'validate' | 'history'>('semaphore');
 
   // Reservas pendientes y en curso
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -192,29 +192,38 @@ export default function MostradorPage() {
         .update({ status: targetDbStatus })
         .eq('id', reservation.id);
 
-      // Si es último par (Amarillo): bloquea stock en 1 para que el cliente lo tome y abra fila de espera
-      if (newStatus === 'ultimo_par') {
-        await supabase
-          .from('store_products')
-          .update({ stock: 1 })
-          .eq('store_id', reservation.store_id)
-          .eq('product_id', reservation.product_id);
-      } else if (newStatus === 'cancelled') {
-        // Rojo: Registrar demanda perdida y apagar el producto en la app
-        await logLostDemand({
-          storeId: reservation.store_id,
-          productId: reservation.product_id,
-          productName: reservation.product_name,
-          selectedVariant: reservation.selected_size,
-          customerPhone: reservation.customer_phone,
-          reason: 'OUT_OF_STOCK'
-        });
+      // Apagar producto en el catálogo si es Amarillo (último par tomado por el cliente) o Rojo (agotado)
+      if (newStatus === 'ultimo_par' || newStatus === 'cancelled') {
+        if (newStatus === 'cancelled') {
+          await logLostDemand({
+            storeId: reservation.store_id,
+            productId: reservation.product_id,
+            productName: reservation.product_name,
+            selectedVariant: reservation.selected_size,
+            customerPhone: reservation.customer_phone,
+            reason: 'OUT_OF_STOCK'
+          });
+        }
 
-        await supabase
-          .from('store_products')
-          .update({ is_active: false, stock: 0 })
-          .eq('store_id', reservation.store_id)
-          .eq('product_id', reservation.product_id);
+        if (reservation.store_id && reservation.product_id) {
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('store_id', reservation.store_id)
+            .eq('product_id', reservation.product_id);
+        }
+
+        if (reservation.product_id) {
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('id', reservation.product_id);
+
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('product_id', reservation.product_id);
+        }
       }
 
       await fetchReservations();
@@ -248,13 +257,22 @@ export default function MostradorPage() {
     if (!confirm(`¿Confirmar cobro de $${reservation.store_pay_balance_usd?.toFixed(2) || reservation.price_usd?.toFixed(2)} y entrega del producto?`)) return;
     setActionLoading(true);
     try {
-      await supabase
-        .from('reservations')
-        .update({
-          status: 'COMPLETED_IN_STORE',
-          confirmed_at: new Date().toISOString()
-        })
-        .eq('id', reservation.id);
+      const targetPin = reservation.pin_code || reservation.pin;
+      const isValidUUID = Boolean(reservation.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reservation.id));
+
+      if (isValidUUID) {
+        await supabase
+          .from('reservations')
+          .update({ status: 'completed' })
+          .eq('id', reservation.id);
+      }
+      
+      if (targetPin) {
+        await supabase
+          .from('reservations')
+          .update({ status: 'completed' })
+          .eq('pin_code', targetPin);
+      }
 
       // Si el cliente tiene cuenta de usuario o teléfono registrado en Aura, incrementar su nivel de confianza (+10 puntos)
       let targetUserId = reservation.user_id;
@@ -442,6 +460,14 @@ export default function MostradorPage() {
       r.status === 'QR_ACTIVE'
   );
 
+  // Historial de canjes completados en mostrador
+  const completedToday = reservations.filter(
+    (r) =>
+      r.status === 'completed' ||
+      r.status === 'completada' ||
+      r.status === 'COMPLETED_IN_STORE'
+  );
+
   // ==============================================================================
   // PANTALLA 2: TERMINAL ACTIVA DE MOSTRADOR
   // ==============================================================================
@@ -521,6 +547,18 @@ export default function MostradorPage() {
                 {activeTickets.length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('history'); setValidationSuccessMsg(null); }}
+            className={`cursor-pointer flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition ${
+              activeTab === 'history'
+                ? 'border-teal-400 text-teal-400 bg-teal-950/20'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <CheckCircle2 size={16} />
+            <span>Historial ({completedToday.length})</span>
           </button>
         </div>
       </header>
@@ -754,6 +792,66 @@ export default function MostradorPage() {
               )}
             </div>
 
+          </div>
+        )}
+
+        {/* ==============================================================================
+            PESTAÑA C: HISTORIAL DE CANJES DE HOY
+            ============================================================================== */}
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-black text-white">Canjes Validados en Mostrador ({completedToday.length})</h2>
+                <p className="text-xs text-slate-400">Ventas cobradas y entregadas a clientes en este punto de venta.</p>
+              </div>
+            </div>
+
+            {completedToday.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 text-center space-y-2">
+                <CheckCircle2 size={36} className="text-slate-600 mx-auto mb-2" />
+                <h3 className="font-bold text-white text-base">Sin canjes registrados hoy</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Cuando valides el PIN o escanees el QR de un cliente en la caja, el registro aparecerá aquí.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {completedToday.map((res) => (
+                  <div
+                    key={res.id}
+                    className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono font-bold text-teal-400 text-xs bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          PIN #{res.pin}
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                          ✓ Cobrado y Entregado
+                        </span>
+                      </div>
+                      <h4 className="text-base font-black text-white">{res.product_name}</h4>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Cliente: <strong>{res.customer_name}</strong> • {res.customer_phone}
+                      </p>
+                      {res.selected_size && (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Variante: <span className="text-white">{res.selected_size}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="sm:text-right shrink-0 bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Cobrado en Mostrador</span>
+                      <span className="text-xl font-black text-teal-400">
+                        ${(res.store_pay_balance_usd ?? res.price_usd).toFixed(2)} USD
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

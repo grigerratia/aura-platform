@@ -20,7 +20,7 @@ export default function OwnerDashboard() {
   const router = useRouter();
   const [storeId, setStoreId] = useState<string | null>(null);
   const [store, setStore] = useState<Store | null>(null);
-  const [activeTab, setActiveTab] = useState<'reservations' | 'inventory' | 'qr'>('reservations');
+  const [activeTab, setActiveTab] = useState<'reservations' | 'history' | 'inventory' | 'qr'>('reservations');
   const [loading, setLoading] = useState(true);
 
   // Inventario
@@ -309,27 +309,38 @@ export default function OwnerDashboard() {
         .update({ status: newStatus })
         .eq('id', reservation.id);
 
-      if (newStatus === 'ultimo_par') {
-        await supabase
-          .from('store_products')
-          .update({ stock: 1 })
-          .eq('store_id', reservation.store_id)
-          .eq('product_id', reservation.product_id);
-      } else if (newStatus === 'cancelled') {
-        await logLostDemand({
-          storeId: reservation.store_id,
-          productId: reservation.product_id,
-          productName: reservation.product_name,
-          selectedVariant: reservation.selected_size,
-          customerPhone: reservation.customer_phone,
-          reason: 'OUT_OF_STOCK'
-        });
+      if (newStatus === 'ultimo_par' || newStatus === 'cancelled') {
+        if (newStatus === 'cancelled') {
+          await logLostDemand({
+            storeId: reservation.store_id,
+            productId: reservation.product_id,
+            productName: reservation.product_name,
+            selectedVariant: reservation.selected_size,
+            customerPhone: reservation.customer_phone,
+            reason: 'OUT_OF_STOCK'
+          });
+        }
 
-        await supabase
-          .from('store_products')
-          .update({ is_active: false, stock: 0 })
-          .eq('store_id', reservation.store_id)
-          .eq('product_id', reservation.product_id);
+        // Apagar el producto en Radar (si es último par lo tomó este cliente; si es rojo está agotado)
+        if (reservation.store_id && reservation.product_id) {
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('store_id', reservation.store_id)
+            .eq('product_id', reservation.product_id);
+        }
+
+        if (reservation.product_id) {
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('id', reservation.product_id);
+
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('product_id', reservation.product_id);
+        }
       }
 
       if (storeId) {
@@ -794,6 +805,23 @@ export default function OwnerDashboard() {
           </button>
 
           <button
+            onClick={() => setActiveTab('history')}
+            className={`cursor-pointer flex items-center gap-2.5 w-full p-2.5 rounded-xl font-bold text-xs transition ${
+              activeTab === 'history'
+                ? 'bg-slate-900 text-white border border-slate-800'
+                : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
+            }`}
+          >
+            <CheckCircle2 size={16} className={activeTab === 'history' ? 'text-emerald-400' : ''} />
+            <span className="whitespace-nowrap">Historial de Ventas</span>
+            {completedReservations.length > 0 && (
+              <span className="ml-auto bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                {completedReservations.length}
+              </span>
+            )}
+          </button>
+
+          <button
             onClick={() => setActiveTab('inventory')}
             className={`cursor-pointer flex items-center gap-2.5 w-full p-2.5 rounded-xl font-bold text-xs transition ${
               activeTab === 'inventory'
@@ -1189,6 +1217,94 @@ export default function OwnerDashboard() {
               )}
             </div>
 
+          </div>
+        )}
+
+        {/* PESTAÑA: HISTORIAL DE VENTAS Y CANJES */}
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                  <CheckCircle2 size={20} className="text-emerald-400" />
+                  Historial de Ventas y Canjes ({completedReservations.length})
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Registro de productos retirados y cobrados en tu tienda a través de Aura.
+                </p>
+              </div>
+
+              <div className="bg-[#030910] border border-slate-900 px-4 py-2 rounded-xl text-right">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">Total Recaudado</span>
+                <span className="text-lg font-black text-[#00ffb2]">${totalSalesUSD.toFixed(2)} USD</span>
+              </div>
+            </header>
+
+            {completedReservations.length === 0 ? (
+              <div className="bg-[#030910] p-12 rounded-3xl border border-slate-900 text-center space-y-3">
+                <CheckCircle2 size={40} className="text-slate-600 mx-auto" />
+                <h3 className="text-sm font-bold text-white">Sin ventas completadas todavía</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Cuando un cliente acuda a tu local y valides su PIN de 4 dígitos en caja o escanees su QR, la venta quedará registrada aquí permanentemente.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {completedReservations.map((res) => {
+                  const dateStr = res.confirmed_at || res.created_at;
+                  const formattedDate = dateStr
+                    ? new Date(dateStr).toLocaleDateString('es-VE', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Reciente';
+
+                  return (
+                    <div
+                      key={res.id}
+                      className="bg-[#030910] border border-slate-900 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-slate-800 transition shadow-sm"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-black text-emerald-400 bg-slate-950 px-2.5 py-0.5 rounded-lg border border-slate-800">
+                            PIN #{res.pin || res.pin_code || 'TICKET'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">{formattedDate}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-900/40">
+                            ✓ Entregado en Tienda
+                          </span>
+                        </div>
+
+                        <h4 className="text-sm font-black text-white">{res.product_name}</h4>
+                        <p className="text-xs text-slate-300">
+                          Cliente: <strong>{res.customer_name}</strong> • Tel: {res.customer_phone}
+                        </p>
+                        {res.selected_size && (
+                          <p className="text-[11px] text-slate-400">
+                            Variante / Talla: <span className="text-white font-medium">{res.selected_size}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="sm:text-right shrink-0 bg-slate-950/80 p-3 rounded-xl border border-slate-850">
+                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Cobrado en caja</span>
+                        <span className="text-lg font-black text-white">
+                          ${(res.store_pay_balance_usd ?? res.price_usd).toFixed(2)} USD
+                        </span>
+                        {res.price_ves && (
+                          <span className="block text-[11px] text-emerald-400 font-mono">
+                            Bs. {res.price_ves}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

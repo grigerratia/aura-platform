@@ -28,6 +28,7 @@ type SheetStep =
   | 'OPTION_A_TICKET'
   | 'OPTION_B_LAYAWAY'
   | 'OPTION_B_CONFIRMED'
+  | 'PURCHASE_COMPLETED'
   | 'OUT_OF_STOCK';
 
 export default function ProductBottomSheet({
@@ -38,15 +39,17 @@ export default function ProductBottomSheet({
   tasa = 500,
 }: Props) {
   const { playTap, playUnlockSuccess, playDustSnap, playRadarPing } = useGameSound();
-  const { setActiveReservation } = useReservations();
+  const { activeReservation, setActiveReservation, clearActiveReservation } = useReservations();
 
   // Estados del flujo paso a paso
   const [step, setStep] = useState<SheetStep>('SELECTION');
   const [stockConfirmationType, setStockConfirmationType] = useState<'green' | 'yellow'>('green');
+  const [layawaySubStep, setLayawaySubStep] = useState<1 | 2>(1);
   
   // Datos del producto y variante
   const [selectedVariant, setSelectedVariant] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
+  const [customerCedula, setCustomerCedula] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   
   // Datos de la reserva activa generada
@@ -84,9 +87,31 @@ export default function ProductBottomSheet({
     // Precargar datos del usuario desde localStorage o Supabase
     if (typeof window !== 'undefined') {
       const savedName = localStorage.getItem('aura_customer_name') || '';
+      const savedCedula = localStorage.getItem('aura_customer_cedula') || '';
       const savedPhone = localStorage.getItem('aura_customer_phone') || '';
       if (savedName) setCustomerName(savedName);
+      if (savedCedula) setCustomerCedula(savedCedula);
       if (savedPhone) setCustomerPhone(savedPhone);
+    }
+
+    // Reanudar proceso si ya había una reserva activa para este producto
+    if (activeReservation && (activeReservation.product_id === product.id || activeReservation.product_name === product.name)) {
+      setActiveRes(activeReservation);
+      if (activeReservation.pin || activeReservation.pin_code) {
+        setGeneratedPin(activeReservation.pin || activeReservation.pin_code || '');
+      }
+      if (activeReservation.status === 'confirmed' || activeReservation.status === 'confirmada') {
+        if (activeReservation.payment_type === 'apartado_15d') {
+          setStep('OPTION_B_CONFIRMED');
+        } else {
+          setStep('OPTION_A_TICKET');
+        }
+      } else if (activeReservation.status === 'ultimo_par') {
+        setStockConfirmationType('yellow');
+        setStep('STOCK_CONFIRMED');
+      } else if (activeReservation.status === 'pending' || activeReservation.status === 'PENDING_STOCK_CHECK') {
+        setStep('WAITING_VERIFICATION');
+      }
     }
 
     const loadAuthUser = async () => {
@@ -98,12 +123,18 @@ export default function ProductBottomSheet({
           if (name && !customerName) setCustomerName(name);
           const phone = user.phone || user.user_metadata?.phone || '';
           if (phone && !customerPhone) setCustomerPhone(phone);
+          const cedula = user.user_metadata?.id_doc || '';
+          if (cedula && !customerCedula) setCustomerCedula(cedula);
 
           const { data: prof } = await supabase
             .from('profiles')
-            .select('wallet_credit_usd')
+            .select('wallet_credit_usd, id_doc')
             .eq('id', user.id)
             .maybeSingle();
+
+          if (prof?.id_doc && !customerCedula) {
+            setCustomerCedula(prof.id_doc);
+          }
 
           if (prof?.wallet_credit_usd) {
             const credit = Number(prof.wallet_credit_usd);
@@ -116,7 +147,7 @@ export default function ProductBottomSheet({
       } catch {}
     };
     loadAuthUser();
-  }, [product]);
+  }, [product, activeReservation]);
 
   // Manejar cierre con sonido Thanos suave
   const handleClose = () => {
@@ -170,7 +201,11 @@ export default function ProductBottomSheet({
   const handleRequestAvailability = async () => {
     if (!product) return;
     if (!customerName.trim()) {
-      alert('Por favor ingresa tu nombre o apodo para el mostrador.');
+      alert('Por favor ingresa tu nombre y apellido para el mostrador.');
+      return;
+    }
+    if (!customerCedula.trim()) {
+      alert('Por favor ingresa tu cédula o documento de identidad.');
       return;
     }
     if (!customerPhone.trim()) {
@@ -185,6 +220,7 @@ export default function ProductBottomSheet({
     // Guardar en localStorage para futuras visitas
     if (typeof window !== 'undefined') {
       localStorage.setItem('aura_customer_name', customerName.trim());
+      localStorage.setItem('aura_customer_cedula', customerCedula.trim());
       localStorage.setItem('aura_customer_phone', customerPhone.trim());
     }
 
@@ -216,6 +252,8 @@ export default function ProductBottomSheet({
       } catch {}
     }
 
+    const fullCustomerName = `${customerName.trim()} [CI: ${customerCedula.trim()}]`;
+
     const newReservation: Reservation = {
       id: `res-${Date.now()}`,
       user_id: uid || undefined,
@@ -235,7 +273,7 @@ export default function ProductBottomSheet({
       store_pay_balance_usd: auraPrice,
       price_ves: totalVES,
       tasa: tasa,
-      customer_name: customerName.trim(),
+      customer_name: fullCustomerName,
       customer_phone: customerPhone.trim(),
       status: 'pending',
       expires_at: expiresAt,
@@ -253,7 +291,7 @@ export default function ProductBottomSheet({
           pin_code: pin,
           store_id: effectiveStoreId,
           product_id: effectiveProductId,
-          customer_name: customerName.trim(),
+          customer_name: fullCustomerName,
           customer_phone: customerPhone.trim(),
           selected_size: selectedVariant || 'Estándar',
           total_price: auraPrice,
@@ -300,43 +338,98 @@ export default function ProductBottomSheet({
   };
 
   // ==============================================================================
-  // PASO 3: ESCUCHA EN TIEMPO REAL DEL SEMÁFORO DE MOSTRADOR
+  // PASO 3: ESCUCHA EN TIEMPO REAL DEL SEMÁFORO Y VALIDACIÓN EN CAJA
   // ==============================================================================
   useEffect(() => {
-    if (step !== 'WAITING_VERIFICATION' || !activeRes?.id) return;
+    if (!activeRes) return;
+    if (
+      step !== 'WAITING_VERIFICATION' &&
+      step !== 'OPTION_A_TICKET' &&
+      step !== 'OPTION_B_LAYAWAY' &&
+      step !== 'OPTION_B_CONFIRMED'
+    ) {
+      return;
+    }
 
     const resId = activeRes.id;
+    const targetPin = activeRes.pin_code || activeRes.pin;
+    const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
+
+    const handleStateUpdate = (status: string, dbData?: any) => {
+      // 1. SI LA CAJA O MOSTRADOR COBRÓ Y ENTREGÓ EL PRODUCTO
+      if (status === 'completed' || status === 'COMPLETED_IN_STORE' || status === 'completada') {
+        playUnlockSuccess();
+        setStep('PURCHASE_COMPLETED');
+        
+        // Guardar en historial de compras completadas
+        try {
+          const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
+          const history = JSON.parse(historyRaw);
+          if (!history.some((h: any) => h.id === (dbData?.id || resId) || h.pin === targetPin)) {
+            history.unshift({
+              ...activeRes,
+              status: 'COMPLETED_IN_STORE',
+              completed_at: new Date().toISOString(),
+            });
+            localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 30)));
+          }
+
+          // Aumentar +10 Puntos de Confianza
+          const currentScore = Number(localStorage.getItem('aura_trust_score')) || 100;
+          const newScore = Math.min(200, currentScore + 10);
+          localStorage.setItem('aura_trust_score', String(newScore));
+
+          window.dispatchEvent(new CustomEvent('aura_trust_score_updated', { detail: { score: newScore } }));
+          window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: activeRes } }));
+        } catch {}
+
+        clearActiveReservation();
+      }
+
+      // 2. SI ESTÁBAMOS ESPERANDO EL SEMÁFORO DE DISPONIBILIDAD
+      else if (step === 'WAITING_VERIFICATION') {
+        if (status === 'confirmed' || status === 'confirmada' || status === 'STOCK_VERIFIED') {
+          playUnlockSuccess();
+          setStockConfirmationType('green');
+          setStep('STOCK_CONFIRMED');
+          setActiveRes((prev) => {
+            if (!prev) return null;
+            const updated = { ...prev, status: 'confirmed' as const };
+            setActiveReservation(updated);
+            return updated;
+          });
+        } else if (status === 'ultimo_par') {
+          playUnlockSuccess();
+          setStockConfirmationType('yellow');
+          setStep('STOCK_CONFIRMED');
+          setActiveRes((prev) => {
+            if (!prev) return null;
+            const updated = { ...prev, status: 'ultimo_par' as const };
+            setActiveReservation(updated);
+            return updated;
+          });
+        } else if (status === 'cancelled' || status === 'cancelada' || status === 'REJECTED_OUT_OF_STOCK') {
+          setStep('OUT_OF_STOCK');
+        }
+      }
+    };
 
     // A. Suscripción Postgres Changes
     const channel = supabase
-      .channel(`res_check_${resId}`)
+      .channel(`res_sheet_${targetPin || resId}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'reservations', filter: `id=eq.${resId}` },
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'reservations', 
+          filter: isValidUUID ? `id=eq.${resId}` : undefined 
+        },
         (payload: { new?: Partial<Reservation> & Record<string, any> }) => {
-          const status = payload.new?.status;
-          if (status === 'confirmed' || status === 'confirmada' || status === 'STOCK_VERIFIED') {
-            playUnlockSuccess();
-            setStockConfirmationType('green');
-            setStep('STOCK_CONFIRMED');
-            setActiveRes((prev) => {
-              if (!prev) return null;
-              const updated = { ...prev, status: 'confirmed' as const };
-              setActiveReservation(updated);
-              return updated;
-            });
-          } else if (status === 'ultimo_par') {
-            playUnlockSuccess();
-            setStockConfirmationType('yellow');
-            setStep('STOCK_CONFIRMED');
-            setActiveRes((prev) => {
-              if (!prev) return null;
-              const updated = { ...prev, status: 'ultimo_par' as const };
-              setActiveReservation(updated);
-              return updated;
-            });
-          } else if (status === 'cancelled' || status === 'cancelada' || status === 'REJECTED_OUT_OF_STOCK') {
-            setStep('OUT_OF_STOCK');
+          if (payload.new) {
+            if (payload.new.pin_code === targetPin || payload.new.id === resId) {
+              handleStateUpdate(payload.new.status || '', payload.new);
+            }
           }
         }
       )
@@ -345,36 +438,18 @@ export default function ProductBottomSheet({
     // B. Sondeo de respaldo cada 2.5s
     const pollInterval = setInterval(async () => {
       try {
-        const { data } = await supabase
-          .from('reservations')
-          .select('status')
-          .eq('id', resId)
-          .maybeSingle();
+        let query = supabase.from('reservations').select('*');
+        if (isValidUUID) {
+          query = query.or(`id.eq.${resId},pin_code.eq.${targetPin}`);
+        } else if (targetPin) {
+          query = query.eq('pin_code', targetPin);
+        } else {
+          return;
+        }
 
-        if (data) {
-          if (data.status === 'confirmed' || data.status === 'confirmada' || data.status === 'STOCK_VERIFIED') {
-            playUnlockSuccess();
-            setStockConfirmationType('green');
-            setStep('STOCK_CONFIRMED');
-            setActiveRes((prev) => {
-              if (!prev) return null;
-              const updated = { ...prev, status: 'confirmed' as const };
-              setActiveReservation(updated);
-              return updated;
-            });
-          } else if (data.status === 'ultimo_par') {
-            playUnlockSuccess();
-            setStockConfirmationType('yellow');
-            setStep('STOCK_CONFIRMED');
-            setActiveRes((prev) => {
-              if (!prev) return null;
-              const updated = { ...prev, status: 'ultimo_par' as const };
-              setActiveReservation(updated);
-              return updated;
-            });
-          } else if (data.status === 'cancelled' || data.status === 'cancelada' || data.status === 'REJECTED_OUT_OF_STOCK') {
-            setStep('OUT_OF_STOCK');
-          }
+        const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (data && data.status) {
+          handleStateUpdate(data.status, data);
         }
       } catch {}
     }, 2500);
@@ -383,7 +458,7 @@ export default function ProductBottomSheet({
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };
-  }, [step, activeRes?.id, playUnlockSuccess, setActiveReservation]);
+  }, [step, activeRes?.id, activeRes?.pin, activeRes?.pin_code, playUnlockSuccess, setActiveReservation, clearActiveReservation]);
 
   // ==============================================================================
   // PASO 4A: ELECCIÓN CLIENTE -> OPCIÓN A (IR HOY MISMO - TICKET QR GRATIS 3 HORAS)
@@ -661,23 +736,34 @@ export default function ProductBottomSheet({
                   Tus Datos para el Mostrador (Sin Registro Obligatorio):
                 </span>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Tu Nombre o Apodo"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
-                  />
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Tu Nombre y Apellido"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
+                    />
+
+                    <input
+                      type="text"
+                      required
+                      placeholder="Cédula (ej. V-12345678)"
+                      value={customerCedula}
+                      onChange={(e) => setCustomerCedula(e.target.value)}
+                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
+                    />
+                  </div>
 
                   <input
                     type="tel"
                     required
-                    placeholder="Teléfono / WhatsApp"
+                    placeholder="Teléfono / WhatsApp de Retiro (0414...)"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
+                    className="w-full p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
                   />
                 </div>
               </div>
@@ -925,145 +1011,251 @@ export default function ProductBottomSheet({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setStep('STOCK_CONFIRMED')}
+                  onClick={() => {
+                    if (layawaySubStep === 2) {
+                      setLayawaySubStep(1);
+                    } else {
+                      setStep('STOCK_CONFIRMED');
+                    }
+                  }}
                   className="text-xs text-slate-400 hover:text-white cursor-pointer"
                 >
-                  Volver
+                  {layawaySubStep === 2 ? '← Volver al Paso 1' : 'Volver'}
                 </button>
               </div>
 
-              {/* Resumen Ecuación Financiera */}
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="bg-[#030812] border border-emerald-500/30 p-2.5 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-light">1. Desbloqueo Aura:</span>
-                  <strong className="text-[#00ffb2] font-black text-xs sm:text-sm">${auraUnlockFeeUSD.toFixed(2)} USD</strong>
-                  <span className="block text-[9px] text-slate-500 font-mono">5% de custodia</span>
-                </div>
-                <div className="bg-[#030812] border border-indigo-500/30 p-2.5 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-light">2. Inicial Tienda:</span>
-                  <strong className="text-indigo-300 font-black text-xs sm:text-sm">${deposit30USD.toFixed(2)} USD</strong>
-                  <span className="block text-[9px] text-slate-500 font-mono">30% en depósito</span>
-                </div>
-                <div className="bg-[#030812] border border-slate-800 p-2.5 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-light">3. Al Retirar:</span>
-                  <strong className="text-white font-black text-xs sm:text-sm">${remaining70USD.toFixed(2)} USD</strong>
-                  <span className="block text-[9px] text-slate-500 font-mono">70% en caja</span>
-                </div>
-              </div>
-
-              <form onSubmit={handleConfirmApartadoPagoMovil} className="space-y-4">
-                
-                {/* 1. SECCIÓN: PAGO DEL 5% DESBLOQUEO AURA */}
-                <div className="bg-[#030812] border border-emerald-500/30 rounded-2xl p-3.5 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#00ffb2] flex items-center gap-1.5">
-                      <Sparkles size={13} />
-                      Paso 1: Desbloqueo y Custodia Aura (5%)
-                    </span>
-                    <span className="font-black text-white text-xs">${auraUnlockFeeUSD.toFixed(2)} USD</span>
-                  </div>
-
-                  {userWalletCredit >= auraUnlockFeeUSD ? (
-                    <label className="flex items-center gap-2 p-2 bg-emerald-950/40 border border-emerald-500/40 rounded-xl cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={payAuraWithWallet}
-                        onChange={(e) => setPayAuraWithWallet(e.target.checked)}
-                        className="accent-emerald-400 w-4 h-4 cursor-pointer"
-                      />
-                      <span className="text-[11px] text-emerald-200 font-bold">
-                        Pagar con saldo de Billetera Aura (${userWalletCredit.toFixed(2)} USD disponible)
-                      </span>
-                    </label>
-                  ) : null}
-
-                  {!payAuraWithWallet && (
-                    <div className="space-y-2 pt-1 border-t border-slate-800/80">
-                      <div className="text-[11px] text-slate-300 space-y-0.5">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Banco / Teléfono Aura:</span>
-                          <span className="text-white font-mono">0102 BDV • 04140857379</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">RIF / Monto en Bs:</span>
-                          <span className="text-[#00ffb2] font-mono font-bold">J-50348291-0 • Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={handleCopyAuraBankData}
-                          className="py-1 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition flex items-center gap-1 shrink-0 cursor-pointer"
-                        >
-                          <Copy size={11} />
-                          <span>{copiedAuraBankData ? '¡Copiado!' : 'Copiar Pago Móvil Aura'}</span>
-                        </button>
-                        <input
-                          type="text"
-                          required={!payAuraWithWallet}
-                          placeholder="Ref Pago Móvil Aura (4 dígitos)"
-                          value={pagoMovilAuraRef}
-                          onChange={(e) => setPagoMovilAuraRef(e.target.value)}
-                          className="flex-1 p-1.5 bg-[#020508] border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-emerald-400"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. SECCIÓN: PAGO DEL 30% INICIAL AL COMERCIO */}
-                <div className="bg-[#030812] border border-indigo-500/30 rounded-2xl p-3.5 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-indigo-300 flex items-center gap-1.5">
-                      <StoreIcon size={13} />
-                      Paso 2: Abono 30% Inicial para {storeName}
-                    </span>
-                    <span className="font-black text-white text-xs">${deposit30USD.toFixed(2)} USD</span>
-                  </div>
-
-                  <div className="text-[11px] text-slate-300 space-y-0.5 pt-1 border-t border-slate-800/80">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Banco / Teléfono Comercio:</span>
-                      <span className="text-white font-mono">0102 BDV • {storePhoneClean}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">RIF / Monto Inicial en Bs:</span>
-                      <span className="text-[#00ffb2] font-mono font-bold">J-40812345-0 • Bs. {deposit30VES.toLocaleString('es-VE')}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleCopyBankData}
-                      className="py-1 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition flex items-center gap-1 shrink-0 cursor-pointer"
-                    >
-                      <Copy size={11} />
-                      <span>{copiedBankData ? '¡Copiado!' : 'Copiar Pago Móvil Tienda'}</span>
-                    </button>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ref Pago Móvil Tienda (4 dígitos)"
-                      value={pagoMovilRef}
-                      onChange={(e) => setPagoMovilRef(e.target.value)}
-                      className="flex-1 p-1.5 bg-[#020508] border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-indigo-400"
-                    />
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-slate-400 font-light leading-relaxed">
-                  Al confirmar, tu boleto quedará guardado en tu teléfono y en el sistema de {storeName}. El producto queda en depósito con el 70% restante (${remaining70USD.toFixed(2)} USD) a liquidar al retirar dentro de los 14 a 30 días.
-                </p>
+              {/* Indicador de progreso paso por paso */}
+              <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                <button
+                  type="button"
+                  onClick={() => setLayawaySubStep(1)}
+                  className={`p-2 rounded-xl border transition cursor-pointer text-left ${
+                    layawaySubStep === 1
+                      ? 'bg-emerald-950/60 border-emerald-400 text-white shadow-sm'
+                      : 'bg-[#030812] border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-[9px] uppercase font-bold text-emerald-400 block">Paso 1</span>
+                  <span className="text-xs font-bold block truncate">1. Desbloqueo Aura (5%)</span>
+                  <span className="text-[10px] font-mono text-emerald-300">${auraUnlockFeeUSD.toFixed(2)} USD</span>
+                </button>
 
                 <button
-                  type="submit"
-                  className="game-sweep w-full cursor-pointer bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:brightness-110 text-white font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-indigo-600/25 active:scale-95"
+                  type="button"
+                  onClick={() => {
+                    if (payAuraWithWallet || pagoMovilAuraRef.trim()) {
+                      setLayawaySubStep(2);
+                    }
+                  }}
+                  className={`p-2 rounded-xl border transition cursor-pointer text-left ${
+                    layawaySubStep === 2
+                      ? 'bg-indigo-950/60 border-indigo-400 text-white shadow-sm'
+                      : 'bg-[#030812] border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  Confirmar Apartado y Guardar Boleto
+                  <span className="text-[9px] uppercase font-bold text-indigo-400 block">Paso 2</span>
+                  <span className="text-xs font-bold block truncate">2. Inicial Tienda (30%)</span>
+                  <span className="text-[10px] font-mono text-indigo-300">${deposit30USD.toFixed(2)} USD</span>
                 </button>
-              </form>
+              </div>
+
+              {/* SUB-PASO 1: PAGO DEL 5% DESBLOQUEO AURA */}
+              {layawaySubStep === 1 && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="bg-[#030812] border border-emerald-500/40 rounded-2xl p-4 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#00ffb2] flex items-center gap-1.5 text-xs sm:text-sm">
+                        <Sparkles size={15} />
+                        Paso 1: Desbloqueo y Custodia Aura (5%)
+                      </span>
+                      <span className="font-black text-white text-sm sm:text-base">${auraUnlockFeeUSD.toFixed(2)} USD</span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 font-light leading-relaxed">
+                      Este pequeño arancel congela el precio en sistema y custodia tu turno durante los 14 a 30 días de apartado.
+                    </p>
+
+                    {userWalletCredit >= auraUnlockFeeUSD && (
+                      <label className="flex items-center gap-2 p-2.5 bg-emerald-950/50 border border-emerald-500/50 rounded-xl cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={payAuraWithWallet}
+                          onChange={(e) => setPayAuraWithWallet(e.target.checked)}
+                          className="accent-emerald-400 w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-xs text-emerald-200 font-bold">
+                          Usar saldo de mi Billetera Aura (${userWalletCredit.toFixed(2)} USD disponible)
+                        </span>
+                      </label>
+                    )}
+
+                    {!payAuraWithWallet && (
+                      <div className="space-y-3 pt-2 border-t border-slate-800/80">
+                        <div className="p-3 bg-[#020508] border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">Banco / Teléfono Aura:</span>
+                            <span className="text-white font-mono font-bold">0102 BDV • 04140857379</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">RIF / Monto en Bs:</span>
+                            <span className="text-[#00ffb2] font-mono font-black text-xs">J-50348291-0 • Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCopyAuraBankData}
+                            className="py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer border border-slate-700"
+                          >
+                            <Copy size={13} />
+                            <span>{copiedAuraBankData ? '¡Datos Copiados!' : 'Copiar Pago Móvil Aura'}</span>
+                          </button>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Nº Referencia Aura (últimos 4-6 dígitos)"
+                            value={pagoMovilAuraRef}
+                            onChange={(e) => setPagoMovilAuraRef(e.target.value)}
+                            className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-emerald-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botón avanzar al paso 2 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!payAuraWithWallet && !pagoMovilAuraRef.trim()) {
+                        alert('Ingresa el número de referencia del Pago Móvil a Aura o activa el pago con Billetera.');
+                        return;
+                      }
+                      playTap();
+                      setLayawaySubStep(2);
+                    }}
+                    disabled={!payAuraWithWallet && !pagoMovilAuraRef.trim()}
+                    className="cursor-pointer w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-40"
+                  >
+                    <span>Continuar al Paso 2: Abono 30% a la Tienda</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* SUB-PASO 2: ABONO 30% INICIAL AL COMERCIO */}
+              {layawaySubStep === 2 && (
+                <form onSubmit={handleConfirmApartadoPagoMovil} className="space-y-4 animate-in fade-in duration-150">
+                  <div className="bg-[#030812] border border-indigo-500/40 rounded-2xl p-4 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs sm:text-sm">
+                        <StoreIcon size={15} />
+                        Paso 2: Abono 30% Inicial para {storeName}
+                      </span>
+                      <span className="font-black text-white text-sm sm:text-base">${deposit30USD.toFixed(2)} USD</span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 font-light leading-relaxed">
+                      Transfiere el 30% directo al comercio para que aparten tu producto físico en su depósito. El 70% restante (${remaining70USD.toFixed(2)} USD) se liquida en caja al retirar.
+                    </p>
+
+                    <div className="p-3 bg-[#020508] border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">Banco / Teléfono Comercio:</span>
+                        <span className="text-white font-mono font-bold">0102 BDV • {storePhoneClean}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">RIF / Monto Inicial en Bs:</span>
+                        <span className="text-[#00ffb2] font-mono font-black text-xs">J-40812345-0 • Bs. {deposit30VES.toLocaleString('es-VE')}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyBankData}
+                        className="py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer border border-slate-700"
+                      >
+                        <Copy size={13} />
+                        <span>{copiedBankData ? '¡Datos Copiados!' : 'Copiar Pago Móvil Tienda'}</span>
+                      </button>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Nº Referencia Tienda (últimos 4-6 dígitos)"
+                        value={pagoMovilRef}
+                        onChange={(e) => setPagoMovilRef(e.target.value)}
+                        className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-indigo-400"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 font-light leading-relaxed text-center">
+                    Al confirmar, tu boleto quedará guardado en tu teléfono y en el mostrador de {storeName}.
+                  </p>
+
+                  <div className="space-y-2">
+                    <button
+                      type="submit"
+                      disabled={!pagoMovilRef.trim() || isSubmitting}
+                      className="game-sweep w-full cursor-pointer bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:brightness-110 text-white font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-indigo-600/25 active:scale-95 disabled:opacity-40"
+                    >
+                      {isSubmitting ? 'Generando Boleto...' : 'Confirmar Apartado y Guardar Boleto ✓'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setLayawaySubStep(1)}
+                      className="w-full text-center text-xs text-slate-400 hover:text-white py-1 transition cursor-pointer"
+                    >
+                      ← Volver a revisar Paso 1 (Desbloqueo Aura)
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* =====================================================================
+              4D. PANTALLA: COMPRA Y RETIRO COMPLETADO EN CAJA (CONGRATULACIONES)
+              ===================================================================== */}
+          {step === 'PURCHASE_COMPLETED' && (
+            <div className="space-y-4 py-4 text-center animate-in zoom-in-95 duration-200">
+              <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-tr from-emerald-400 via-[#00ffb2] to-teal-400 flex items-center justify-center text-slate-950 shadow-2xl shadow-emerald-500/40 animate-pulse">
+                <CheckCircle2 size={38} />
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3 py-1 rounded-full inline-block">
+                  ✓ Transacción Finalizada en Caja
+                </span>
+                <h3 className="text-xl font-black text-white">
+                  ¡Producto Entregado con Éxito!
+                </h3>
+                <p className="text-xs text-slate-300 max-w-sm mx-auto font-light leading-relaxed">
+                  El encargado de <strong>{storeName}</strong> confirmó tu retiro en mostrador. ¡Se han sumado <strong>+10 puntos</strong> a tu Nivel de Confianza en Aura!
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#030812] border border-emerald-500/30 rounded-2xl max-w-xs mx-auto text-xs text-slate-300 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Producto:</span>
+                  <span className="text-white font-bold truncate max-w-[150px]">{product.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Boleto Canjeado:</span>
+                  <span className="text-[#00ffb2] font-mono font-bold">#{generatedPin || activeRes?.pin || 'OK'}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleClose}
+                className="w-full cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black py-3.5 rounded-2xl text-xs transition shadow-lg active:scale-95"
+              >
+                Cerrar y Continuar en Aura
+              </button>
             </div>
           )}
 

@@ -41,7 +41,7 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
   // Cargar nivel de confianza e historial completado
   const loadUserData = useCallback(async () => {
-    // 1. Cargar puntaje
+    // 1. Cargar puntaje e historial local
     if (typeof window !== 'undefined') {
       const localScore = localStorage.getItem('aura_trust_score');
       if (localScore) setTrustScore(Number(localScore) || 100);
@@ -66,6 +66,42 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
           setTrustScore(profile.trust_score);
         }
       }
+
+      // Sincronizar compras completadas en Supabase
+      const phoneSaved = typeof window !== 'undefined' ? localStorage.getItem('aura_customer_phone') : null;
+      let query = supabase
+        .from('reservations')
+        .select('*')
+        .in('status', ['completed', 'completada', 'COMPLETED_IN_STORE']);
+
+      if (user?.id && phoneSaved) {
+        query = query.or(`user_id.eq.${user.id},customer_phone.ilike.%${phoneSaved.trim()}%`);
+      } else if (user?.id) {
+        query = query.eq('user_id', user.id);
+      } else if (phoneSaved) {
+        query = query.ilike('customer_phone', `%${phoneSaved.trim()}%`);
+      } else {
+        return;
+      }
+
+      const { data: dbCompleted } = await query.order('created_at', { ascending: false }).limit(25);
+      if (dbCompleted && dbCompleted.length > 0) {
+        setCompletedTickets((prev) => {
+          const map = new Map<string, any>();
+          prev.forEach((t) => map.set(t.pin_code || t.pin || t.id, t));
+          dbCompleted.forEach((r: any) => {
+            const key = r.pin_code || r.pin || r.id;
+            if (!map.has(key)) {
+              map.set(key, {
+                ...r,
+                product_name: r.product_name || 'Producto Retirado',
+                pin: r.pin_code || r.pin,
+              });
+            }
+          });
+          return Array.from(map.values());
+        });
+      }
     } catch {}
   }, []);
 
@@ -80,8 +116,30 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
       }
     };
 
+    const handleTicketCompleted = () => {
+      loadUserData();
+    };
+
     window.addEventListener('aura_trust_score_updated', handleScoreUpdated);
-    return () => window.removeEventListener('aura_trust_score_updated', handleScoreUpdated);
+    window.addEventListener('aura_ticket_completed', handleTicketCompleted);
+
+    // Suscripción en tiempo real a reservations para reflejar compras al instante sin recargar
+    const channel = supabase
+      .channel('pases_realtime_ledger')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservations' },
+        () => {
+          loadUserData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('aura_trust_score_updated', handleScoreUpdated);
+      window.removeEventListener('aura_ticket_completed', handleTicketCompleted);
+      supabase.removeChannel(channel);
+    };
   }, [loadUserData]);
 
   // Verificación en vivo automática cada 2.5s mientras el usuario ve sus pases
