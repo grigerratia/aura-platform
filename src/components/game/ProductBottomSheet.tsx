@@ -11,7 +11,6 @@ import {
   Calendar, Phone, MessageCircle, Copy, AlertTriangle, Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
 import QRCodeView from '@/components/QRCodeView';
 
 interface Props {
@@ -118,37 +117,36 @@ export default function ProductBottomSheet({
     return () => clearInterval(timer);
   }, [step]);
 
-  // Si no hay producto seleccionado, no renderizar
-  if (!product) return null;
-
-  const auraPrice = product.aura_price_usd || product.price;
-  const regularPrice = product.regular_price_usd || product.price;
+  // Cálculos seguros con fallbacks para evitar cualquier error de tipo o runtime
+  const auraPrice = Number(product?.aura_price_usd || product?.price || 10);
+  const regularPrice = Number(product?.regular_price_usd || product?.price || auraPrice);
   const unlockFee =
-    product.unlock_fee_usd !== undefined && product.unlock_fee_usd !== null
-      ? product.unlock_fee_usd
+    product?.unlock_fee_usd !== undefined && product?.unlock_fee_usd !== null
+      ? Number(product.unlock_fee_usd)
       : Number((auraPrice * 0.1).toFixed(2));
   
   // Cálculo de apartado 30% inicial
   const deposit30USD = Number((auraPrice * 0.3).toFixed(2));
   const remaining70USD = Number((auraPrice - deposit30USD).toFixed(2));
-  const deposit30VES = Math.round(deposit30USD * tasa);
-  const totalVES = Math.round(auraPrice * tasa);
+  const deposit30VES = Math.round(deposit30USD * (tasa || 883));
+  const totalVES = Math.round(auraPrice * (tasa || 883));
 
   // Tienda asociada
-  const store = stores.find((s) => s.id === product.storeId || s.id === product.store_id);
+  const store = product ? stores.find((s) => s.id === product.storeId || s.id === product.store_id) : undefined;
   const storeName = store?.name || 'Tienda Oficial Aura';
   const storeZone = store?.zone || store?.address || 'Cumaná, Sucre';
   const storePhoneRaw = (store?.owner_whatsapp || store?.whatsapp || '04141234567').toString().replace(/[^0-9]/g, '');
   const storePhoneClean = storePhoneRaw.startsWith('58') ? '0' + storePhoneRaw.slice(2) : storePhoneRaw;
 
   // Variantes disponibles
-  const variantGroup = product.variants?.[0];
-  const variantOptions = variantGroup?.options || product.sizes || [];
+  const variantGroup = product?.variants?.[0];
+  const variantOptions = variantGroup?.options || (product?.sizes && product.sizes.length > 0 ? product.sizes : []);
 
   // ==============================================================================
   // PASO 2: SOLICITUD DE DISPONIBILIDAD (Sin pagar nada todavía)
   // ==============================================================================
   const handleRequestAvailability = async () => {
+    if (!product) return;
     if (!customerName.trim()) {
       alert('Por favor ingresa tu nombre o apodo para el mostrador.');
       return;
@@ -351,6 +349,7 @@ export default function ProductBottomSheet({
 
   const handleConfirmApartadoPagoMovil = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!product || !activeRes) return;
     if (!pagoMovilRef.trim()) {
       alert('Por favor ingresa los dígitos de la referencia de tu Pago Móvil.');
       return;
@@ -410,67 +409,62 @@ export default function ProductBottomSheet({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-end justify-center select-none">
-        
-        {/* BACKDROP BLURRED CINEMATOGRÁFICO */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={handleClose}
-          className="fixed inset-0 bg-black/85 backdrop-blur-md"
-        />
-
-        {/* CONTENEDOR PRINCIPAL BOTTOM SHEET */}
-        <motion.div
-          initial={{ y: '100%', opacity: 0.9 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{
-            y: '100%',
-            opacity: 0,
-            filter: 'url(#thanos-disintegrate) blur(2px)',
-            transition: { duration: 0.35, ease: 'easeIn' },
-          }}
-          transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-          className="relative w-full max-w-lg bg-[#040913]/95 border-t border-emerald-500/30 rounded-t-3xl sm:rounded-t-[2.5rem] shadow-[0_-20px_60px_rgba(0,0,0,0.85)] p-5 sm:p-6 max-h-[90vh] overflow-y-auto no-scrollbar z-10"
-        >
-          {/* Reflejo especular superior fino */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent" />
-
-          {/* Manija de arrastre */}
-          <div className="w-12 h-1 rounded-full bg-slate-700/80 mx-auto mb-4" />
-
-          {/* Botón Cerrar */}
-          <button
-            type="button"
+      {product && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center select-none">
+          
+          {/* BACKDROP BLURRED CINEMATOGRÁFICO */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-900/80 rounded-full transition cursor-pointer"
-          >
-            <X size={18} />
-          </button>
+            className="fixed inset-0 bg-black/85 backdrop-blur-md"
+          />
 
-          {/* =====================================================================
-              1. PANTALLA: SELECCIÓN & CONTACTO INICIAL
-              ===================================================================== */}
-          {step === 'SELECTION' && (
-            <div className="space-y-4">
-              
-              {/* Encabezado con imagen, tienda y título */}
-              <div className="flex gap-3.5 items-center">
-                <div className="relative w-22 h-22 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 shadow-inner">
-                  {product.imageUrl || product.image_url ? (
-                    <Image
-                      src={product.imageUrl || product.image_url || ''}
-                      alt={product.name}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-slate-600 font-bold">
-                      Aura
-                    </div>
-                  )}
-                </div>
+          {/* CONTENEDOR PRINCIPAL BOTTOM SHEET */}
+          <motion.div
+            initial={{ y: '100%', opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: '100%', opacity: 0 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+            className="relative w-full max-w-lg bg-[#040913]/95 border-t border-emerald-500/30 rounded-t-3xl sm:rounded-t-[2.5rem] shadow-[0_-20px_60px_rgba(0,0,0,0.85)] p-5 sm:p-6 max-h-[90vh] overflow-y-auto no-scrollbar z-10"
+          >
+            {/* Reflejo especular superior fino */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent" />
+
+            {/* Manija de arrastre */}
+            <div className="w-12 h-1 rounded-full bg-slate-700/80 mx-auto mb-4" />
+
+            {/* Botón Cerrar */}
+            <button
+              type="button"
+              onClick={handleClose}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-900/80 rounded-full transition cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            {/* =====================================================================
+                1. PANTALLA: SELECCIÓN & CONTACTO INICIAL
+                ===================================================================== */}
+            {step === 'SELECTION' && (
+              <div className="space-y-4">
+                
+                {/* Encabezado con imagen, tienda y título */}
+                <div className="flex gap-3.5 items-center">
+                  <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 shadow-inner flex items-center justify-center">
+                    {product.imageUrl || product.image_url ? (
+                      <img
+                        src={product.imageUrl || product.image_url || ''}
+                        alt={product.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-slate-600 font-bold">
+                        Aura
+                      </div>
+                    )}
+                  </div>
 
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
@@ -916,7 +910,7 @@ export default function ProductBottomSheet({
                   type="button"
                   onClick={() => {
                     playTap();
-                    alert(`¡Anotado en la fila de espera para ${product.name}! Te notificaremos apenas el comercio reponga inventario con el mismo precio congelado.`);
+                    alert(`¡Anotado en la fila de espera para ${product?.name || 'este producto'}! Te notificaremos apenas el comercio reponga inventario con el mismo precio congelado.`);
                     handleClose();
                   }}
                   className="w-full bg-gradient-to-r from-amber-600 to-amber-500 text-slate-950 font-black py-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
@@ -938,6 +932,7 @@ export default function ProductBottomSheet({
 
         </motion.div>
       </div>
+      )}
     </AnimatePresence>
   );
 }

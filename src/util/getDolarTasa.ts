@@ -13,9 +13,10 @@ export default async function getDolarTasa(): Promise<number> {
       day: '2-digit',
     }).format(new Date()); // Formato "YYYY-MM-DD"
 
-    // 1. Obtener el histórico oficial fechado
+    // 1. Obtener el histórico oficial fechado (con timeout rápido de 1.2s para nunca demorar la carga)
     const histRes = await fetch('https://ve.dolarapi.com/v1/historicos/dolares/oficial', {
       next: { revalidate: 300 }, // Revalida cada 5 minutos
+      signal: AbortSignal.timeout(1200),
     });
 
     if (histRes.ok) {
@@ -37,6 +38,7 @@ export default async function getDolarTasa(): Promise<number> {
     // 2. Fallback directo a la cotización oficial
     const res = await fetch('https://ve.dolarapi.com/v1/dolares/oficial', {
       next: { revalidate: 300 },
+      signal: AbortSignal.timeout(1200),
     });
     if (res.ok) {
       const data = await res.json();

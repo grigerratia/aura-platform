@@ -59,7 +59,7 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
     stock: item.stock,
     discount_percent: item.discount_percent,
     store_id: store.id,
-    sizes: item.products?.sizes || ['37', '38', '39', '40'],
+    sizes: item.products?.sizes || [],
     is_clearance: (item.discount_percent && item.discount_percent >= 20) || false,
     clearance_badge: item.discount_percent ? `${item.discount_percent}% OFF` : undefined,
   }));

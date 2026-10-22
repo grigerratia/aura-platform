@@ -58,7 +58,7 @@ export default async function ProductPage({
     stock: storeProduct.stock,
     discount_percent: storeProduct.discount_percent,
     store_id: storeProduct.store_id,
-    sizes: rawProduct.sizes || ['37', '38', '39', '40'],
+    sizes: rawProduct.sizes || [],
     is_clearance: (storeProduct.discount_percent && storeProduct.discount_percent >= 20) || false,
     clearance_badge: storeProduct.discount_percent ? `${storeProduct.discount_percent}% OFF` : undefined,
   };

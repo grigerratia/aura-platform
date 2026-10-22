@@ -3,7 +3,6 @@
 import { Product } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { Unlock, Zap, Flame, Users, Sparkles, MapPin, Star, Heart } from 'lucide-react';
-import Image from 'next/image';
 
 interface Props {
   product: Product;
@@ -138,12 +137,11 @@ export default function GameProductCard({
         )}
 
         {product.imageUrl || product.image_url ? (
-          <Image
+          <img
             src={product.imageUrl || product.image_url || ''}
             alt={product.name}
-            fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 20vw"
-            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            loading="lazy"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-emerald-950/20 text-emerald-500 font-bold text-xs">
