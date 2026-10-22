@@ -9,7 +9,6 @@ import AuroraParticles from '../AuroraParticles';
 import GameControlBar from '../GameControlBar';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Search,
   Compass,
   X,
   ArrowRight,

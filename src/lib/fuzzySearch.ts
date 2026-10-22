@@ -71,8 +71,8 @@ export function levenshteinDistance(a: string, b: string): number {
     b = tmp;
   }
   const la = a.length, lb = b.length;
-  let prevRow = Array.from({ length: la + 1 }, (_, i) => i);
-  let currRow = new Array(la + 1);
+  const prevRow = Array.from({ length: la + 1 }, (_, i) => i);
+  const currRow = new Array(la + 1);
   for (let j = 1; j <= lb; j++) {
     currRow[0] = j;
     const bChar = b.charCodeAt(j - 1);

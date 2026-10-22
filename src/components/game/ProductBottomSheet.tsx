@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Product, Store, Reservation } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { useReservations } from '@/store/useReservations';
 import { supabase } from '@/lib/supabase';
 import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
-  AlertCircle, Loader2, ArrowRight, ShieldCheck, QrCode,
-  Calendar, Phone, MessageCircle, Copy, AlertTriangle, Users, CheckCircle2
+  AlertCircle, ArrowRight, ShieldCheck,
+  MessageCircle, Copy, AlertTriangle, Users, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -37,7 +37,7 @@ export default function ProductBottomSheet({
   stores = [],
   tasa = 500,
 }: Props) {
-  const { playTap, playSweep, playUnlockSuccess, playDustSnap, playRadarPing } = useGameSound();
+  const { playTap, playUnlockSuccess, playDustSnap, playRadarPing } = useGameSound();
   const { setActiveReservation } = useReservations();
 
   // Estados del flujo paso a paso
@@ -313,7 +313,7 @@ export default function ProductBottomSheet({
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'reservations', filter: `id=eq.${resId}` },
-        (payload: any) => {
+        (payload: { new?: Partial<Reservation> & Record<string, any> }) => {
           const status = payload.new?.status;
           if (status === 'confirmed' || status === 'confirmada' || status === 'STOCK_VERIFIED') {
             playUnlockSuccess();
@@ -383,7 +383,7 @@ export default function ProductBottomSheet({
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };
-  }, [step, activeRes?.id, playUnlockSuccess]);
+  }, [step, activeRes?.id, playUnlockSuccess, setActiveReservation]);
 
   // ==============================================================================
   // PASO 4A: ELECCIÓN CLIENTE -> OPCIÓN A (IR HOY MISMO - TICKET QR GRATIS 3 HORAS)
@@ -474,7 +474,7 @@ export default function ProductBottomSheet({
     // Actualizar en Supabase
     try {
       const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
-      let query = supabase
+      const query = supabase
         .from('reservations')
         .update({
           status: 'confirmed',

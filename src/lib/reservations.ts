@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Reservation, ReservationStatus, PaymentOption, WaitlistItem, CategoryArchetype } from '@/types';
-import { calculateSplitPayment, refundFeeToWallet, logLostDemand } from './monetization';
+import { calculateSplitPayment } from './monetization';
 
 // Generador de PIN seguro de 4 dígitos para retiro en caja
 export function generateReservationPin(): string {

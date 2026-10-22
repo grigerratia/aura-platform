@@ -16,8 +16,8 @@ export interface ThanosRect {
  */
 export function emitThanosDust(
   _rect: DOMRect | ThanosRect,
-  _mode: ThanosMode = 'disintegrate',
-  _intensity: ThanosIntensity = 'fast'
+  _mode?: ThanosMode,
+  _intensity?: ThanosIntensity
 ) {
   // Desactivado: reemplazado por transiciones cuánticas GPU ultra-livianas
 }

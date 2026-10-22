@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { CategoryArchetype, Product, WalletTransaction } from '@/types';
+import { CategoryArchetype, Product } from '@/types';
 
 // ==============================================================================
 // 1. CONFIGURACIÓN DE ARQUETIPOS DE CATEGORÍA MULTI-RUBRO

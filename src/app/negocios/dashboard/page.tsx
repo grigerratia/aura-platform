@@ -4,14 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Reservation, Store, CategoryArchetype } from '@/types';
-import { ARCHETYPE_CONFIGS, getArchetypeConfig, refundFeeToWallet, logLostDemand } from '@/lib/monetization';
-import { AURA_OFFICIAL_CATEGORIES, getCategoryArchetype } from '@/lib/categories';
+import { getArchetypeConfig, refundFeeToWallet, logLostDemand } from '@/lib/monetization';
+import { AURA_OFFICIAL_CATEGORIES } from '@/lib/categories';
 import {
-  Package, Plus, Search, Trash2, Loader2,
-  CheckCircle2, AlertCircle, LogOut, ChevronRight,
+  Package, Plus, Trash2, Loader2,
+  CheckCircle2, AlertCircle, LogOut,
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
-  DollarSign, ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight,
+  ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight,
   Upload, Image as ImageIcon, Camera, Compass
 } from 'lucide-react';
 import Link from 'next/link';
@@ -1641,7 +1641,7 @@ export default function OwnerDashboard() {
                           className="w-4 h-4 rounded text-emerald-500 cursor-pointer"
                         />
                         <Flame size={13} className="text-amber-400" />
-                        <span>Destacar en sección "Remates y Liquidaciones"</span>
+                        <span>Destacar en sección &quot;Remates y Liquidaciones&quot;</span>
                       </label>
 
                       <label className="flex items-center gap-2 cursor-pointer text-slate-300">

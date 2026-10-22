@@ -6,16 +6,10 @@ import GameProductCard from '../GameProductCard';
 import ThanosCard from '@/components/vfx/ThanosCard';
 import AuroraParticles from '../AuroraParticles';
 import GameControlBar from '../GameControlBar';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   Zap,
   Clock,
-  Search,
-  X,
-  ArrowRight,
-  MapPin,
-  Star,
-  Heart,
   Compass,
 } from 'lucide-react';
 import { useGameSound } from '@/hooks/useGameSound';

@@ -37,20 +37,6 @@ export default function BusinessRegisterPage() {
   const [successPendingConfirm, setSuccessPendingConfirm] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setCurrentUser(user);
-        setFormData((prev) => ({
-          ...prev,
-          email: user.email || prev.email,
-          owner_name: user.user_metadata?.full_name || prev.owner_name,
-          owner_whatsapp: user.user_metadata?.phone || prev.owner_whatsapp
-        }));
-      }
-    });
-  }, []);
-
   // Form State
   const [formData, setFormData] = useState({
     // Paso 1: Identidad
@@ -89,6 +75,20 @@ export default function BusinessRegisterPage() {
     password: '',
     plan_tier: 'VITRINA_20' as StorePlanTier,
   });
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setCurrentUser(user);
+        setFormData((prev) => ({
+          ...prev,
+          email: user.email || prev.email,
+          owner_name: user.user_metadata?.full_name || prev.owner_name,
+          owner_whatsapp: user.user_metadata?.phone || prev.owner_whatsapp
+        }));
+      }
+    });
+  }, []);
 
   // Generar slug automático al tipear el nombre
   const handleStoreNameChange = (name: string) => {
