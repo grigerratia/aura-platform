@@ -187,6 +187,12 @@ export interface Reservation {
   requested_modality?: 'option_a' | 'option_b';
   completed_at?: string;
 
+  // Verificación y Bóveda Central de Pagos Aura
+  aura_fee_reference?: string;
+  aura_fee_status?: 'pending' | 'approved' | 'rejected';
+  aura_fee_mode?: 'radar' | 'relampago' | 'manadas';
+  aura_fee_verified_at?: string;
+
   // Doble Cierre & Pagos Directos
   payment_method?: 'en_tienda' | 'pago_movil';
   payment_type?: PaymentOption;
@@ -232,6 +238,11 @@ export interface Profile {
   // Candado de Confianza
   wallet_credit_usd?: number; // Saldo a favor reutilizable en Aura
   trust_score?: number; // 0 - 100 de reputación de asistencia
+
+  // Control de Riesgo y Bloqueo por Impago
+  is_blocked?: boolean;
+  block_reason?: string;
+  blocked_at?: string;
 
   // Membresía VIP
   is_vip?: boolean;

@@ -46,6 +46,8 @@ export default function ProductBottomSheet({
   const [selectedModality, setSelectedModality] = useState<'option_a' | 'option_b'>('option_a');
   const [stockConfirmationType, setStockConfirmationType] = useState<'green' | 'yellow'>('green');
   const [layawaySubStep, setLayawaySubStep] = useState<1 | 2>(1);
+  const [isUserBlocked, setIsUserBlocked] = useState<boolean>(false);
+  const [userBlockReason, setUserBlockReason] = useState<string>('');
   
   // Datos del producto y variante
   const [selectedVariant, setSelectedVariant] = useState<string>('');
@@ -152,12 +154,17 @@ export default function ProductBottomSheet({
 
           const { data: prof } = await supabase
             .from('profiles')
-            .select('wallet_credit_usd, id_doc')
+            .select('wallet_credit_usd, id_doc, is_blocked, block_reason')
             .eq('id', user.id)
             .maybeSingle();
 
           if (prof?.id_doc && !customerCedula) {
             setCustomerCedula(prof.id_doc);
+          }
+
+          if (prof?.is_blocked) {
+            setIsUserBlocked(true);
+            setUserBlockReason(prof.block_reason || 'Cuenta suspendida preventivamente por impago o retraso en apartados.');
           }
 
           if (prof?.wallet_credit_usd) {
@@ -224,6 +231,10 @@ export default function ProductBottomSheet({
   // ==============================================================================
   const handleRequestAvailability = async () => {
     if (!product) return;
+    if (isUserBlocked) {
+      alert(userBlockReason || 'Tu cuenta está temporalmente suspendida por impago o retraso. Comunícate con soporte de Aura.');
+      return;
+    }
     if (!customerName.trim()) {
       alert('Por favor ingresa tu nombre y apellido para el mostrador.');
       return;
@@ -630,8 +641,11 @@ export default function ProductBottomSheet({
           payment_method: 'pago_movil',
           payment_type: 'apartado_7d',
           payment_reference: pagoMovilRef.trim(),
-          customer_phone: `${customerPhone} [PAGO_MOVIL: Ref #${pagoMovilRef.trim()} - Apartado 30% - ${auraPayDesc}]`,
+          customer_phone: customerPhone.trim(),
           unlock_fee_usd: auraUnlockFeeUSD,
+          aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
+          aura_fee_status: 'pending',
+          aura_fee_mode: 'radar',
           initial_deposit: deposit30USD,
           store_pay_balance_usd: remaining70USD,
         });
@@ -645,12 +659,11 @@ export default function ProductBottomSheet({
       console.warn('Error actualizando reserva en Supabase:', err);
     }
 
-    // Enviar mensaje directo por WhatsApp a la tienda
+    // Enviar mensaje directo por WhatsApp a la tienda (Solo información de la tienda, privacidad estricta Aura)
     const waText = encodeURIComponent(
-      `Hola ${storeName}, acabo de realizar el apartado digital en Aura para "${product.name}" (${selectedVariant}).\n` +
+      `Hola ${storeName}, acabo de realizar el apartado digital para "${product.name}" (${selectedVariant}).\n` +
       `Código de Boleto: #${generatedPin}\n` +
-      `Referencia Pago Móvil Tienda (30%): ${pagoMovilRef.trim()} (Bs. ${deposit30VES.toLocaleString('es-VE')} / $${deposit30USD} USD).\n` +
-      `Desbloqueo Aura (5%): $${auraUnlockFeeUSD} USD (${auraPayDesc}).\n` +
+      `Referencia Pago Móvil Inicial (30%): ${pagoMovilRef.trim()} (Bs. ${deposit30VES.toLocaleString('es-VE')} / $${deposit30USD} USD).\n` +
       `Saldo restante a pagar al retirar en depósito: $${remaining70USD} USD (Válido por 7 días).`
     );
     window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
@@ -898,12 +911,29 @@ export default function ProductBottomSheet({
                 </div>
               </div>
 
+              {/* Alerta de Usuario Bloqueado por Impago */}
+              {isUserBlocked && (
+                <div className="p-3 bg-red-950/70 border border-red-500/50 rounded-xl text-left space-y-1 animate-pulse">
+                  <div className="flex items-center gap-2 text-red-400 font-bold text-xs">
+                    <AlertTriangle size={15} />
+                    <span>Cuenta Suspendida por Aura Central</span>
+                  </div>
+                  <p className="text-[11px] text-red-200/90 leading-relaxed">
+                    {userBlockReason || 'Tienes una sanción activa por impago o retraso en apartados anteriores. Contacta a soporte para regularizar tu estatus.'}
+                  </p>
+                </div>
+              )}
+
               {/* Botón Principal: Verificar disponibilidad / Apartar (Sin pagar nada todavía) */}
               <button
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUserBlocked}
                 onClick={handleRequestAvailability}
-                className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black py-4 px-6 rounded-2xl text-sm transition shadow-lg shadow-emerald-500/25 flex flex-col items-center justify-center gap-0.5 active:scale-95 disabled:opacity-50 mt-2"
+                className={`game-sweep w-full cursor-pointer bg-gradient-to-r ${
+                  isUserBlocked
+                    ? 'from-slate-700 to-slate-800 text-slate-400 opacity-60 cursor-not-allowed'
+                    : 'from-emerald-500 via-[#00ffb2] to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-lg shadow-emerald-500/25 active:scale-95'
+                } font-black py-4 px-6 rounded-2xl text-sm transition flex flex-col items-center justify-center gap-0.5 mt-2`}
               >
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={18} />
