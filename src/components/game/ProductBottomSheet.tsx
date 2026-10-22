@@ -172,7 +172,21 @@ export default function ProductBottomSheet({
     setGeneratedPin(pin);
 
     const expiresAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
-    const effectiveStoreId = store?.id || product.store_id || product.storeId || 'store-cumana';
+
+    // Verificador de sintaxis UUID para PostgreSQL
+    const isValidUUID = (id?: string | null): id is string =>
+      Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+
+    // Determinar store_id válido (debe ser UUID válido para la BD)
+    const effectiveStoreId = isValidUUID(store?.id)
+      ? store.id
+      : isValidUUID(product.store_id)
+        ? product.store_id
+        : isValidUUID(product.storeId)
+          ? product.storeId
+          : (stores.find(s => isValidUUID(s.id))?.id || null);
+
+    const effectiveProductId = isValidUUID(product.id) ? product.id : null;
 
     let uid = currentUserId;
     if (!uid) {
@@ -187,7 +201,7 @@ export default function ProductBottomSheet({
       user_id: uid || undefined,
       pin: pin,
       pin_code: pin,
-      store_id: effectiveStoreId,
+      store_id: effectiveStoreId || 'store-cumana',
       store_name: storeName,
       store_whatsapp: storePhoneRaw,
       store_address: storeZone,
@@ -209,16 +223,16 @@ export default function ProductBottomSheet({
     };
 
     setActiveRes(newReservation);
+    setActiveReservation(newReservation);
 
-    // 1. Guardar la solicitud en Supabase para que llegue a Mostrador
+    // 1. Guardar la solicitud en Supabase para que llegue a Mostrador y Dashboard
     try {
-      const { data: dbRes } = await supabase
+      const { data: dbRes, error: insertError } = await supabase
         .from('reservations')
         .insert([{
           pin_code: pin,
-          user_id: uid || null,
           store_id: effectiveStoreId,
-          product_id: product.id,
+          product_id: effectiveProductId,
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),
           selected_size: selectedVariant || 'Estándar',
@@ -230,9 +244,20 @@ export default function ProductBottomSheet({
         .select()
         .single();
 
+      if (insertError) {
+        console.error('Error insertando reserva en Supabase:', insertError);
+      }
+
       if (dbRes) {
-        newReservation.id = dbRes.id;
-        setActiveRes(newReservation);
+        const finalReservation: Reservation = {
+          ...newReservation,
+          id: dbRes.id,
+          pin: dbRes.pin_code || pin,
+          pin_code: dbRes.pin_code || pin,
+          status: dbRes.status || 'pending',
+        };
+        setActiveRes(finalReservation);
+        setActiveReservation(finalReservation);
       }
     } catch (err) {
       console.warn('Registro local de reserva activo:', err);
@@ -274,10 +299,22 @@ export default function ProductBottomSheet({
             playUnlockSuccess();
             setStockConfirmationType('green');
             setStep('STOCK_CONFIRMED');
+            setActiveRes((prev) => {
+              if (!prev) return null;
+              const updated = { ...prev, status: 'confirmed' as const };
+              setActiveReservation(updated);
+              return updated;
+            });
           } else if (status === 'ultimo_par') {
             playUnlockSuccess();
             setStockConfirmationType('yellow');
             setStep('STOCK_CONFIRMED');
+            setActiveRes((prev) => {
+              if (!prev) return null;
+              const updated = { ...prev, status: 'ultimo_par' as const };
+              setActiveReservation(updated);
+              return updated;
+            });
           } else if (status === 'cancelled' || status === 'cancelada' || status === 'REJECTED_OUT_OF_STOCK') {
             setStep('OUT_OF_STOCK');
           }
@@ -299,10 +336,22 @@ export default function ProductBottomSheet({
             playUnlockSuccess();
             setStockConfirmationType('green');
             setStep('STOCK_CONFIRMED');
+            setActiveRes((prev) => {
+              if (!prev) return null;
+              const updated = { ...prev, status: 'confirmed' as const };
+              setActiveReservation(updated);
+              return updated;
+            });
           } else if (data.status === 'ultimo_par') {
             playUnlockSuccess();
             setStockConfirmationType('yellow');
             setStep('STOCK_CONFIRMED');
+            setActiveRes((prev) => {
+              if (!prev) return null;
+              const updated = { ...prev, status: 'ultimo_par' as const };
+              setActiveReservation(updated);
+              return updated;
+            });
           } else if (data.status === 'cancelled' || data.status === 'cancelada' || data.status === 'REJECTED_OUT_OF_STOCK') {
             setStep('OUT_OF_STOCK');
           }

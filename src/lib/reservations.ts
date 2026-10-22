@@ -79,11 +79,15 @@ export async function createReservation(input: CreateReservationInput): Promise<
     formattedPhone += ` [VAR:${variantDesc}]`;
   }
 
+  // Verificador de sintaxis UUID para PostgreSQL
+  const isValidUUID = (id?: string | null): id is string =>
+    Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+
   // Payload exacto compatible con la tabla PostgreSQL en Supabase
   const dbPayload = {
     pin_code: pin,
-    store_id: input.storeId || null,
-    product_id: input.productId || null,
+    store_id: isValidUUID(input.storeId) ? input.storeId : null,
+    product_id: isValidUUID(input.productId) ? input.productId : null,
     customer_name: input.customerName.trim(),
     customer_phone: formattedPhone,
     selected_size: input.selectedSize || Object.values(input.selectedVariant || {})[0] || 'Única',

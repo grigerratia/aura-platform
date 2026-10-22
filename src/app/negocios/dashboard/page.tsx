@@ -254,6 +254,33 @@ export default function OwnerDashboard() {
     checkUser();
   }, [checkUser]);
 
+  // Suscripción en tiempo real y sondeo de reservas para el dueño
+  useEffect(() => {
+    if (!storeId) return;
+
+    // A. Suscripción en tiempo real con Postgres Changes
+    const channel = supabase
+      .channel(`dashboard_reservations_${storeId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservations', filter: `store_id=eq.${storeId}` },
+        () => {
+          fetchReservations(storeId);
+        }
+      )
+      .subscribe();
+
+    // B. Sondeo de respaldo cada 3 segundos
+    const pollInterval = setInterval(() => {
+      fetchReservations(storeId);
+    }, 3000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+    };
+  }, [storeId, fetchReservations]);
+
   // Buscar en catálogo global
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {

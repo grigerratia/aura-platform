@@ -137,8 +137,14 @@ export default function MostradorPage() {
         )
         .subscribe();
 
+      // Sondeo de respaldo cada 3 segundos
+      const pollInterval = setInterval(() => {
+        fetchReservations();
+      }, 3000);
+
       return () => {
         supabase.removeChannel(channel);
+        clearInterval(pollInterval);
       };
     }
   }, [isAuthenticated, storeId, fetchReservations]);
