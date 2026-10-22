@@ -50,6 +50,7 @@ export default function ProductBottomSheet({
   
   // Datos de la reserva activa generada
   const [activeRes, setActiveRes] = useState<Reservation | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [generatedPin, setGeneratedPin] = useState<string>('');
   const [pagoMovilRef, setPagoMovilRef] = useState<string>('');
   const [copiedBankData, setCopiedBankData] = useState<boolean>(false);
@@ -87,6 +88,7 @@ export default function ProductBottomSheet({
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          setCurrentUserId(user.id);
           const name = user.user_metadata?.full_name || user.user_metadata?.name || '';
           if (name && !customerName) setCustomerName(name);
           const phone = user.phone || user.user_metadata?.phone || '';
@@ -172,8 +174,17 @@ export default function ProductBottomSheet({
     const expiresAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
     const effectiveStoreId = store?.id || product.store_id || product.storeId || 'store-cumana';
 
+    let uid = currentUserId;
+    if (!uid) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        uid = user?.id || null;
+      } catch {}
+    }
+
     const newReservation: Reservation = {
       id: `res-${Date.now()}`,
+      user_id: uid || undefined,
       pin: pin,
       pin_code: pin,
       store_id: effectiveStoreId,
@@ -205,6 +216,7 @@ export default function ProductBottomSheet({
         .from('reservations')
         .insert([{
           pin_code: pin,
+          user_id: uid || null,
           store_id: effectiveStoreId,
           product_id: product.id,
           customer_name: customerName.trim(),

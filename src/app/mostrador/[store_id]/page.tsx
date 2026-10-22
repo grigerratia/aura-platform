@@ -250,20 +250,36 @@ export default function MostradorPage() {
         })
         .eq('id', reservation.id);
 
-      // Si el cliente tiene cuenta de usuario en Aura, incrementar su nivel de confianza (+10 puntos)
-      if (reservation.user_id) {
+      // Si el cliente tiene cuenta de usuario o teléfono registrado en Aura, incrementar su nivel de confianza (+10 puntos)
+      let targetUserId = reservation.user_id;
+      if (!targetUserId && reservation.customer_phone) {
+        try {
+          const rawPhone = reservation.customer_phone.replace(/[^0-9]/g, '');
+          const { data: matchedProfile } = await supabase
+            .from('profiles')
+            .select('id, trust_score')
+            .or(`phone.eq.${reservation.customer_phone},phone.eq.${rawPhone}`)
+            .limit(1)
+            .maybeSingle();
+          if (matchedProfile) {
+            targetUserId = matchedProfile.id;
+          }
+        } catch {}
+      }
+
+      if (targetUserId) {
         try {
           const { data: profile } = await supabase
             .from('profiles')
             .select('trust_score')
-            .eq('id', reservation.user_id)
+            .eq('id', targetUserId)
             .maybeSingle();
           if (profile) {
             const newScore = Math.min(200, (profile.trust_score || 100) + 10);
             await supabase
               .from('profiles')
               .update({ trust_score: newScore })
-              .eq('id', reservation.user_id);
+              .eq('id', targetUserId);
           }
         } catch {
           // No romper si el perfil no existe

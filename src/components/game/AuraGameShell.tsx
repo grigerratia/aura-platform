@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Product, Store } from '@/types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Product, Store, Reservation } from '@/types';
 import TopHUD from './TopHUD';
 import BottomDock, { GameMode } from './BottomDock';
 import SmokeTransition from './SmokeTransition';
@@ -11,8 +11,11 @@ import RelampagoMode from './modes/RelampagoMode';
 import ManadasMode from './modes/ManadasMode';
 import PasesMode from './modes/PasesMode';
 import ProductBottomSheet from './ProductBottomSheet';
+import PurchaseCelebrationModal from './PurchaseCelebrationModal';
 import WalletModal from '../WalletModal';
 import { useReservations } from '@/store/useReservations';
+import { supabase } from '@/lib/supabase';
+import { useGameSound } from '@/hooks/useGameSound';
 
 interface Props {
   initialProducts: Product[];
@@ -25,13 +28,18 @@ export default function AuraGameShell({
   initialStores,
   initialTasa = 500.0,
 }: Props) {
-  const { activeReservation } = useReservations();
+  const { activeReservation, clearActiveReservation, setActiveReservation } = useReservations();
+  const { playUnlockSuccess, playAlertChime } = useGameSound();
 
   // Modo de navegación activo (Portal, Radar, Relámpago, Manadas, Pases)
   const [activeMode, setActiveMode] = useState<GameMode>('portal');
 
   // Estado del producto seleccionado para el Bottom Sheet
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
+  // Estado de celebración de compra concretada en mostrador
+  const [celebratedReservation, setCelebratedReservation] = useState<Reservation | null>(null);
+  const [currentTrustScore, setCurrentTrustScore] = useState<number>(100);
 
   // Estado del Modal de Billetera
   const [isWalletOpen, setIsWalletOpen] = useState(false);
@@ -46,9 +54,164 @@ export default function AuraGameShell({
   const [burstTrigger, setBurstTrigger] = useState(0);
 
   const handleSuccessUnlock = () => {
-    // Disparar ráfaga de 35 partículas luminosas
+    // Disparar ráfaga de partículas luminosas
     setBurstTrigger((prev) => prev + 1);
   };
+
+  // Cargar puntaje de confianza inicial (de profiles o localStorage)
+  useEffect(() => {
+    const loadScore = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('trust_score')
+            .eq('id', user.id)
+            .maybeSingle();
+          if (profile?.trust_score) {
+            setCurrentTrustScore(profile.trust_score);
+            return;
+          }
+        }
+      } catch {}
+
+      if (typeof window !== 'undefined') {
+        const local = localStorage.getItem('aura_trust_score');
+        if (local) {
+          setCurrentTrustScore(Number(local) || 100);
+        }
+      }
+    };
+
+    loadScore();
+
+    const handleScoreUpdated = (e: any) => {
+      if (e.detail?.score) {
+        setCurrentTrustScore(e.detail.score);
+      } else if (typeof window !== 'undefined') {
+        const local = localStorage.getItem('aura_trust_score');
+        if (local) setCurrentTrustScore(Number(local) || 100);
+      }
+    };
+
+    window.addEventListener('aura_trust_score_updated', handleScoreUpdated);
+    return () => window.removeEventListener('aura_trust_score_updated', handleScoreUpdated);
+  }, []);
+
+  // ==============================================================================
+  // SINCRONIZACIÓN EN TIEMPO REAL DEL TICKET ACTIVO CON EL MOSTRADOR FÍSICO
+  // ==============================================================================
+  useEffect(() => {
+    if (!activeReservation?.id) return;
+
+    const resId = activeReservation.id;
+    let isHandled = false;
+
+    const handleReservationStateChange = async (updated: any) => {
+      if (isHandled) return;
+      const status = updated.status;
+
+      // 1. COMPRA CONCRETADA EN CAJA (Cajero escaneó el QR / PIN y cobró)
+      if (status === 'COMPLETED_IN_STORE' || status === 'completed' || status === 'completada') {
+        isHandled = true;
+        playUnlockSuccess();
+        setBurstTrigger((prev) => prev + 1);
+
+        // Aumentar +10 Puntos de Confianza
+        const newScore = Math.min(200, (currentTrustScore || 100) + 10);
+        setCurrentTrustScore(newScore);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('aura_trust_score', String(newScore));
+
+          // Guardar en historial de compras completadas
+          try {
+            const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
+            const history = JSON.parse(historyRaw);
+            history.unshift({
+              ...activeReservation,
+              status: 'COMPLETED_IN_STORE',
+              completed_at: new Date().toISOString(),
+            });
+            localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
+          } catch {}
+
+          window.dispatchEvent(new CustomEvent('aura_trust_score_updated', { detail: { score: newScore } }));
+        }
+
+        // Si el usuario está autenticado, actualizar en Supabase
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await supabase.from('profiles').update({ trust_score: newScore }).eq('id', user.id);
+          }
+        } catch {}
+
+        // Abrir modal de celebración
+        setCelebratedReservation({
+          ...activeReservation,
+          status: 'COMPLETED_IN_STORE',
+        });
+
+        // Limpiar reserva activa para apagar el punto parpadeante en dock
+        clearActiveReservation();
+      }
+
+      // 2. CLIENTE ASISTIÓ PERO NO LLEVÓ (Candado de confianza -> saldo a favor)
+      else if (status === 'ATTENDED_NO_SALE') {
+        isHandled = true;
+        playAlertChime();
+        alert('Mostrador: Se confirmó tu visita al local. El producto fue liberado y tu abono fue acreditado a tu Billetera Aura.');
+        clearActiveReservation();
+      }
+
+      // 3. AGOTADO / CANCELADO EN MOSTRADOR
+      else if (status === 'cancelled' || status === 'cancelada' || status === 'REJECTED_OUT_OF_STOCK') {
+        isHandled = true;
+        alert('Mostrador: El comercio notificó que este producto se acaba de agotar en estante.');
+        clearActiveReservation();
+      }
+
+      // 4. ACTUALIZACIÓN A ÚLTIMO PAR O CONFIRMADO
+      else if (status === 'ultimo_par' && activeReservation.status !== 'ultimo_par') {
+        setActiveReservation({ ...activeReservation, status: 'ultimo_par' });
+      }
+    };
+
+    // A. Suscripción por Postgres Changes Realtime
+    const channel = supabase
+      .channel(`active_res_dock_${resId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'reservations', filter: `id=eq.${resId}` },
+        (payload: any) => {
+          if (payload.new) {
+            handleReservationStateChange(payload.new);
+          }
+        }
+      )
+      .subscribe();
+
+    // B. Sondeo de respaldo cada 2.5s (garantiza sincronización sin depender de WebSockets)
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('reservations')
+          .select('id, status, pin_code, pin')
+          .eq('id', resId)
+          .maybeSingle();
+
+        if (data) {
+          handleReservationStateChange(data);
+        }
+      } catch {}
+    }, 2500);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+    };
+  }, [activeReservation?.id, currentTrustScore, playUnlockSuccess, playAlertChime, clearActiveReservation, setActiveReservation]);
 
   return (
     <div className="min-h-screen bg-[#020508] text-white flex flex-col font-sans relative selection:bg-[#00ffb2] selection:text-black">
@@ -127,6 +290,17 @@ export default function AuraGameShell({
       <WalletModal
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
+      />
+
+      {/* 7. MODAL DE CELEBRACIÓN DE COMPRA CONCRETADA EN CAJA */}
+      <PurchaseCelebrationModal
+        reservation={celebratedReservation}
+        trustScore={currentTrustScore}
+        onClose={() => setCelebratedReservation(null)}
+        onViewPases={() => {
+          setCelebratedReservation(null);
+          setActiveMode('pases');
+        }}
       />
 
     </div>

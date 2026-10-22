@@ -119,6 +119,26 @@ export default function TopHUD({
 
     initAuth();
 
+    // Cargar reputación local si es usuario invitado
+    if (typeof window !== 'undefined') {
+      const savedScore = localStorage.getItem('aura_trust_score');
+      if (savedScore) {
+        const parsed = Number(savedScore);
+        if (!isNaN(parsed) && parsed > 0) {
+          setTrustScore(parsed);
+          setXp(Math.min(1000, parsed * 10));
+        }
+      }
+    }
+
+    const handleScoreUpdated = (e: any) => {
+      const s = e.detail?.score || Number(localStorage.getItem('aura_trust_score')) || 100;
+      setTrustScore(s);
+      setXp(Math.min(1000, s * 10));
+    };
+
+    window.addEventListener('aura_trust_score_updated', handleScoreUpdated);
+
     // Escuchar cambios de autenticación sin llamadas bloqueantes en el callback
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
@@ -136,6 +156,7 @@ export default function TopHUD({
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+      window.removeEventListener('aura_trust_score_updated', handleScoreUpdated);
     };
   }, []);
 
@@ -354,6 +375,18 @@ export default function TopHUD({
                 </button>
               ) : (
                 <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTap();
+                      setShowUserDropdown(!showUserDropdown);
+                    }}
+                    className="cursor-pointer flex items-center gap-1.5 bg-[#050b16]/90 hover:bg-[#081224] border border-slate-800/80 px-2.5 py-1.5 rounded-xl transition-all"
+                    title="Nivel de Confianza Aura"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${levelInfo.dotClass} shrink-0`} />
+                    <span className="text-xs font-bold text-[#00ffb2]">{trustScore} pts</span>
+                  </button>
                   <Link
                     href="/login"
                     onClick={playTap}
@@ -451,54 +484,52 @@ export default function TopHUD({
                         </div>
                       )}
 
-                      {/* a) TARJETA DE NIVEL DEL USUARIO (SOLO SI LOGUEADO) */}
-                      {user && (
-                        <div
-                          onClick={() => {
-                            playTap();
-                            setShowUserDropdown(false);
-                            setShowRankModal(true);
-                          }}
-                          className={`p-3 rounded-xl ${levelInfo.badgeBg} border ${levelInfo.badgeBorder} cursor-pointer hover:border-slate-700/80 transition-all group`}
-                          title="Ver detalles de tu Nivel y Beneficios"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <div className={`relative w-8 h-8 rounded-lg ${levelInfo.badgeBg} border ${levelInfo.badgeBorder} flex items-center justify-center ${levelInfo.glowClass} shrink-0`}>
-                                <Shield size={16} color={levelInfo.iconColor} />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className={`text-xs font-black tracking-tight ${levelInfo.colorClass}`}>
-                                    {levelInfo.name}
-                                  </span>
-                                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">
-                                    {levelInfo.tier}
-                                  </span>
-                                </div>
-                                <span className="text-[10px] text-slate-400 block mt-0.5">
-                                  Reputación: <strong className="text-[#00ffb2]">{trustScore} / 100</strong>
+                      {/* a) TARJETA DE NIVEL Y REPUTACIÓN DEL USUARIO */}
+                      <div
+                        onClick={() => {
+                          playTap();
+                          setShowUserDropdown(false);
+                          setShowRankModal(true);
+                        }}
+                        className={`p-3 rounded-xl ${levelInfo.badgeBg} border ${levelInfo.badgeBorder} cursor-pointer hover:border-slate-700/80 transition-all group`}
+                        title="Ver detalles de tu Nivel y Beneficios"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`relative w-8 h-8 rounded-lg ${levelInfo.badgeBg} border ${levelInfo.badgeBorder} flex items-center justify-center ${levelInfo.glowClass} shrink-0`}>
+                              <Shield size={16} color={levelInfo.iconColor} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-xs font-black tracking-tight ${levelInfo.colorClass}`}>
+                                  {levelInfo.name}
+                                </span>
+                                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">
+                                  {levelInfo.tier}
                                 </span>
                               </div>
+                              <span className="text-[10px] text-slate-400 block mt-0.5">
+                                Reputación: <strong className="text-[#00ffb2]">{trustScore} pts</strong>
+                              </span>
                             </div>
-                            <ChevronRight size={14} className="text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
                           </div>
+                          <ChevronRight size={14} className="text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                        </div>
 
-                          {/* Barra de Progreso XP brillante */}
-                          <div className="mt-2.5">
-                            <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800/80">
-                              <div
-                                className={`h-full ${levelInfo.barClass} transition-all duration-500 shadow-sm`}
-                                style={{ width: `${xpPercent}%` }}
-                              />
-                            </div>
-                            <div className="flex justify-between items-center text-[9px] text-slate-500 font-bold mt-1">
-                              <span>Progreso de Rango</span>
-                              <span>{xpPercent}%</span>
-                            </div>
+                        {/* Barra de Progreso XP brillante */}
+                        <div className="mt-2.5">
+                          <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800/80">
+                            <div
+                              className={`h-full ${levelInfo.barClass} transition-all duration-500 shadow-sm`}
+                              style={{ width: `${xpPercent}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-[9px] text-slate-500 font-bold mt-1">
+                            <span>Progreso de Rango</span>
+                            <span>{xpPercent}%</span>
                           </div>
                         </div>
-                      )}
+                      </div>
 
                       {/* b) SALDO DE BILLETERA AURA (SOLO SI LOGUEADO) */}
                       {user && (
