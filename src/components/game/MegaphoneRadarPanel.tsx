@@ -8,6 +8,7 @@ import {
   createMegaphoneRequest,
   acceptMegaphoneQuote,
   fetchQuotesForRequest,
+  subscribeToMegaphoneBroadcast,
 } from '@/lib/megaphone';
 import { AURA_OFFICIAL_CATEGORIES } from '@/lib/categories';
 import { useGameSound } from '@/hooks/useGameSound';
@@ -130,10 +131,24 @@ export default function MegaphoneRadarPanel({
     // Primera carga inmediata
     loadQuotes();
 
-    // Reintento rápido a los 3 segundos si estaba vacío
-    const timeout = setTimeout(loadQuotes, 3000);
+    // Reintento rápido y polling de respaldo cada 3 segundos
+    const pollInterval = setInterval(loadQuotes, 3000);
 
-    // Canal Realtime Supabase
+    // a) Sincronización instantánea cross-tab
+    const unsubscribeBroadcast = subscribeToMegaphoneBroadcast((event) => {
+      if (event.type === 'NEW_QUOTE') {
+        const newQuote = event.payload as MegaphoneQuote;
+        if (newQuote.request_id === activeRequest.id) {
+          setQuotes((prev) => {
+            if (prev.some((q) => q.id === newQuote.id)) return prev;
+            playAlertChime();
+            return [newQuote, ...prev];
+          });
+        }
+      }
+    });
+
+    // b) Canal Realtime Supabase (cuando las tablas existen en la nube)
     const channel = supabase
       .channel(`megaphone_${activeRequest.id}`)
       .on(
@@ -147,7 +162,8 @@ export default function MegaphoneRadarPanel({
 
     return () => {
       isSubscribed = false;
-      clearTimeout(timeout);
+      clearInterval(pollInterval);
+      unsubscribeBroadcast();
       supabase.removeChannel(channel);
     };
   }, [activeRequest?.id, step, playAlertChime]);

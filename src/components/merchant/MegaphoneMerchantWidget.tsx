@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Store, MegaphoneRequest } from '@/types';
-import { fetchOpenRequestsForStore, submitMegaphoneQuote } from '@/lib/megaphone';
+import { fetchOpenRequestsForStore, submitMegaphoneQuote, subscribeToMegaphoneBroadcast } from '@/lib/megaphone';
 import { useGameSound } from '@/hooks/useGameSound';
 import {
   Megaphone,
@@ -84,6 +84,26 @@ export default function MegaphoneMerchantWidget({
   useEffect(() => {
     if (!store.id) return;
 
+    // a) Sincronización inmediata entre pestañas en el mismo navegador
+    const unsubscribeBroadcast = subscribeToMegaphoneBroadcast((event) => {
+      if (event.type === 'NEW_REQUEST') {
+        const newReq = event.payload as MegaphoneRequest;
+        setRequests((prev) => {
+          if (prev.some((r) => r.id === newReq.id)) return prev;
+          playAlertChime();
+          return [newReq, ...prev];
+        });
+      } else if (event.type === 'QUOTE_ACCEPTED') {
+        loadRequests();
+      }
+    });
+
+    // b) Polling de sincronización cada 3 segundos
+    const pollInterval = setInterval(() => {
+      loadRequests();
+    }, 3000);
+
+    // c) Supabase Realtime (cuando las tablas existen en la nube)
     const channel = supabase
       .channel(`megaphone_merchant_requests_${store.id}`)
       .on(
@@ -106,6 +126,8 @@ export default function MegaphoneMerchantWidget({
       .subscribe();
 
     return () => {
+      unsubscribeBroadcast();
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, [store.id, loadRequests, playAlertChime]);
