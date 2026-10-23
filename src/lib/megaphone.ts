@@ -322,33 +322,29 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
         .neq('id', params.quoteId);
     }
 
-    // Registrar reserva activa de 90 minutos en la tabla reservations con estado 'pending'
-    const reservationPayload = {
+    // 4. Registrar reserva activa de 90 minutos en la tabla reservations
+    const isValidUUID = (id?: string | null): id is string =>
+      Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+
+    const dbReservationPayload = {
       pin_code: pin,
-      pin: pin,
-      store_id: targetStore.id,
-      store_name: targetStore.name,
-      store_whatsapp: targetStore.whatsapp || '584120000000',
-      store_address: targetStore.address || targetStore.zone || 'Centro de Cumaná',
-      product_id: quote.auto_seeded_product_id || null,
-      product_name: queryText,
-      product_image: quote.photo_url || null,
-      customer_name: params.customerName || 'Comprador Radar (Megáfono)',
-      customer_phone: params.customerPhone || '04120000000',
-      price_usd: priceUsd,
+      store_id: isValidUUID(targetStore.id) ? targetStore.id : null,
+      product_id: isValidUUID(quote.auto_seeded_product_id) ? quote.auto_seeded_product_id : null,
+      customer_name: (params.customerName || 'Comprador Radar (Megáfono)').trim(),
+      customer_phone: (params.customerPhone || '04120000000').trim(),
+      selected_size: 'Única',
       total_price: priceUsd,
       unlock_fee_usd: Math.round(priceUsd * 0.05 * 100) / 100,
       store_pay_balance_usd: priceUsd,
       bcv_rate: params.bcvRate || 1,
-      status: 'pending',
+      status: 'confirmed',
       category_archetype: 'RETAIL_STANDARD',
       expires_at: expiresAt,
-      created_at: new Date().toISOString(),
     };
 
     const { data: resData, error: rInsertErr } = await supabase
       .from('reservations')
-      .insert([reservationPayload])
+      .insert([dbReservationPayload])
       .select('*')
       .single();
 
@@ -366,9 +362,33 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       rating: targetStore.rating || 4.9,
     };
 
+    const returnedReservation = {
+      id: resData?.id || `res_${Date.now()}`,
+      pin: resData?.pin_code || pin,
+      pin_code: resData?.pin_code || pin,
+      store_id: targetStore.id,
+      store_name: targetStore.name,
+      store_whatsapp: targetStore.whatsapp || '584120000000',
+      store_address: targetStore.address || targetStore.zone || 'Centro de Cumaná',
+      product_id: quote.auto_seeded_product_id || null,
+      product_name: queryText,
+      product_image: quote.photo_url || null,
+      customer_name: params.customerName || 'Comprador Radar (Megáfono)',
+      customer_phone: params.customerPhone || '04120000000',
+      price_usd: priceUsd,
+      total_price: priceUsd,
+      unlock_fee_usd: Math.round(priceUsd * 0.05 * 100) / 100,
+      store_pay_balance_usd: priceUsd,
+      bcv_rate: params.bcvRate || 1,
+      status: resData?.status || 'confirmed',
+      category_archetype: 'RETAIL_STANDARD',
+      expires_at: expiresAt,
+      created_at: resData?.created_at || new Date().toISOString(),
+    };
+
     return {
       success: true,
-      reservation: resData || reservationPayload,
+      reservation: returnedReservation,
       revealedStore,
     };
   } catch (err: any) {

@@ -157,11 +157,27 @@ export default function OwnerDashboard() {
 
   const fetchReservations = useCallback(async (sId: string) => {
     try {
-      const { data, error } = await supabase
+      let data: any[] | null = null;
+      let error: any = null;
+
+      // Intentar traer con relación de productos para obtener nombre y foto del producto
+      const resWithProducts = await supabase
         .from('reservations')
-        .select('*')
+        .select('*, products(name, imageUrl, archetype)')
         .eq('store_id', sId)
         .order('created_at', { ascending: false });
+
+      if (!resWithProducts.error && resWithProducts.data) {
+        data = resWithProducts.data;
+      } else {
+        const fallback = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('store_id', sId)
+          .order('created_at', { ascending: false });
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         console.error('Error cargando reservas en dashboard:', error);
@@ -179,14 +195,14 @@ export default function OwnerDashboard() {
             store_id: r.store_id,
             store_name: store?.name || 'Mi Tienda',
             product_id: r.product_id,
-            product_name: r.product_name || 'Producto Apartado',
-            product_image: r.product_image || r.image_url,
+            product_name: r.products?.name || r.product_name || 'Producto Apartado',
+            product_image: r.products?.imageUrl || r.product_image || r.image_url,
             selected_size: r.selected_size || 'Única',
-            category_archetype: r.category_archetype || 'RETAIL_STANDARD',
+            category_archetype: r.products?.archetype || r.category_archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
             total_price: priceUsd,
             unlock_fee_usd: Number(r.unlock_fee_usd || 0),
-            store_pay_balance_usd: Number(r.store_pay_balance_usd || priceUsd),
+            store_pay_balance_usd: Number(r.store_pay_balance_usd ?? priceUsd),
             paid_with_wallet: Boolean(r.paid_with_wallet),
             price_ves: Number((priceUsd * bcvRate).toFixed(2)),
             tasa: bcvRate,
@@ -435,7 +451,7 @@ export default function OwnerDashboard() {
       try {
         const { data: dbMatch } = await supabase
           .from('reservations')
-          .select('*')
+          .select('*, products(name, imageUrl)')
           .eq('store_id', storeId)
           .eq('pin_code', cleanPin)
           .order('created_at', { ascending: false })
@@ -448,7 +464,8 @@ export default function OwnerDashboard() {
             pin_code: dbMatch.pin_code,
             customer_name: dbMatch.customer_name,
             customer_phone: dbMatch.customer_phone,
-            product_name: 'Producto en Tienda',
+            product_name: dbMatch.products?.name || 'Producto en Tienda',
+            product_image: dbMatch.products?.imageUrl || null,
             store_name: store?.name || 'Mi Tienda',
             price_usd: Number(dbMatch.total_price || 0),
             price_ves: Number((dbMatch.total_price || 0) * (dbMatch.bcv_rate || 55)),
@@ -648,31 +665,43 @@ export default function OwnerDashboard() {
         ? Number(formData.stock) 
         : (formData.stock_status === 'available' ? 10 : formData.stock_status === 'last_units' ? 2 : 0);
 
-      if (editingStoreProductId && currentProductId) {
-        // MODO EDICIÓN: Actualizar producto base en products
-        const { error: pUpdateErr } = await supabase
-          .from('products')
-          .update({
-            name: formData.name,
-            description: formData.description.trim() || null,
-            brand: formData.brand.trim() || null,
-            imageUrl: formData.imageUrl.trim() || null,
-            category: formData.category,
-            subcategory: formData.subcategory?.trim() || null,
-            archetype: formData.category_archetype,
-            variants: variantsPayload,
-            specs: specsPayload,
-            regular_price_usd: regularPriceNum,
-            aura_price_usd: finalAuraPrice,
-            unlock_fee_usd: unlockFeeCalculated,
-            auto_confirm_stock: formData.auto_confirm_stock,
-            is_sponsored: formData.is_sponsored,
-            price: regularPriceNum || finalAuraPrice,
-          })
-          .eq('id', currentProductId);
-        if (pUpdateErr) throw pUpdateErr;
+      if (editingStoreProductId) {
+        // MODO EDICIÓN GARANTIZADO: Actualizar producto base en products sin duplicar en store_products
+        let targetProdId = currentProductId;
+        if (!targetProdId) {
+          const { data: spItem } = await supabase
+            .from('store_products')
+            .select('product_id')
+            .eq('id', editingStoreProductId)
+            .maybeSingle();
+          targetProdId = spItem?.product_id;
+        }
 
-        // Actualizar registro en store_products
+        if (targetProdId) {
+          const { error: pUpdateErr } = await supabase
+            .from('products')
+            .update({
+              name: formData.name,
+              description: formData.description.trim() || null,
+              brand: formData.brand.trim() || null,
+              imageUrl: formData.imageUrl.trim() || null,
+              category: formData.category,
+              subcategory: formData.subcategory?.trim() || null,
+              archetype: formData.category_archetype,
+              variants: variantsPayload,
+              specs: specsPayload,
+              regular_price_usd: regularPriceNum,
+              aura_price_usd: finalAuraPrice,
+              unlock_fee_usd: unlockFeeCalculated,
+              auto_confirm_stock: formData.auto_confirm_stock,
+              is_sponsored: formData.is_sponsored,
+              price: regularPriceNum || finalAuraPrice,
+            })
+            .eq('id', targetProdId);
+          if (pUpdateErr) throw pUpdateErr;
+        }
+
+        // Actualizar registro existente en store_products
         const { error: spUpdateErr } = await supabase
           .from('store_products')
           .update({
@@ -786,6 +815,7 @@ export default function OwnerDashboard() {
   const handleEditProduct = (item: any) => {
     const p = item.products || {};
     setEditingStoreProductId(item.id);
+    setSearchTerm(p.name || '');
 
     let variantLabel = '';
     let variantOpts = '';
@@ -1828,6 +1858,7 @@ export default function OwnerDashboard() {
                       onClick={() => {
                         setIsAdding(false);
                         setEditingStoreProductId(null);
+                        setSearchTerm('');
                       }}
                       className="p-1 text-slate-400 hover:text-white cursor-pointer"
                     >
@@ -1956,10 +1987,15 @@ export default function OwnerDashboard() {
                         type="text"
                         required
                         placeholder="Ej: Audífonos Inalámbricos Bluetooth o Zapato Deportivo"
-                        value={searchTerm}
+                        value={formData.name}
                         onChange={(e) => {
-                          setSearchTerm(e.target.value);
-                          setFormData({ ...formData, name: e.target.value, product_id: '' });
+                          const val = e.target.value;
+                          setSearchTerm(val);
+                          setFormData({
+                            ...formData,
+                            name: val,
+                            product_id: editingStoreProductId ? formData.product_id : '',
+                          });
                         }}
                         className="w-full p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
                       />
@@ -2334,7 +2370,10 @@ export default function OwnerDashboard() {
             <MegaphoneMerchantWidget
               store={store}
               bcvRate={tasaUsed}
-              onNavigateToReservations={() => setActiveTab('reservations')}
+              onNavigateToReservations={() => {
+                setActiveTab('reservations');
+                if (storeId) fetchReservations(storeId);
+              }}
               onQuoteSubmitted={() => {
                 if (storeId) fetchInventory(storeId);
               }}

@@ -2,7 +2,7 @@
 
 import { Product } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
-import { Unlock, Zap, Flame, Users, Sparkles, MapPin, Star, Heart } from 'lucide-react';
+import { Unlock, Zap, Flame, Users, Sparkles, MapPin, Star, Heart, ArrowRight } from 'lucide-react';
 
 interface Props {
   product: Product;
@@ -244,10 +244,10 @@ export default function GameProductCard({
           playTap();
           onSelect(product);
         }}
-        className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-900/90 via-emerald-700/80 to-teal-800 text-slate-100 font-bold py-1.5 sm:py-2 px-2 rounded-xl text-[11px] sm:text-xs transition flex items-center justify-center gap-1 shadow-sm active:scale-95"
+        className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-900/90 via-emerald-700/80 to-teal-800 text-slate-100 font-bold py-1.5 sm:py-2 px-2 rounded-xl text-[11px] sm:text-xs transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
       >
-        <Unlock size={12} className="text-[#00ffb2]" />
-        <span className="truncate">Desbloquea ${unlockFee.toFixed(2)}</span>
+        <ArrowRight size={13} className="text-[#00ffb2]" />
+        <span className="truncate">Ir por este producto</span>
       </button>
     </div>
   );
