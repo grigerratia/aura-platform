@@ -86,7 +86,7 @@ export async function createMegaphoneRequest(params: CreateMegaphoneRequestParam
     const { data, error } = await supabase
       .from('megaphone_requests')
       .insert([insertPayload])
-      .select()
+      .select('*')
       .single();
 
     if (error) {
@@ -120,14 +120,15 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
       return { success: false, error: 'Ingresa un precio válido en dólares ($ USD).' };
     }
 
-    // 1. Obtener datos de la tienda desde Supabase
+    // 1. Obtener datos de la tienda desde Supabase (usar select('*') seguro)
     const { data: store, error: storeErr } = await supabase
       .from('stores')
-      .select('id, name, owner_id, plan_tier, verification_status, megaphone_quota_used, sector_zone, zone, address, whatsapp, owner_whatsapp')
+      .select('*')
       .eq('id', params.storeId)
-      .single();
+      .maybeSingle();
 
     if (storeErr || !store) {
+      console.error('Error buscando vitrina para cotizar:', storeErr);
       return { success: false, error: 'Vitrina comercial no encontrada en la base de datos.' };
     }
 
@@ -142,14 +143,24 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
       };
     }
 
+    // Obtener información de la solicitud para auto-seeding
+    const { data: reqData } = await supabase
+      .from('megaphone_requests')
+      .select('query_text, category_id')
+      .eq('id', params.requestId)
+      .maybeSingle();
+
+    const productTitle = reqData?.query_text || 'Artículo Consultado';
+    const productCategory = reqData?.category_id || 'Moda';
+
     // 2. Auto-alimentación de catálogo en Supabase
     let autoSeededProductId: string | undefined;
     try {
       const { data: newProd } = await supabase
         .from('products')
         .insert([{
-          name: `Producto Megáfono (${params.priceUsd} USD)`,
-          category: 'Moda',
+          name: productTitle,
+          category: productCategory,
           regular_price_usd: params.priceUsd,
           aura_price_usd: params.priceUsd,
           price: params.priceUsd,
@@ -183,7 +194,7 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
       console.warn('Auto-seeding de producto omitido:', prodErr);
     }
 
-    // 3. Insertar cotización en la tabla megaphone_quotes
+    // 3. Insertar cotización en la tabla megaphone_quotes (select('*') directo)
     const quotePayload = {
       request_id: params.requestId,
       store_id: params.storeId,
@@ -197,12 +208,7 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
     const { data: quote, error: quoteErr } = await supabase
       .from('megaphone_quotes')
       .insert([quotePayload])
-      .select(`
-        *,
-        store:stores (
-          id, name, slug, rating, sector_zone, zone, address, whatsapp, owner_whatsapp, logo_url
-        )
-      `)
+      .select('*')
       .single();
 
     if (quoteErr) {
@@ -210,18 +216,34 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
       return { success: false, error: quoteErr.message };
     }
 
-    // Incrementar cuota usada
+    // Incrementar cuota usada en la tienda
     await supabase
       .from('stores')
       .update({ megaphone_quota_used: currentQuotaUsed + 1 })
       .eq('id', params.storeId);
 
+    const fullQuote: MegaphoneQuote = {
+      ...quote,
+      store: {
+        id: store.id,
+        name: store.name,
+        slug: store.slug,
+        rating: store.rating || 4.9,
+        sector_zone: store.sector_zone || store.zone || 'Sector Centro',
+        zone: store.zone,
+        address: store.address,
+        whatsapp: store.whatsapp,
+        logo_url: store.logo_url,
+      } as Store,
+    };
+
     return {
       success: true,
-      quote: quote as MegaphoneQuote,
+      quote: fullQuote,
       autoSeededProductId,
     };
   } catch (err: any) {
+    console.error('Error en submitMegaphoneQuote:', err);
     return { success: false, error: err.message || 'Error al cotizar.' };
   }
 }
@@ -240,14 +262,10 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
 
-    // Obtener cotización con relaciones desde Supabase
+    // Obtener cotización
     const { data: quote, error: qErr } = await supabase
       .from('megaphone_quotes')
-      .select(`
-        *,
-        request:megaphone_requests (*),
-        store:stores (*)
-      `)
+      .select('*')
       .eq('id', params.quoteId)
       .single();
 
@@ -255,8 +273,20 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       return { success: false, error: 'No se encontró la cotización seleccionada.' };
     }
 
-    const targetStore = quote.store;
-    const queryText = quote.request?.query_text || 'Artículo Consultado';
+    // Obtener tienda y solicitud en paralelo
+    const [storeRes, reqRes] = await Promise.all([
+      supabase.from('stores').select('*').eq('id', quote.store_id).maybeSingle(),
+      quote.request_id
+        ? supabase.from('megaphone_requests').select('*').eq('id', quote.request_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+    const targetStore = storeRes.data;
+    if (!targetStore) {
+      return { success: false, error: 'No se encontró el comercio asociado a la cotización.' };
+    }
+
+    const queryText = reqRes.data?.query_text || 'Artículo Consultado';
     const priceUsd = quote.price_usd || 15;
 
     // Actualizar estados en Supabase
@@ -271,7 +301,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
         .update({ status: 'LOCKED_WINNER' })
         .eq('id', quote.request_id);
 
-      // Descartar resto de cotizaciones
+      // Descartar resto de cotizaciones de la misma solicitud
       await supabase
         .from('megaphone_quotes')
         .update({ status: 'REJECTED' })
@@ -285,7 +315,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       pin: pin,
       store_id: targetStore.id,
       store_name: targetStore.name,
-      store_whatsapp: targetStore.whatsapp || targetStore.owner_whatsapp || '584120000000',
+      store_whatsapp: targetStore.whatsapp || '584120000000',
       store_address: targetStore.address || targetStore.zone || 'Centro de Cumaná',
       product_name: queryText,
       customer_name: params.customerName || 'Comprador Radar',
@@ -301,7 +331,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
     const { data: resData } = await supabase
       .from('reservations')
       .insert([reservationPayload])
-      .select()
+      .select('*')
       .maybeSingle();
 
     const revealedStore: Partial<Store> = {
@@ -309,7 +339,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       name: targetStore.name,
       slug: targetStore.slug,
       address: targetStore.address || targetStore.zone || 'Centro de Cumaná',
-      whatsapp: String(targetStore.whatsapp || targetStore.owner_whatsapp || '584120000000'),
+      whatsapp: String(targetStore.whatsapp || '584120000000'),
       logo_url: targetStore.logo_url,
       rating: targetStore.rating || 4.9,
     };
@@ -326,27 +356,50 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
 
 /**
  * Carga cotizaciones activas de una solicitud para el comprador en Radar
+ * (Sin depender de relaciones PostgREST frágiles)
  */
 export async function fetchQuotesForRequest(requestId: string): Promise<MegaphoneQuote[]> {
   try {
-    const { data, error } = await supabase
+    const { data: quotes, error: quotesErr } = await supabase
       .from('megaphone_quotes')
-      .select(`
-        id, request_id, store_id, price_usd, quick_note, photo_url, auto_seeded_product_id, status, created_at,
-        store:stores (
-          id, name, slug, rating, sector_zone, zone, address, whatsapp, owner_whatsapp, logo_url
-        )
-      `)
+      .select('*')
       .eq('request_id', requestId)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.warn('Error fetching quotes from Supabase:', error);
+    if (quotesErr || !quotes || quotes.length === 0) {
+      if (quotesErr) console.warn('Error fetching quotes from Supabase:', quotesErr);
       return [];
     }
 
-    return (data || []) as unknown as MegaphoneQuote[];
-  } catch {
+    // Obtener los comercios vinculados de manera segura
+    const storeIds = Array.from(new Set(quotes.map((q) => q.store_id).filter(Boolean)));
+    let storeMap: Record<string, Partial<Store>> = {};
+
+    if (storeIds.length > 0) {
+      const { data: stores } = await supabase
+        .from('stores')
+        .select('*')
+        .in('id', storeIds);
+
+      if (stores) {
+        storeMap = stores.reduce((acc, s) => {
+          acc[s.id] = s;
+          return acc;
+        }, {} as Record<string, Partial<Store>>);
+      }
+    }
+
+    return quotes.map((q) => ({
+      ...q,
+      store: storeMap[q.store_id] || {
+        id: q.store_id,
+        name: 'Vitrina Local',
+        sector_zone: 'Sector Centro',
+        rating: 4.9,
+      },
+    })) as unknown as MegaphoneQuote[];
+  } catch (err) {
+    console.warn('Error en fetchQuotesForRequest:', err);
     return [];
   }
 }
@@ -354,7 +407,10 @@ export async function fetchQuotesForRequest(requestId: string): Promise<Megaphon
 /**
  * Carga solicitudes abiertas de Megáfono para una tienda física
  */
-export async function fetchOpenRequestsForStore(storeId: string, categoryId?: string): Promise<MegaphoneRequest[]> {
+export async function fetchOpenRequestsForStore(
+  storeId: string,
+  categoryId?: string
+): Promise<(MegaphoneRequest & { alreadyQuoted?: boolean })[]> {
   try {
     const now = new Date().toISOString();
     let query = supabase
@@ -366,12 +422,31 @@ export async function fetchOpenRequestsForStore(storeId: string, categoryId?: st
       .limit(20);
 
     const { data, error } = await query;
-    if (error) {
-      console.error('Error fetching open megaphone requests:', error);
+    if (error || !data) {
+      if (error) console.error('Error fetching open megaphone requests:', error);
       return [];
     }
 
-    return (data || []) as MegaphoneRequest[];
+    // Marcar cuáles ya fueron cotizadas por esta vitrina
+    const reqIds = data.map((r) => r.id);
+    let quotedSet = new Set<string>();
+
+    if (reqIds.length > 0) {
+      const { data: quotes } = await supabase
+        .from('megaphone_quotes')
+        .select('request_id')
+        .eq('store_id', storeId)
+        .in('request_id', reqIds);
+
+      if (quotes) {
+        quotes.forEach((q) => quotedSet.add(q.request_id));
+      }
+    }
+
+    return data.map((r) => ({
+      ...r,
+      alreadyQuoted: quotedSet.has(r.id),
+    })) as (MegaphoneRequest & { alreadyQuoted?: boolean })[];
   } catch {
     return [];
   }

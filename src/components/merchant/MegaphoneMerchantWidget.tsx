@@ -143,17 +143,32 @@ export default function MegaphoneMerchantWidget({
         .from('product-images')
         .upload(cleanPath, file, { upsert: true });
 
-      if (error) throw error;
+      if (error) {
+        // Fallback resiliente a FileReader si el bucket tiene restricciones
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            setPhotoUrl(event.target.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        const { data: publicUrlData } = supabase.storage
+          .from('product-images')
+          .getPublicUrl(cleanPath);
 
-      const { data: publicUrlData } = supabase.storage
-        .from('product-images')
-        .getPublicUrl(cleanPath);
-
-      if (publicUrlData?.publicUrl) {
-        setPhotoUrl(publicUrlData.publicUrl);
+        if (publicUrlData?.publicUrl) {
+          setPhotoUrl(publicUrlData.publicUrl);
+        }
       }
     } catch (err: any) {
-      alert('No se pudo subir la foto: ' + (err.message || 'Error de red'));
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setPhotoUrl(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
     } finally {
       setUploadingImage(false);
     }

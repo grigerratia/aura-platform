@@ -21,8 +21,8 @@ import {
   Sparkles,
   Megaphone,
 } from 'lucide-react';
-import MegaphoneRadarPanel from '../MegaphoneRadarPanel';
 import { useGameSound } from '@/hooks/useGameSound';
+import { useMegaphoneStore } from '@/store/useMegaphoneStore';
 import { matchProductCategory } from '@/lib/categories';
 import {
   CUMANA_CENTER,
@@ -111,8 +111,7 @@ export default function RadarMode({
 
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [showStoresModal, setShowStoresModal] = useState(false);
-  const [showMegaphoneModal, setShowMegaphoneModal] = useState(false);
-  const [megaphoneInitialQuery, setMegaphoneInitialQuery] = useState('');
+  const { openMegaphoneWithQuery } = useMegaphoneStore();
 
   const selectedStore = useMemo(() => {
     return selectedStoreId ? storesById.get(selectedStoreId) : null;
@@ -373,8 +372,7 @@ export default function RadarMode({
             type="button"
             onClick={() => {
               playTap();
-              setMegaphoneInitialQuery(activeQuery || inputValue);
-              setShowMegaphoneModal(true);
+              openMegaphoneWithQuery(activeQuery || inputValue, selectedCategory !== 'all' ? selectedCategory : 'moda');
             }}
             className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-950 text-xs font-bold transition active:scale-95 shadow-sm cursor-pointer"
           >
@@ -507,8 +505,7 @@ export default function RadarMode({
                 type="button"
                 onClick={() => {
                   playTap();
-                  setMegaphoneInitialQuery(activeQuery || inputValue);
-                  setShowMegaphoneModal(true);
+                  openMegaphoneWithQuery(activeQuery || inputValue, selectedCategory !== 'all' ? selectedCategory : 'moda');
                 }}
                 className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition active:scale-95 shadow-md"
               >
@@ -706,13 +703,6 @@ export default function RadarMode({
         )}
       </AnimatePresence>
 
-      {/* 5. PANEL MONOLITO: EL MEGÁFONO */}
-      <MegaphoneRadarPanel
-        isOpen={showMegaphoneModal}
-        onClose={() => setShowMegaphoneModal(false)}
-        initialQuery={megaphoneInitialQuery || activeQuery || inputValue}
-        initialCategory={selectedCategory !== 'all' ? selectedCategory : 'moda'}
-      />
     </div>
   );
 }

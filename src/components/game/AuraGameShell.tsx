@@ -16,6 +16,9 @@ import WalletModal from '../WalletModal';
 import { useReservations } from '@/store/useReservations';
 import { supabase } from '@/lib/supabase';
 import { useGameSound } from '@/hooks/useGameSound';
+import MegaphoneGlobalListener from './MegaphoneGlobalListener';
+import MegaphoneFloatingCapsule from './MegaphoneFloatingCapsule';
+import MegaphoneRadarPanel from './MegaphoneRadarPanel';
 
 interface Props {
   initialProducts: Product[];
@@ -387,6 +390,11 @@ export default function AuraGameShell({
           setActiveMode('pases');
         }}
       />
+
+      {/* 8. EL MEGÁFONO: LISTENER EN SEGUNDO PLANO Y CÁPSULA FLOTANTE NO INTRUSIVA */}
+      <MegaphoneGlobalListener />
+      <MegaphoneFloatingCapsule hasActiveReservation={!!activeReservation && !selectedProduct} />
+      <MegaphoneRadarPanel bcvRate={initialTasa} />
 
     </div>
   );
