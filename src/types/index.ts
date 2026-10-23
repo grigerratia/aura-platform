@@ -126,6 +126,8 @@ export interface Store {
   ad_credits_usd?: number; // Saldo para Aura Ads
   aura_plan_id?: string;
   special_plan?: number | null;
+  megaphone_quota_used?: number; // Cuota mensual usada para responder al Megáfono
+  sector_zone?: string; // Ubicación aproximada para Modo Incógnito (ej: "Sector Centro", "Av. Bermúdez")
   created_at?: string;
 }
 
@@ -303,4 +305,50 @@ export interface AuraPlan {
   price: number;
   description?: string;
   is_active?: boolean;
+}
+
+// ==============================================================================
+// 6. EL MEGÁFONO - BÚSQUEDA INVERSA EN TIEMPO REAL
+// ==============================================================================
+export type MegaphoneRequestStatus = 'OPEN' | 'LOCKED_WINNER' | 'EXPIRED' | 'CANCELLED';
+export type MegaphoneQuoteStatus = 'SENT' | 'ACCEPTED_BY_BUYER' | 'REJECTED';
+
+export interface MegaphoneRequest {
+  id: string;
+  user_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  query_text: string;
+  category_id: string;
+  city?: string;
+  status: MegaphoneRequestStatus;
+  expires_at: string;
+  created_at: string;
+  quotes_count?: number;
+}
+
+export interface MegaphoneQuote {
+  id: string;
+  request_id: string;
+  store_id: string;
+  price_usd: number;
+  quick_note?: string | null;
+  photo_url?: string | null;
+  auto_seeded_product_id?: string | null;
+  status: MegaphoneQuoteStatus;
+  created_at: string;
+  // Campos puente incógnito / revelado
+  store?: {
+    id: string;
+    name: string;
+    slug?: string;
+    rating?: number;
+    sector_zone?: string;
+    zone?: string;
+    address?: string;
+    whatsapp?: string;
+    owner_whatsapp?: string;
+    logo_url?: string;
+    verification_status?: StoreVerificationStatus;
+  };
 }

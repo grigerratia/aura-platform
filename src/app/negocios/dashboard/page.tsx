@@ -12,15 +12,16 @@ import {
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
   ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight,
-  Upload, Image as ImageIcon, Camera, Compass
+  Upload, Image as ImageIcon, Camera, Compass, Radio
 } from 'lucide-react';
 import Link from 'next/link';
+import MegaphoneMerchantWidget from '@/components/merchant/MegaphoneMerchantWidget';
 
 export default function OwnerDashboard() {
   const router = useRouter();
   const [storeId, setStoreId] = useState<string | null>(null);
   const [store, setStore] = useState<Store | null>(null);
-  const [activeTab, setActiveTab] = useState<'reservations' | 'history' | 'inventory' | 'qr'>('reservations');
+  const [activeTab, setActiveTab] = useState<'reservations' | 'history' | 'inventory' | 'qr' | 'megaphone'>('reservations');
   const [loading, setLoading] = useState(true);
 
   // Inventario
@@ -874,6 +875,18 @@ export default function OwnerDashboard() {
           >
             <QrCode size={16} className={activeTab === 'qr' ? 'text-emerald-400' : ''} />
             <span className="whitespace-nowrap">Hablador QR</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('megaphone')}
+            className={`cursor-pointer flex items-center gap-2.5 w-full p-2.5 rounded-xl font-bold text-xs transition ${
+              activeTab === 'megaphone'
+                ? 'bg-slate-900 text-white border border-slate-800'
+                : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
+            }`}
+          >
+            <Radio size={16} className={activeTab === 'megaphone' ? 'text-emerald-400' : 'text-[#00ffb2] animate-pulse'} />
+            <span className="whitespace-nowrap">📢 El Megáfono</span>
           </button>
 
           <Link
@@ -1980,6 +1993,30 @@ export default function OwnerDashboard() {
                 <span>Imprimir Cartel</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* PESTAÑA 5: EL MEGÁFONO EN VIVO */}
+        {activeTab === 'megaphone' && store && (
+          <div className="space-y-4">
+            <header>
+              <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <span>📢 El Megáfono en Vivo</span>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30">
+                  Radar Inverso
+                </span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                Responde en 3 segundos a compradores que buscan artículos específicos en Radar. Cada respuesta auto-alimenta tu catálogo en Aura.
+              </p>
+            </header>
+
+            <MegaphoneMerchantWidget
+              store={store}
+              onQuoteSubmitted={() => {
+                if (storeId) fetchInventory(storeId);
+              }}
+            />
           </div>
         )}
 

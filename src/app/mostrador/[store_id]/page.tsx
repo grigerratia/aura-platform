@@ -9,9 +9,10 @@ import { useGameSound } from '@/hooks/useGameSound';
 import {
   Store as StoreIcon, Lock, CheckCircle2, AlertCircle,
   Clock, Check, X, ShieldCheck, RefreshCw, LogOut,
-  Smartphone, Search, ChevronRight, Sparkles, QrCode
+  Smartphone, Search, ChevronRight, Sparkles, QrCode, Radio
 } from 'lucide-react';
 import Link from 'next/link';
+import MegaphoneMerchantWidget from '@/components/merchant/MegaphoneMerchantWidget';
 
 export default function MostradorPage() {
   const params = useParams();
@@ -27,7 +28,7 @@ export default function MostradorPage() {
   const [pinError, setPinError] = useState(false);
 
   // Pestañas del Mostrador
-  const [activeTab, setActiveTab] = useState<'semaphore' | 'validate' | 'history'>('semaphore');
+  const [activeTab, setActiveTab] = useState<'semaphore' | 'validate' | 'history' | 'megaphone'>('semaphore');
 
   // Reservas pendientes y en curso
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -591,6 +592,18 @@ export default function MostradorPage() {
             <CheckCircle2 size={16} />
             <span>Historial ({completedToday.length})</span>
           </button>
+
+          <button
+            onClick={() => { setActiveTab('megaphone'); setValidationSuccessMsg(null); }}
+            className={`cursor-pointer flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition ${
+              activeTab === 'megaphone'
+                ? 'border-[#00ffb2] text-[#00ffb2] bg-emerald-950/20'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Radio size={16} className={activeTab === 'megaphone' ? 'text-[#00ffb2]' : 'text-amber-400 animate-pulse'} />
+            <span>📢 El Megáfono</span>
+          </button>
         </div>
       </header>
 
@@ -883,6 +896,22 @@ export default function MostradorPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* PESTAÑA 4: EL MEGÁFONO EN CAJA */}
+        {activeTab === 'megaphone' && store && (
+          <div className="space-y-4">
+            <div className="bg-[#030812] border border-emerald-500/30 rounded-2xl p-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Radio size={18} className="text-[#00ffb2] animate-pulse" />
+                <span>📢 Terminal de Búsqueda Inversa — El Megáfono</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Cotiza directamente desde mostrador cuando un cliente busque repuestos o productos que tienes en estante.
+              </p>
+            </div>
+            <MegaphoneMerchantWidget store={store} />
           </div>
         )}
 

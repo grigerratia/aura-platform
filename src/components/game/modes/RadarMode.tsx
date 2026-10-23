@@ -17,7 +17,10 @@ import {
   Heart,
   Radar as RadarIcon,
   Store as StoreIcon,
+  Radio,
+  Sparkles,
 } from 'lucide-react';
+import MegaphoneRadarPanel from '../MegaphoneRadarPanel';
 import { useGameSound } from '@/hooks/useGameSound';
 import { matchProductCategory } from '@/lib/categories';
 import {
@@ -107,6 +110,8 @@ export default function RadarMode({
 
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [showStoresModal, setShowStoresModal] = useState(false);
+  const [showMegaphoneModal, setShowMegaphoneModal] = useState(false);
+  const [megaphoneInitialQuery, setMegaphoneInitialQuery] = useState('');
 
   const selectedStore = useMemo(() => {
     return selectedStoreId ? storesById.get(selectedStoreId) : null;
@@ -344,6 +349,46 @@ export default function RadarMode({
         accentColor="#00ffb2"
       />
 
+      {/* 2.2 BANNER PROACTIVO: EL MEGÁFONO (BÚSQUEDA INVERSA EN VIVO) */}
+      <div className="mx-2 sm:mx-4">
+        <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-emerald-950/40 via-[#050b16]/90 to-teal-950/40 border border-emerald-500/30 p-2.5 sm:p-3 backdrop-blur-xl shadow-[0_8px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent" />
+          
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-900/60 to-slate-950 border border-emerald-500/40 flex items-center justify-center text-[#00ffb2] shrink-0 shadow-inner">
+              <Radio size={16} className="animate-pulse" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] uppercase font-bold text-[#00ffb2] tracking-wider">
+                  Búsqueda Inversa en Tiempo Real
+                </span>
+                <span className="text-[9px] font-mono font-medium text-emerald-400/80 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                  Gratis
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-200 font-medium truncate">
+                ¿No consigues lo que buscas? <span className="text-white font-bold">Lanza El Megáfono</span> a todos los mostradores de Cumaná
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              playTap();
+              setMegaphoneInitialQuery(activeQuery || inputValue);
+              setShowMegaphoneModal(true);
+            }}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-950 text-xs font-bold transition active:scale-95 shadow-sm cursor-pointer"
+          >
+            <Radio size={13} />
+            <span className="hidden sm:inline">Lanzar</span>
+            <span>Megáfono</span>
+          </button>
+        </div>
+      </div>
+
       {/* 2.5 BANNER DE VITRINA COMERCIAL ACTIVA (FILTRADO POR TIENDA) */}
       {selectedStore && (
         <div className="relative mx-4 rounded-2xl overflow-hidden bg-gradient-to-r from-emerald-950/40 via-[#050b16]/90 to-teal-950/40 border border-emerald-500/40 p-3 sm:p-3.5 backdrop-blur-xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] flex flex-wrap items-center justify-between gap-3">
@@ -461,20 +506,36 @@ export default function RadarMode({
                 ? 'Puedes limpiar los filtros de búsqueda o ver los productos de todas las vitrinas.'
                 : 'Prueba buscando otro término, cambiando de categoría o desactivando filtros.'}
             </p>
-            {(selectedStoreId || activeQuery || selectedCategory !== 'all' || !activeFilters.near || activeFilters.rating || activeFilters.favorites || activeFilters.followedStores) && (
+            {/* Botón directo para lanzar el Megáfono si no hay resultados */}
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  setSelectedStoreId(null);
-                  setSelectedCategory('all');
-                  handleClearSearch();
-                  setActiveFilters({ near: true, rating: false, favorites: false, followedStores: false });
+                  playTap();
+                  setMegaphoneInitialQuery(activeQuery || inputValue);
+                  setShowMegaphoneModal(true);
                 }}
-                className="mt-2 cursor-pointer bg-gradient-to-r from-emerald-800 to-teal-700 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-100 hover:text-black font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95"
+                className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition active:scale-95 shadow-md"
               >
-                Restablecer todos los filtros
+                <Radio size={14} />
+                <span>📢 Preguntar a mostradores con El Megáfono</span>
               </button>
-            )}
+
+              {(selectedStoreId || activeQuery || selectedCategory !== 'all' || !activeFilters.near || activeFilters.rating || activeFilters.favorites || activeFilters.followedStores) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedStoreId(null);
+                    setSelectedCategory('all');
+                    handleClearSearch();
+                    setActiveFilters({ near: true, rating: false, favorites: false, followedStores: false });
+                  }}
+                  className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-2.5 rounded-xl text-xs transition active:scale-95"
+                >
+                  Restablecer filtros
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -649,6 +710,14 @@ export default function RadarMode({
           </div>
         )}
       </AnimatePresence>
+
+      {/* 5. PANEL MONOLITO: EL MEGÁFONO */}
+      <MegaphoneRadarPanel
+        isOpen={showMegaphoneModal}
+        onClose={() => setShowMegaphoneModal(false)}
+        initialQuery={megaphoneInitialQuery || activeQuery || inputValue}
+        initialCategory={selectedCategory !== 'all' ? selectedCategory : 'moda'}
+      />
     </div>
   );
 }
