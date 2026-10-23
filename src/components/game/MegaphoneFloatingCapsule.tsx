@@ -109,3 +109,4 @@ export default function MegaphoneFloatingCapsule({ hasActiveReservation = false 
     </motion.div>
   );
 }
+

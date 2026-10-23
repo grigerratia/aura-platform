@@ -79,10 +79,7 @@ export default function MostradorPage() {
     try {
       const { data, error } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          products (name, imageUrl, archetype, regular_price_usd, aura_price_usd)
-        `)
+        .select('*')
         .eq('store_id', storeId)
         .order('created_at', { ascending: false });
 
@@ -91,9 +88,9 @@ export default function MostradorPage() {
           const priceUsd = Number(r.total_price || r.price_usd || 0);
           return {
             ...r,
-            product_name: r.products?.name || r.product_name || 'Producto Reservado',
-            image_url: r.products?.imageUrl || r.products?.image_url || r.image_url,
-            category_archetype: r.products?.archetype || r.products?.category_archetype || r.category_archetype || 'RETAIL_STANDARD',
+            product_name: r.product_name || 'Producto Reservado',
+            image_url: r.product_image || r.image_url,
+            category_archetype: r.category_archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
             aura_price_usd: r.aura_price_usd ? Number(r.aura_price_usd) : priceUsd,
             unlock_fee_usd: r.unlock_fee_usd ? Number(r.unlock_fee_usd) : 0,
@@ -104,9 +101,9 @@ export default function MostradorPage() {
           };
         });
 
-        // Contar pendientes actuales
+        // Contar pendientes actuales (incluyendo tickets confirmados de megáfono)
         const currentPending = mapped.filter(
-          (r) => r.status === 'pending' || r.status === 'pendiente' || r.status === 'PENDING_STOCK_CHECK'
+          (r) => r.status === 'pending' || r.status === 'pendiente' || r.status === 'PENDING_STOCK_CHECK' || r.status === 'confirmed' || r.status === 'confirmada'
         ).length;
 
         // Si llegó una nueva solicitud de verificación de estante, sonar alerta

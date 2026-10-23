@@ -92,3 +92,4 @@ export default function MegaphoneGlobalListener() {
 
   return null;
 }
+

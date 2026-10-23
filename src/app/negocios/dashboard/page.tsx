@@ -1,35 +1,50 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Reservation, Store, CategoryArchetype } from '@/types';
 import { getArchetypeConfig, refundFeeToWallet, logLostDemand } from '@/lib/monetization';
 import { AURA_OFFICIAL_CATEGORIES } from '@/lib/categories';
+import { useGameSound } from '@/hooks/useGameSound';
 import {
   Package, Plus, Trash2, Loader2,
   CheckCircle2, AlertCircle, LogOut,
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
   ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight,
-  Upload, Image as ImageIcon, Camera, Compass, Radio, Megaphone
+  Upload, Image as ImageIcon, Camera, Compass, Radio, Megaphone,
+  Edit, Ticket
 } from 'lucide-react';
 import Link from 'next/link';
 import MegaphoneMerchantWidget from '@/components/merchant/MegaphoneMerchantWidget';
 
 export default function OwnerDashboard() {
   const router = useRouter();
+  const { playAlertChime, playUnlockSuccess, playTap } = useGameSound();
+
   const [storeId, setStoreId] = useState<string | null>(null);
   const [store, setStore] = useState<Store | null>(null);
   const [activeTab, setActiveTab] = useState<'reservations' | 'history' | 'inventory' | 'qr' | 'megaphone'>('reservations');
   const [loading, setLoading] = useState(true);
   const [openMegaphoneCount, setOpenMegaphoneCount] = useState(0);
 
+  // Alerta de nuevo ticket en tiempo real
+  const [newTicketAlert, setNewTicketAlert] = useState<{
+    pin: string;
+    productName: string;
+    price: number;
+    customerName?: string;
+  } | null>(null);
+  const prevPendingCount = useRef<number>(0);
+
   // Inventario
   const [products, setProducts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [globalResults, setGlobalResults] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingStoreProductId, setEditingStoreProductId] = useState<string | null>(null);
+  const [inventoryFilter, setInventoryFilter] = useState<'all' | 'active' | 'paused'>('all');
 
   // Reservas
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -144,14 +159,16 @@ export default function OwnerDashboard() {
     try {
       const { data, error } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          products (name, imageUrl, archetype)
-        `)
+        .select('*')
         .eq('store_id', sId)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
+      if (error) {
+        console.error('Error cargando reservas en dashboard:', error);
+        return;
+      }
+
+      if (data) {
         const mapped: Reservation[] = data.map((r: any) => {
           const priceUsd = Number(r.total_price || r.price_usd || 0);
           const bcvRate = Number(r.bcv_rate || r.tasa || 55);
@@ -162,10 +179,10 @@ export default function OwnerDashboard() {
             store_id: r.store_id,
             store_name: store?.name || 'Mi Tienda',
             product_id: r.product_id,
-            product_name: r.products?.name || r.product_name || 'Producto Apartado',
-            product_image: r.products?.imageUrl || r.products?.image_url || r.product_image,
+            product_name: r.product_name || 'Producto Apartado',
+            product_image: r.product_image || r.image_url,
             selected_size: r.selected_size || 'Única',
-            category_archetype: r.category_archetype || r.products?.archetype || 'RETAIL_STANDARD',
+            category_archetype: r.category_archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
             total_price: priceUsd,
             unlock_fee_usd: Number(r.unlock_fee_usd || 0),
@@ -185,8 +202,8 @@ export default function OwnerDashboard() {
         setReservations(mapped);
         return;
       }
-    } catch {
-      // Silencioso
+    } catch (err) {
+      console.error('Excepción en fetchReservations:', err);
     }
   }, [store?.name]);
 
@@ -275,7 +292,17 @@ export default function OwnerDashboard() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'reservations', filter: `store_id=eq.${storeId}` },
-        () => {
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newRes = payload.new as any;
+            playAlertChime();
+            setNewTicketAlert({
+              pin: newRes.pin_code || newRes.pin || '0000',
+              productName: newRes.product_name || 'Nuevo Producto Apartado',
+              price: Number(newRes.total_price || newRes.price_usd || 0),
+              customerName: newRes.customer_name,
+            });
+          }
           fetchReservations(storeId);
         }
       )
@@ -617,13 +644,16 @@ export default function OwnerDashboard() {
       if (wholesalePriceNum) specsPayload.wholesale_price_usd = wholesalePriceNum;
       specsPayload.has_discount = hasDiscount;
 
-      if (!currentProductId) {
-        const uniqueSlug = `${formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
-        const { data: newP, error: pError } = await supabase
+      const finalStock = Number(formData.stock) > 0 
+        ? Number(formData.stock) 
+        : (formData.stock_status === 'available' ? 10 : formData.stock_status === 'last_units' ? 2 : 0);
+
+      if (editingStoreProductId && currentProductId) {
+        // MODO EDICIÓN: Actualizar producto base en products
+        const { error: pUpdateErr } = await supabase
           .from('products')
-          .insert([{ 
+          .update({
             name: formData.name,
-            slug: uniqueSlug,
             description: formData.description.trim() || null,
             brand: formData.brand.trim() || null,
             imageUrl: formData.imageUrl.trim() || null,
@@ -637,40 +667,84 @@ export default function OwnerDashboard() {
             unlock_fee_usd: unlockFeeCalculated,
             auto_confirm_stock: formData.auto_confirm_stock,
             is_sponsored: formData.is_sponsored,
-            published_at: new Date().toISOString(),
             price: regularPriceNum || finalAuraPrice,
-          }])
-          .select()
-          .single();
-        if (pError) throw pError;
-        currentProductId = newP.id;
+          })
+          .eq('id', currentProductId);
+        if (pUpdateErr) throw pUpdateErr;
+
+        // Actualizar registro en store_products
+        const { error: spUpdateErr } = await supabase
+          .from('store_products')
+          .update({
+            price: finalAuraPrice,
+            stock: finalStock,
+            discount_percent: discountPercent,
+            is_active: formData.is_active,
+            metadata: {
+              is_wholesale: isWholesale,
+              wholesale_min_units: wholesaleMinUnits,
+              wholesale_price_usd: wholesalePriceNum,
+              has_discount: hasDiscount,
+            }
+          })
+          .eq('id', editingStoreProductId);
+        if (spUpdateErr) throw spUpdateErr;
+
+        alert('✓ Producto actualizado exitosamente.');
+      } else {
+        if (!currentProductId) {
+          const uniqueSlug = `${formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
+          const { data: newP, error: pError } = await supabase
+            .from('products')
+            .insert([{ 
+              name: formData.name,
+              slug: uniqueSlug,
+              description: formData.description.trim() || null,
+              brand: formData.brand.trim() || null,
+              imageUrl: formData.imageUrl.trim() || null,
+              category: formData.category,
+              subcategory: formData.subcategory?.trim() || null,
+              archetype: formData.category_archetype,
+              variants: variantsPayload,
+              specs: specsPayload,
+              regular_price_usd: regularPriceNum,
+              aura_price_usd: finalAuraPrice,
+              unlock_fee_usd: unlockFeeCalculated,
+              auto_confirm_stock: formData.auto_confirm_stock,
+              is_sponsored: formData.is_sponsored,
+              published_at: new Date().toISOString(),
+              price: regularPriceNum || finalAuraPrice,
+            }])
+            .select()
+            .single();
+          if (pError) throw pError;
+          currentProductId = newP.id;
+        }
+
+        const { error: spError } = await supabase
+          .from('store_products')
+          .insert([{
+            store_id: storeId,
+            product_id: currentProductId,
+            price: finalAuraPrice,
+            stock: finalStock,
+            discount_percent: discountPercent,
+            is_active: formData.is_active,
+            metadata: {
+              is_wholesale: isWholesale,
+              wholesale_min_units: wholesaleMinUnits,
+              wholesale_price_usd: wholesalePriceNum,
+              has_discount: hasDiscount,
+            }
+          }]);
+
+        if (spError) throw spError;
+
+        alert(`✓ Producto publicado exitosamente en ${hasDiscount ? 'Ofertas Relámpago' : 'Radar'}${isWholesale ? ' y Manadas' : ''}.`);
       }
 
-      const finalStock = Number(formData.stock) > 0 
-        ? Number(formData.stock) 
-        : (formData.stock_status === 'available' ? 10 : formData.stock_status === 'last_units' ? 2 : 0);
-
-      const { error: spError } = await supabase
-        .from('store_products')
-        .insert([{
-          store_id: storeId,
-          product_id: currentProductId,
-          price: finalAuraPrice,
-          stock: finalStock,
-          discount_percent: discountPercent,
-          is_active: formData.is_active,
-          metadata: {
-            is_wholesale: isWholesale,
-            wholesale_min_units: wholesaleMinUnits,
-            wholesale_price_usd: wholesalePriceNum,
-            has_discount: hasDiscount,
-          }
-        }]);
-
-      if (spError) throw spError;
-
-      alert(`✓ Producto publicado exitosamente en ${hasDiscount ? 'Ofertas Relámpago' : 'Radar'}${isWholesale ? ' y Manadas' : ''}.`);
       setIsAdding(false);
+      setEditingStoreProductId(null);
       setFormData({
         product_id: '',
         name: '',
@@ -706,6 +780,85 @@ export default function OwnerDashboard() {
       alert(error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEditProduct = (item: any) => {
+    const p = item.products || {};
+    setEditingStoreProductId(item.id);
+
+    let variantLabel = '';
+    let variantOpts = '';
+    if (p.variants && Array.isArray(p.variants) && p.variants.length > 0) {
+      variantLabel = p.variants[0].label || '';
+      variantOpts = Array.isArray(p.variants[0].options) ? p.variants[0].options.join(', ') : '';
+    }
+
+    let spec1Val = '';
+    let spec2Val = '';
+    if (p.specs && typeof p.specs === 'object') {
+      const keys = Object.keys(p.specs).filter(k => !k.startsWith('is_') && !k.startsWith('has_') && !k.includes('wholesale'));
+      if (keys[0]) spec1Val = p.specs[keys[0]] || '';
+      if (keys[1]) spec2Val = p.specs[keys[1]] || '';
+    }
+
+    const regPrice = p.regular_price_usd || item.price || 0;
+    const auraPrice = p.aura_price_usd || item.price || 0;
+    const hasDiscount = Boolean(item.has_discount || item.discount_percent > 0 || item.metadata?.has_discount || p.has_discount);
+    const isWholesale = Boolean(item.is_wholesale || item.metadata?.is_wholesale || p.is_wholesale || p.specs?.is_wholesale);
+    const wholesaleMin = item.wholesale_min_units || item.metadata?.wholesale_min_units || p.specs?.wholesale_min_units || 6;
+    const wholesalePrice = item.metadata?.wholesale_price_usd || p.specs?.wholesale_price_usd || '';
+
+    setFormData({
+      product_id: p.id || item.product_id,
+      name: p.name || '',
+      description: p.description || '',
+      brand: p.brand || '',
+      imageUrl: p.imageUrl || p.image_url || '',
+      category: p.category || 'Moda',
+      subcategory: p.subcategory || '',
+      category_archetype: p.archetype || p.category_archetype || 'RETAIL_STANDARD',
+      price: String(regPrice || auraPrice || ''),
+      regular_price: String(regPrice || ''),
+      sale_price: hasDiscount ? String(auraPrice || '') : '',
+      stock: item.stock ?? 10,
+      variant_label: variantLabel,
+      variant_options: variantOpts,
+      spec_1_label: 'Conectividad / Material',
+      spec_1_val: spec1Val,
+      spec_2_label: 'Garantía / Modelo',
+      spec_2_val: spec2Val,
+      auto_confirm_stock: Boolean(p.auto_confirm_stock),
+      stock_quota: item.stock ?? 10,
+      stock_status: item.stock > 2 ? 'available' : item.stock > 0 ? 'last_units' : 'sold_out',
+      is_clearance: Boolean(p.is_clearance),
+      is_sponsored: Boolean(p.is_sponsored),
+      is_active: Boolean(item.is_active),
+      has_discount: hasDiscount,
+      is_wholesale: isWholesale,
+      wholesale_min_units: wholesaleMin,
+      wholesale_price: String(wholesalePrice || ''),
+    });
+
+    setIsAdding(true);
+  };
+
+  const handleToggleActive = async (storeProductId: string, currentActive: boolean) => {
+    try {
+      const nextActive = !currentActive;
+      setProducts(prev => prev.map(p => p.id === storeProductId ? { ...p, is_active: nextActive } : p));
+      
+      const { error } = await supabase
+        .from('store_products')
+        .update({ is_active: nextActive })
+        .eq('id', storeProductId);
+
+      if (error) {
+        console.error('Error actualizando estado de producto:', error);
+        if (storeId) fetchInventory(storeId);
+      }
+    } catch (err) {
+      console.error('Error al pausar/activar producto:', err);
     }
   };
 
@@ -818,7 +971,57 @@ export default function OwnerDashboard() {
 
   return (
     <div className="min-h-screen bg-[#020508] text-slate-200 flex flex-col md:flex-row font-sans selection:bg-[#00ffb2] selection:text-black">
-      
+      {/* ALERTA EN VIVO: NUEVO BOLETO APARTADO */}
+      {newTicketAlert && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm w-[92%] sm:w-full bg-[#030914] border-2 border-emerald-500 rounded-2xl p-4 shadow-[0_10px_40px_rgba(0,255,178,0.35)] animate-in slide-in-from-top duration-300">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center shrink-0 border border-emerald-500/40">
+                <Ticket size={22} className="animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-[#00ffb2] tracking-wider block">
+                  ¡Nuevo Boleto Apartado!
+                </span>
+                <h4 className="text-sm font-bold text-white leading-tight">
+                  {newTicketAlert.productName}
+                </h4>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="font-mono text-sm font-black text-emerald-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    PIN #{newTicketAlert.pin}
+                  </span>
+                  <span className="text-xs font-bold text-white">
+                    ${newTicketAlert.price.toFixed(2)} USD
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setNewTicketAlert(null)}
+              className="text-slate-400 hover:text-white p-1 cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => {
+                playTap();
+                setActiveTab('reservations');
+                setPinInput(newTicketAlert.pin);
+                setNewTicketAlert(null);
+              }}
+              className="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <CheckCircle2 size={14} />
+              <span>Ir a Validar PIN #{newTicketAlert.pin}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 1. SIDEBAR DE COMERCIO */}
       <aside className="w-full md:w-64 bg-[#030910] border-r border-slate-900 flex flex-col shrink-0">
         
@@ -1414,7 +1617,10 @@ export default function OwnerDashboard() {
                   </button>
                 )}
                 <button
-                  onClick={() => setIsAdding(true)}
+                  onClick={() => {
+                    setEditingStoreProductId(null);
+                    setIsAdding(true);
+                  }}
                   className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
                 >
                   <Plus size={15} />
@@ -1422,6 +1628,47 @@ export default function OwnerDashboard() {
                 </button>
               </div>
             </header>
+
+            {/* Filtros de Inventario (Visibles vs Pausados) */}
+            {products.length > 0 && (
+              <div className="flex items-center gap-1.5 p-1 bg-[#030910] rounded-xl border border-slate-900 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setInventoryFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    inventoryFilter === 'all'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Todos ({products.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInventoryFilter('active')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    inventoryFilter === 'active'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Visibles ({products.filter((p) => p.is_active).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInventoryFilter('paused')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    inventoryFilter === 'paused'
+                      ? 'bg-slate-800 text-amber-300 border border-slate-700'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span>Pausados ({products.filter((p) => !p.is_active).length})</span>
+                </button>
+              </div>
+            )}
 
             {products.length === 0 ? (
               <div className="bg-[#030910] border border-slate-900 rounded-2xl p-10 text-center max-w-md mx-auto space-y-3">
@@ -1431,7 +1678,10 @@ export default function OwnerDashboard() {
                   Agrega tus artículos estrella para que los compradores puedan reservarlos.
                 </p>
                 <button
-                  onClick={() => setIsAdding(true)}
+                  onClick={() => {
+                    setEditingStoreProductId(null);
+                    setIsAdding(true);
+                  }}
                   className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 transition"
                 >
                   <Plus size={14} />
@@ -1440,7 +1690,13 @@ export default function OwnerDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {products.map((item) => {
+                {products
+                  .filter((p) => {
+                    if (inventoryFilter === 'active') return p.is_active;
+                    if (inventoryFilter === 'paused') return !p.is_active;
+                    return true;
+                  })
+                  .map((item) => {
                   const archetype = getArchetypeConfig(item.products?.category_archetype);
                   const p = item.products;
 
@@ -1517,17 +1773,42 @@ export default function OwnerDashboard() {
                         </div>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
+                      <div className="pt-2.5 border-t border-slate-900 flex items-center justify-between gap-2 text-xs flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEditProduct(item)}
+                            className="cursor-pointer px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold flex items-center gap-1 transition"
+                            title="Editar detalles de este producto"
+                          >
+                            <Edit size={12} className="text-emerald-400" />
+                            <span>Editar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(item.id, item.is_active)}
+                            className={`cursor-pointer px-2 py-1 rounded-lg font-bold flex items-center gap-1 transition text-[11px] ${
+                              item.is_active
+                                ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-900/60 hover:bg-rose-950/40 hover:text-rose-400'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-emerald-950/60 hover:text-emerald-300'
+                            }`}
+                            title={item.is_active ? 'Click para pausar' : 'Click para activar en vitrina'}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${item.is_active ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                            <span>{item.is_active ? 'Visible' : 'Pausado (Activar)'}</span>
+                          </button>
+                        </div>
+
                         <button
+                          type="button"
                           onClick={() => deleteProduct(item.id)}
-                          className="cursor-pointer text-slate-500 hover:text-rose-400 font-bold flex items-center gap-1 transition"
+                          className="cursor-pointer text-slate-500 hover:text-rose-400 font-bold flex items-center gap-1 transition text-[11px] ml-auto"
+                          title="Eliminar de la vitrina"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={12} />
                           <span>Quitar</span>
                         </button>
-                        <span className="text-[11px] text-slate-400">
-                          {item.is_active ? 'Visible' : 'Pausado'}
-                        </span>
                       </div>
                     </div>
                   );
@@ -1535,14 +1816,19 @@ export default function OwnerDashboard() {
               </div>
             )}
 
-            {/* MODAL MULTI-RUBRO DE AÑADIR PRODUCTO */}
+            {/* MODAL MULTI-RUBRO DE AÑADIR / EDITAR PRODUCTO */}
             {isAdding && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in overflow-y-auto">
                 <div className="bg-[#030910] w-full max-w-lg rounded-3xl overflow-hidden border border-slate-800 shadow-2xl my-4 text-white">
                   <div className="p-4 sm:p-5 border-b border-slate-900 flex justify-between items-center">
-                    <h3 className="font-bold text-sm text-white">Publicar Producto en Vitrina</h3>
+                    <h3 className="font-bold text-sm text-white">
+                      {editingStoreProductId ? 'Editar Producto en Vitrina' : 'Publicar Producto en Vitrina'}
+                    </h3>
                     <button
-                      onClick={() => setIsAdding(false)}
+                      onClick={() => {
+                        setIsAdding(false);
+                        setEditingStoreProductId(null);
+                      }}
                       className="p-1 text-slate-400 hover:text-white cursor-pointer"
                     >
                       <X size={18} />
@@ -1985,7 +2271,7 @@ export default function OwnerDashboard() {
                       disabled={loading || uploadingImage}
                       className="cursor-pointer w-full bg-emerald-500 hover:bg-emerald-400 text-black py-2.5 rounded-xl font-bold text-xs transition mt-2 disabled:opacity-50"
                     >
-                      {loading ? 'Publicando...' : uploadingImage ? 'Subiendo foto...' : 'Publicar Producto'}
+                      {loading ? (editingStoreProductId ? 'Guardando cambios...' : 'Publicando...') : uploadingImage ? 'Subiendo foto...' : (editingStoreProductId ? 'Guardar Cambios' : 'Publicar Producto')}
                     </button>
                   </form>
                 </div>
@@ -2047,6 +2333,8 @@ export default function OwnerDashboard() {
 
             <MegaphoneMerchantWidget
               store={store}
+              bcvRate={tasaUsed}
+              onNavigateToReservations={() => setActiveTab('reservations')}
               onQuoteSubmitted={() => {
                 if (storeId) fetchInventory(storeId);
               }}

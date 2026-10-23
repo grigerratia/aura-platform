@@ -23,22 +23,27 @@ import {
   ArrowUpRight,
   HelpCircle,
   RefreshCw,
+  Ticket,
+  ArrowRight,
 } from 'lucide-react';
 
 interface MegaphoneMerchantWidgetProps {
   store: Store;
   bcvRate?: number;
   onQuoteSubmitted?: (productId?: string) => void;
+  onNavigateToReservations?: () => void;
 }
 
 export default function MegaphoneMerchantWidget({
   store,
   bcvRate = 1,
   onQuoteSubmitted,
+  onNavigateToReservations,
 }: MegaphoneMerchantWidgetProps) {
   const { playTap, playAlertChime, playUnlockSuccess } = useGameSound();
 
   const [requests, setRequests] = useState<(MegaphoneRequest & { alreadyQuoted?: boolean })[]>([]);
+  const [acceptedQuotes, setAcceptedQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -76,11 +81,48 @@ export default function MegaphoneMerchantWidget({
     }
   }, [store.id, store.category]);
 
+  // Cargar cotizaciones aceptadas recientemente
+  const loadAcceptedQuotes = useCallback(async () => {
+    if (!store.id) return;
+    try {
+      const { data } = await supabase
+        .from('megaphone_quotes')
+        .select('*')
+        .eq('store_id', store.id)
+        .eq('status', 'ACCEPTED_BY_BUYER')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (data && data.length > 0) {
+        const reqIds = data.map((d: any) => d.request_id);
+        const { data: reqs } = await supabase
+          .from('megaphone_requests')
+          .select('id, query_text')
+          .in('id', reqIds);
+
+        const reqMap = (reqs || []).reduce((acc: any, r: any) => {
+          acc[r.id] = r.query_text;
+          return acc;
+        }, {});
+
+        setAcceptedQuotes(data.map((d: any) => ({
+          ...d,
+          query_text: reqMap[d.request_id] || 'Artículo Consultado',
+        })));
+      } else {
+        setAcceptedQuotes([]);
+      }
+    } catch (err) {
+      console.warn('Error cargando cotizaciones aceptadas:', err);
+    }
+  }, [store.id]);
+
   useEffect(() => {
     loadRequests();
-  }, [loadRequests]);
+    loadAcceptedQuotes();
+  }, [loadRequests, loadAcceptedQuotes]);
 
-  // 2. Suscripción Realtime en Supabase a la tabla megaphone_requests
+  // 2. Suscripción Realtime en Supabase a la tabla megaphone_requests y megaphone_quotes
   useEffect(() => {
     if (!store.id) return;
 
@@ -103,18 +145,35 @@ export default function MegaphoneMerchantWidget({
           loadRequests();
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'megaphone_quotes',
+          filter: `store_id=eq.${store.id}`,
+        },
+        (payload) => {
+          const q = payload.new as any;
+          if (q && q.status === 'ACCEPTED_BY_BUYER') {
+            playAlertChime();
+            loadAcceptedQuotes();
+          }
+        }
+      )
       .subscribe();
 
     // Sondeo de respaldo cada 3 segundos (igual que en reservas de mostrador)
     const pollInterval = setInterval(() => {
       loadRequests();
+      loadAcceptedQuotes();
     }, 3000);
 
     return () => {
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };
-  }, [store.id, loadRequests, playAlertChime]);
+  }, [store.id, loadRequests, loadAcceptedQuotes, playAlertChime]);
 
   // Sugerencias rápidas de notas
   const noteSuggestions = [
@@ -308,6 +367,46 @@ export default function MegaphoneMerchantWidget({
           </button>
         </div>
       </div>
+
+      {/* COTIZACIONES GANADORAS ACEPTADAS POR CLIENTES */}
+      {acceptedQuotes.length > 0 && (
+        <div className="space-y-2">
+          {acceptedQuotes.map((q) => (
+            <div
+              key={q.id}
+              className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-[#030914] to-slate-900 border border-emerald-500/60 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center border border-emerald-500/40 shrink-0">
+                  <Ticket size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-[#00ffb2] tracking-wider block">
+                    ¡Cotización Aceptada por el Cliente!
+                  </span>
+                  <h5 className="text-sm font-bold text-white leading-tight">
+                    {q.query_text} • ${q.price_usd} USD
+                  </h5>
+                  <p className="text-[11px] text-slate-300">
+                    El cliente congeló el precio por 90 min y tiene su PIN listo para retirar en tu local.
+                  </p>
+                </div>
+              </div>
+
+              {onNavigateToReservations && (
+                <button
+                  type="button"
+                  onClick={onNavigateToReservations}
+                  className="cursor-pointer shrink-0 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Ver en Semáforo de Reservas</span>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* MENSAJES DE ESTADO */}
       {successMessage && (

@@ -120,7 +120,7 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
       return { success: false, error: 'Ingresa un precio válido en dólares ($ USD).' };
     }
 
-    // 1. Obtener datos de la tienda desde Supabase (usar select('*') seguro)
+    // 1. Obtener datos de la tienda desde Supabase
     const { data: store, error: storeErr } = await supabase
       .from('stores')
       .select('*')
@@ -153,32 +153,37 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
     const productTitle = reqData?.query_text || 'Artículo Consultado';
     const productCategory = reqData?.category_id || 'Moda';
 
-    // 2. Auto-alimentación de catálogo en Supabase
+    // 2. AUTO-ALIMENTACIÓN COMPLETA DE CATÁLOGO (products + store_products)
     let autoSeededProductId: string | undefined;
     try {
-      const { data: newProd } = await supabase
+      const uniqueSlug = `${productTitle.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
+      
+      const { data: newProd, error: pError } = await supabase
         .from('products')
         .insert([{
           name: productTitle,
+          slug: uniqueSlug,
+          description: params.quickNote ? `Cotizado vía El Megáfono: ${params.quickNote}` : 'Disponible en vitrina física',
           category: productCategory,
+          archetype: 'RETAIL_STANDARD',
           regular_price_usd: params.priceUsd,
           aura_price_usd: params.priceUsd,
           price: params.priceUsd,
           unlock_fee_usd: Math.round(params.priceUsd * 0.05 * 100) / 100,
           imageUrl: params.photoUrl || '/aura-logo.png',
-          category_archetype: 'RETAIL_STANDARD',
           auto_confirm_stock: true,
-          is_active: true,
-          has_discount: false,
-          is_wholesale: false,
           published_at: new Date().toISOString(),
         }])
-        .select('id')
-        .maybeSingle();
+        .select('*')
+        .single();
+
+      if (pError) {
+        console.error('Error insertando producto auto-alimentado:', pError);
+      }
 
       if (newProd?.id) {
         autoSeededProductId = newProd.id;
-        await supabase
+        const { error: spError } = await supabase
           .from('store_products')
           .insert([{
             store_id: params.storeId,
@@ -186,15 +191,23 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
             price: params.priceUsd,
             stock: 5,
             is_active: true,
-            has_discount: false,
-            is_wholesale: false,
+            discount_percent: 0,
+            metadata: {
+              is_wholesale: false,
+              has_discount: false,
+              source: 'megaphone_auto_seeded',
+            },
           }]);
+
+        if (spError) {
+          console.error('Error asociando producto a tienda en store_products:', spError);
+        }
       }
     } catch (prodErr) {
       console.warn('Auto-seeding de producto omitido:', prodErr);
     }
 
-    // 3. Insertar cotización en la tabla megaphone_quotes (select('*') directo)
+    // 3. Insertar cotización en la tabla megaphone_quotes
     const quotePayload = {
       request_id: params.requestId,
       store_id: params.storeId,
@@ -309,7 +322,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
         .neq('id', params.quoteId);
     }
 
-    // Registrar reserva activa de 90 minutos en la tabla reservations
+    // Registrar reserva activa de 90 minutos en la tabla reservations con estado 'pending'
     const reservationPayload = {
       pin_code: pin,
       pin: pin,
@@ -317,22 +330,31 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       store_name: targetStore.name,
       store_whatsapp: targetStore.whatsapp || '584120000000',
       store_address: targetStore.address || targetStore.zone || 'Centro de Cumaná',
+      product_id: quote.auto_seeded_product_id || null,
       product_name: queryText,
-      customer_name: params.customerName || 'Comprador Radar',
+      product_image: quote.photo_url || null,
+      customer_name: params.customerName || 'Comprador Radar (Megáfono)',
       customer_phone: params.customerPhone || '04120000000',
       price_usd: priceUsd,
       total_price: priceUsd,
+      unlock_fee_usd: Math.round(priceUsd * 0.05 * 100) / 100,
+      store_pay_balance_usd: priceUsd,
       bcv_rate: params.bcvRate || 1,
-      status: 'confirmed',
+      status: 'pending',
+      category_archetype: 'RETAIL_STANDARD',
       expires_at: expiresAt,
       created_at: new Date().toISOString(),
     };
 
-    const { data: resData } = await supabase
+    const { data: resData, error: rInsertErr } = await supabase
       .from('reservations')
       .insert([reservationPayload])
       .select('*')
-      .maybeSingle();
+      .single();
+
+    if (rInsertErr) {
+      console.error('Error insertando reserva de megáfono en Supabase:', rInsertErr);
+    }
 
     const revealedStore: Partial<Store> = {
       id: targetStore.id,
@@ -356,7 +378,6 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
 
 /**
  * Carga cotizaciones activas de una solicitud para el comprador en Radar
- * (Sin depender de relaciones PostgREST frágiles)
  */
 export async function fetchQuotesForRequest(requestId: string): Promise<MegaphoneQuote[]> {
   try {
