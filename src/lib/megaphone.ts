@@ -29,59 +29,10 @@ export interface AcceptMegaphoneQuoteParams {
 }
 
 /**
- * Canal de broadcast bidireccional entre pestañas del mismo navegador (Modo Comercio + Modo Cliente)
- */
-export function broadcastMegaphoneEvent(event: { type: string; payload: any }) {
-  if (typeof window === 'undefined') return;
-  try {
-    const bc = new BroadcastChannel('aura_megaphone_sync');
-    bc.postMessage(event);
-    bc.close();
-  } catch {}
-  try {
-    localStorage.setItem('aura_megaphone_last_sync_event', JSON.stringify({ ...event, _ts: Date.now() }));
-  } catch {}
-}
-
-export function subscribeToMegaphoneBroadcast(callback: (event: { type: string; payload: any }) => void): () => void {
-  if (typeof window === 'undefined') return () => {};
-
-  let bc: BroadcastChannel | null = null;
-  try {
-    bc = new BroadcastChannel('aura_megaphone_sync');
-    bc.onmessage = (e) => {
-      if (e.data) callback(e.data);
-    };
-  } catch {}
-
-  const storageListener = (e: StorageEvent) => {
-    if (e.key === 'aura_megaphone_last_sync_event' && e.newValue) {
-      try {
-        const parsed = JSON.parse(e.newValue);
-        callback(parsed);
-      } catch {}
-    }
-  };
-
-  window.addEventListener('storage', storageListener);
-
-  return () => {
-    if (bc) bc.close();
-    window.removeEventListener('storage', storageListener);
-  };
-}
-
-/**
  * Consulta la cantidad de solicitudes lanzadas por el usuario en las últimas 24 horas.
  */
 export async function getUser24hMegaphoneCount(userId?: string | null, phone?: string | null): Promise<number> {
   try {
-    if (typeof window !== 'undefined') {
-      const localLogs = JSON.parse(localStorage.getItem('aura_megaphone_user_requests') || '[]');
-      const validRecent = localLogs.filter((t: number) => t > Date.now() - 24 * 60 * 60 * 1000);
-      return validRecent.length;
-    }
-
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     let query = supabase
       .from('megaphone_requests')
@@ -92,6 +43,8 @@ export async function getUser24hMegaphoneCount(userId?: string | null, phone?: s
       query = query.eq('user_id', userId);
     } else if (phone && phone !== '04120000000') {
       query = query.eq('customer_phone', phone);
+    } else {
+      return 0;
     }
 
     const { count, error } = await query;
@@ -104,77 +57,55 @@ export async function getUser24hMegaphoneCount(userId?: string | null, phone?: s
 
 /**
  * 1. LANZAR EL MEGÁFONO
- * Resiliente: inserta en Supabase y sincroniza de inmediato vía BroadcastChannel y localStorage.
+ * Inserta directamente en la tabla megaphone_requests de Supabase.
  */
 export async function createMegaphoneRequest(params: CreateMegaphoneRequestParams): Promise<{
   success: boolean;
-  request: MegaphoneRequest;
+  request?: MegaphoneRequest;
   error?: string;
 }> {
   const cleanQuery = params.queryText.trim();
+  if (!cleanQuery) {
+    return { success: false, error: 'Ingresa qué artículo estás buscando.' };
+  }
+
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-  const fallbackRequest: MegaphoneRequest = {
-    id: 'mega-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-    user_id: params.userId || null,
-    customer_name: params.customerName?.trim() || 'Comprador Radar',
-    customer_phone: params.customerPhone?.trim() || null,
-    query_text: cleanQuery,
-    category_id: params.categoryId || 'moda',
-    city: params.city || 'Cumaná',
-    status: 'OPEN',
-    expires_at: expiresAt,
-    created_at: new Date().toISOString(),
-  };
-
   try {
-    if (typeof window !== 'undefined') {
-      try {
-        const localLogs = JSON.parse(localStorage.getItem('aura_megaphone_user_requests') || '[]');
-        localLogs.push(Date.now());
-        localStorage.setItem('aura_megaphone_user_requests', JSON.stringify(localLogs));
-        localStorage.setItem('aura_megaphone_active_request', JSON.stringify(fallbackRequest));
-      } catch {}
+    const insertPayload = {
+      user_id: params.userId || null,
+      customer_name: params.customerName?.trim() || 'Comprador Radar',
+      customer_phone: params.customerPhone?.trim() || null,
+      query_text: cleanQuery,
+      category_id: params.categoryId || 'moda',
+      city: params.city || 'Cumaná',
+      status: 'OPEN',
+      expires_at: expiresAt,
+    };
+
+    const { data, error } = await supabase
+      .from('megaphone_requests')
+      .insert([insertPayload])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error insertando megaphone_request en Supabase:', error);
+      return { success: false, error: error.message };
     }
 
-    // Insertar en Supabase
-    let finalRequest: MegaphoneRequest = fallbackRequest;
-    try {
-      const { data, error } = await supabase
-        .from('megaphone_requests')
-        .insert([{
-          user_id: params.userId || null,
-          customer_name: params.customerName?.trim() || 'Comprador Radar',
-          customer_phone: params.customerPhone?.trim() || null,
-          query_text: cleanQuery,
-          category_id: params.categoryId || 'moda',
-          city: params.city || 'Cumaná',
-          status: 'OPEN',
-          expires_at: expiresAt,
-        }])
-        .select()
-        .maybeSingle();
-
-      if (!error && data) {
-        finalRequest = data as MegaphoneRequest;
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('aura_megaphone_active_request', JSON.stringify(data));
-        }
-      }
-    } catch {}
-
-    // Transmitir evento a todas las pestañas abiertas (ej: Dashboard de Comercio)
-    broadcastMegaphoneEvent({ type: 'NEW_REQUEST', payload: finalRequest });
-
-    return { success: true, request: finalRequest };
-  } catch (err) {
-    broadcastMegaphoneEvent({ type: 'NEW_REQUEST', payload: fallbackRequest });
-    return { success: true, request: fallbackRequest };
+    return {
+      success: true,
+      request: data as MegaphoneRequest,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Error al conectar con la base de datos.' };
   }
 }
 
 /**
  * 2. RESPONDER AL MEGÁFONO EN 3 SEGUNDOS (Comerciante / Mostrador)
+ * Candado B2B y auto-alimentación directa en el catálogo de Supabase.
  */
 export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): Promise<{
   success: boolean;
@@ -189,12 +120,16 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
       return { success: false, error: 'Ingresa un precio válido en dólares ($ USD).' };
     }
 
-    // 1. Obtener datos de la tienda
-    const { data: store } = await supabase
+    // 1. Obtener datos de la tienda desde Supabase
+    const { data: store, error: storeErr } = await supabase
       .from('stores')
       .select('id, name, owner_id, plan_tier, verification_status, megaphone_quota_used, sector_zone, zone, address, whatsapp, owner_whatsapp')
       .eq('id', params.storeId)
-      .maybeSingle();
+      .single();
+
+    if (storeErr || !store) {
+      return { success: false, error: 'Vitrina comercial no encontrada en la base de datos.' };
+    }
 
     const currentQuotaUsed = store?.megaphone_quota_used ?? 0;
     const isBasicPlan = !store?.plan_tier || store.plan_tier === 'VITRINA_20';
@@ -207,7 +142,7 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
       };
     }
 
-    // 2. Auto-alimentación de catálogo
+    // 2. Auto-alimentación de catálogo en Supabase
     let autoSeededProductId: string | undefined;
     try {
       const { data: newProd } = await supabase
@@ -244,70 +179,46 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
             is_wholesale: false,
           }]);
       }
-    } catch {}
+    } catch (prodErr) {
+      console.warn('Auto-seeding de producto omitido:', prodErr);
+    }
 
-    // 3. Fallback quote preparado
-    const fallbackQuote: MegaphoneQuote = {
-      id: 'quote-' + Date.now(),
+    // 3. Insertar cotización en la tabla megaphone_quotes
+    const quotePayload = {
       request_id: params.requestId,
       store_id: params.storeId,
       price_usd: params.priceUsd,
-      quick_note: params.quickNote || null,
+      quick_note: params.quickNote ? params.quickNote.slice(0, 90).trim() : null,
       photo_url: params.photoUrl || null,
       auto_seeded_product_id: autoSeededProductId || null,
       status: 'SENT',
-      created_at: new Date().toISOString(),
-      store: store ? {
-        id: store.id,
-        name: store.name,
-        rating: 4.9,
-        sector_zone: store.sector_zone || store.zone || 'Sector Centro',
-        zone: store.zone || 'Centro de Cumaná',
-        address: store.address || 'Centro de Cumaná',
-        whatsapp: String(store.whatsapp || store.owner_whatsapp || '584128762345'),
-      } : undefined,
     };
 
-    let finalQuote: MegaphoneQuote = fallbackQuote;
+    const { data: quote, error: quoteErr } = await supabase
+      .from('megaphone_quotes')
+      .insert([quotePayload])
+      .select(`
+        *,
+        store:stores (
+          id, name, slug, rating, sector_zone, zone, address, whatsapp, owner_whatsapp, logo_url
+        )
+      `)
+      .single();
 
-    // Intentar inserción en Supabase
-    try {
-      const quotePayload = {
-        request_id: params.requestId,
-        store_id: params.storeId,
-        price_usd: params.priceUsd,
-        quick_note: params.quickNote ? params.quickNote.slice(0, 90).trim() : null,
-        photo_url: params.photoUrl || null,
-        auto_seeded_product_id: autoSeededProductId || null,
-        status: 'SENT',
-      };
+    if (quoteErr) {
+      console.error('Error insertando cotización en Supabase:', quoteErr);
+      return { success: false, error: quoteErr.message };
+    }
 
-      const { data: quote, error: quoteErr } = await supabase
-        .from('megaphone_quotes')
-        .insert([quotePayload])
-        .select(`
-          *,
-          store:stores (
-            id, name, slug, rating, sector_zone, zone, address, whatsapp, owner_whatsapp, logo_url
-          )
-        `)
-        .maybeSingle();
-
-      if (!quoteErr && quote) {
-        finalQuote = quote as MegaphoneQuote;
-        await supabase
-          .from('stores')
-          .update({ megaphone_quota_used: currentQuotaUsed + 1 })
-          .eq('id', params.storeId);
-      }
-    } catch {}
-
-    // Transmitir cotización al cliente en Radar de inmediato
-    broadcastMegaphoneEvent({ type: 'NEW_QUOTE', payload: finalQuote });
+    // Incrementar cuota usada
+    await supabase
+      .from('stores')
+      .update({ megaphone_quota_used: currentQuotaUsed + 1 })
+      .eq('id', params.storeId);
 
     return {
       success: true,
-      quote: finalQuote,
+      quote: quote as MegaphoneQuote,
       autoSeededProductId,
     };
   } catch (err: any) {
@@ -317,6 +228,7 @@ export async function submitMegaphoneQuote(params: SubmitMegaphoneQuoteParams): 
 
 /**
  * 3. ACEPTAR COTIZACIÓN GANADORA (Comprador)
+ * Actualiza estados en Supabase y crea la reserva en la tabla reservations.
  */
 export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): Promise<{
   success: boolean;
@@ -328,70 +240,46 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
 
-    // Intentar buscar cotización en DB
-    let targetStore: any = null;
-    let queryText = 'Artículo Consultado';
-    let priceUsd = 15;
+    // Obtener cotización con relaciones desde Supabase
+    const { data: quote, error: qErr } = await supabase
+      .from('megaphone_quotes')
+      .select(`
+        *,
+        request:megaphone_requests (*),
+        store:stores (*)
+      `)
+      .eq('id', params.quoteId)
+      .single();
 
-    try {
-      const { data: quote } = await supabase
-        .from('megaphone_quotes')
-        .select(`
-          *,
-          request:megaphone_requests (*),
-          store:stores (*)
-        `)
-        .eq('id', params.quoteId)
-        .maybeSingle();
-
-      if (quote) {
-        targetStore = quote.store;
-        queryText = quote.request?.query_text || queryText;
-        priceUsd = quote.price_usd || priceUsd;
-      }
-    } catch {}
-
-    // Si no está en DB, recuperar de memoria local
-    if (!targetStore && typeof window !== 'undefined') {
-      try {
-        const localQuotes: MegaphoneQuote[] = JSON.parse(localStorage.getItem('aura_megaphone_cached_quotes') || '[]');
-        const matched = localQuotes.find((q) => q.id === params.quoteId);
-        if (matched) {
-          targetStore = matched.store;
-          priceUsd = matched.price_usd;
-        }
-        const activeReq = JSON.parse(localStorage.getItem('aura_megaphone_active_request') || '{}');
-        if (activeReq.query_text) queryText = activeReq.query_text;
-      } catch {}
+    if (qErr || !quote) {
+      return { success: false, error: 'No se encontró la cotización seleccionada.' };
     }
 
-    if (!targetStore) {
-      const { data: storesList } = await supabase.from('stores').select('*').limit(1);
-      targetStore = storesList?.[0] || {
-        id: 'store-cumana-default',
-        name: 'Vitrina Central Cumaná',
-        slug: 'vitrina-central',
-        zone: 'Centro de Cumaná',
-        address: 'Calle Comercio, Centro',
-        whatsapp: '584128762345',
-        rating: 4.9,
-      };
-    }
+    const targetStore = quote.store;
+    const queryText = quote.request?.query_text || 'Artículo Consultado';
+    const priceUsd = quote.price_usd || 15;
 
-    // Actualizar estados en DB si existen las tablas
-    try {
-      await supabase
-        .from('megaphone_quotes')
-        .update({ status: 'ACCEPTED_BY_BUYER' })
-        .eq('id', params.quoteId);
+    // Actualizar estados en Supabase
+    await supabase
+      .from('megaphone_quotes')
+      .update({ status: 'ACCEPTED_BY_BUYER' })
+      .eq('id', params.quoteId);
 
+    if (quote.request_id) {
       await supabase
         .from('megaphone_requests')
         .update({ status: 'LOCKED_WINNER' })
-        .eq('id', params.quoteId);
-    } catch {}
+        .eq('id', quote.request_id);
 
-    // Registrar reserva activa de 90 minutos
+      // Descartar resto de cotizaciones
+      await supabase
+        .from('megaphone_quotes')
+        .update({ status: 'REJECTED' })
+        .eq('request_id', quote.request_id)
+        .neq('id', params.quoteId);
+    }
+
+    // Registrar reserva activa de 90 minutos en la tabla reservations
     const reservationPayload = {
       pin_code: pin,
       pin: pin,
@@ -410,11 +298,11 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       created_at: new Date().toISOString(),
     };
 
-    try {
-      await supabase.from('reservations').insert([reservationPayload]);
-    } catch {}
-
-    broadcastMegaphoneEvent({ type: 'QUOTE_ACCEPTED', payload: { quoteId: params.quoteId } });
+    const { data: resData } = await supabase
+      .from('reservations')
+      .insert([reservationPayload])
+      .select()
+      .maybeSingle();
 
     const revealedStore: Partial<Store> = {
       id: targetStore.id,
@@ -428,7 +316,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
 
     return {
       success: true,
-      reservation: reservationPayload,
+      reservation: resData || reservationPayload,
       revealedStore,
     };
   } catch (err: any) {
@@ -439,7 +327,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
 /**
  * Carga cotizaciones activas de una solicitud para el comprador en Radar
  */
-export async function fetchQuotesForRequest(requestId: string, categoryId?: string): Promise<MegaphoneQuote[]> {
+export async function fetchQuotesForRequest(requestId: string): Promise<MegaphoneQuote[]> {
   try {
     const { data, error } = await supabase
       .from('megaphone_quotes')
@@ -452,20 +340,12 @@ export async function fetchQuotesForRequest(requestId: string, categoryId?: stri
       .eq('request_id', requestId)
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      return data as unknown as MegaphoneQuote[];
+    if (error) {
+      console.warn('Error fetching quotes from Supabase:', error);
+      return [];
     }
 
-    // Verificar en memoria local si hay cotizaciones enviadas en este navegador
-    if (typeof window !== 'undefined') {
-      try {
-        const localQuotes: MegaphoneQuote[] = JSON.parse(localStorage.getItem('aura_megaphone_cached_quotes') || '[]');
-        const matching = localQuotes.filter((q) => q.request_id === requestId);
-        if (matching.length > 0) return matching;
-      } catch {}
-    }
-
-    return [];
+    return (data || []) as unknown as MegaphoneQuote[];
   } catch {
     return [];
   }
@@ -475,41 +355,24 @@ export async function fetchQuotesForRequest(requestId: string, categoryId?: stri
  * Carga solicitudes abiertas de Megáfono para una tienda física
  */
 export async function fetchOpenRequestsForStore(storeId: string, categoryId?: string): Promise<MegaphoneRequest[]> {
-  const list: MegaphoneRequest[] = [];
-  const seenIds = new Set<string>();
-
   try {
+    const now = new Date().toISOString();
     let query = supabase
       .from('megaphone_requests')
       .select('*')
       .eq('status', 'OPEN')
+      .gt('expires_at', now)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(20);
 
-    const { data: requests, error } = await query;
-    if (!error && requests) {
-      for (const r of requests) {
-        if (!seenIds.has(r.id)) {
-          seenIds.add(r.id);
-          list.push(r as MegaphoneRequest);
-        }
-      }
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error fetching open megaphone requests:', error);
+      return [];
     }
-  } catch {}
 
-  // Revisar memoria local / fallback de sincronización
-  if (typeof window !== 'undefined') {
-    const activeRaw = localStorage.getItem('aura_megaphone_active_request');
-    if (activeRaw) {
-      try {
-        const parsed = JSON.parse(activeRaw);
-        if (parsed?.id && parsed.status === 'OPEN' && !seenIds.has(parsed.id)) {
-          seenIds.add(parsed.id);
-          list.push(parsed);
-        }
-      } catch {}
-    }
+    return (data || []) as MegaphoneRequest[];
+  } catch {
+    return [];
   }
-
-  return list;
 }

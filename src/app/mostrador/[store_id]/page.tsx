@@ -29,6 +29,7 @@ export default function MostradorPage() {
 
   // Pestañas del Mostrador
   const [activeTab, setActiveTab] = useState<'semaphore' | 'validate' | 'history' | 'megaphone'>('semaphore');
+  const [openMegaphoneCount, setOpenMegaphoneCount] = useState(0);
 
   // Reservas pendientes y en curso
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -149,6 +150,39 @@ export default function MostradorPage() {
       };
     }
   }, [isAuthenticated, storeId, fetchReservations]);
+
+  // Solicitudes abiertas del Megáfono en mostrador
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const { count } = await supabase
+          .from('megaphone_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'OPEN');
+        setOpenMegaphoneCount(count || 0);
+      } catch {}
+    };
+
+    fetchCount();
+
+    const channel = supabase
+      .channel('mostrador_megaphone_count_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'megaphone_requests' },
+        () => {
+          fetchCount();
+        }
+      )
+      .subscribe();
+
+    const interval = setInterval(fetchCount, 4000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Manejar entrada de PIN de Mostrador
   const handlePinSubmit = (e: React.FormEvent) => {
@@ -603,6 +637,11 @@ export default function MostradorPage() {
           >
             <Megaphone size={16} className={activeTab === 'megaphone' ? 'text-[#00ffb2]' : 'text-slate-400'} />
             <span>El Megáfono</span>
+            {openMegaphoneCount > 0 && (
+              <span className="bg-emerald-500 text-slate-950 px-2 py-0.2 rounded-full text-[10px] font-black">
+                {openMegaphoneCount}
+              </span>
+            )}
           </button>
         </div>
       </header>

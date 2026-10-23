@@ -23,6 +23,7 @@ export default function OwnerDashboard() {
   const [store, setStore] = useState<Store | null>(null);
   const [activeTab, setActiveTab] = useState<'reservations' | 'history' | 'inventory' | 'qr' | 'megaphone'>('reservations');
   const [loading, setLoading] = useState(true);
+  const [openMegaphoneCount, setOpenMegaphoneCount] = useState(0);
 
   // Inventario
   const [products, setProducts] = useState<any[]>([]);
@@ -290,6 +291,39 @@ export default function OwnerDashboard() {
       clearInterval(pollInterval);
     };
   }, [storeId, fetchReservations]);
+
+  // Solicitudes abiertas del Megáfono en tiempo real
+  useEffect(() => {
+    const fetchMegaphoneCount = async () => {
+      try {
+        const { count } = await supabase
+          .from('megaphone_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'OPEN');
+        setOpenMegaphoneCount(count || 0);
+      } catch {}
+    };
+
+    fetchMegaphoneCount();
+
+    const channel = supabase
+      .channel('dashboard_megaphone_count_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'megaphone_requests' },
+        () => {
+          fetchMegaphoneCount();
+        }
+      )
+      .subscribe();
+
+    const interval = setInterval(fetchMegaphoneCount, 4000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Buscar en catálogo global
   useEffect(() => {
@@ -887,6 +921,11 @@ export default function OwnerDashboard() {
           >
             <Megaphone size={16} className={activeTab === 'megaphone' ? 'text-emerald-400' : 'text-[#00ffb2]'} />
             <span className="whitespace-nowrap">El Megáfono</span>
+            {openMegaphoneCount > 0 && (
+              <span className="ml-auto bg-emerald-500/20 text-[#00ffb2] px-1.5 py-0.5 rounded text-[10px] font-bold">
+                {openMegaphoneCount}
+              </span>
+            )}
           </button>
 
           <Link

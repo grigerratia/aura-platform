@@ -8,7 +8,6 @@ import {
   createMegaphoneRequest,
   acceptMegaphoneQuote,
   fetchQuotesForRequest,
-  subscribeToMegaphoneBroadcast,
 } from '@/lib/megaphone';
 import { AURA_OFFICIAL_CATEGORIES } from '@/lib/categories';
 import { useGameSound } from '@/hooks/useGameSound';
@@ -114,14 +113,14 @@ export default function MegaphoneRadarPanel({
     return () => clearInterval(pingInterval);
   }, [step, playRadarPing]);
 
-  // Carga de cotizaciones en tiempo real
+  // Carga de cotizaciones en tiempo real desde Supabase
   useEffect(() => {
     if (!activeRequest?.id || step !== 'SCANNING') return;
 
     let isSubscribed = true;
 
     const loadQuotes = async () => {
-      const current = await fetchQuotesForRequest(activeRequest.id, activeRequest.category_id);
+      const current = await fetchQuotesForRequest(activeRequest.id);
       if (isSubscribed) {
         setQuotes(current);
         if (current.length > 0) playAlertChime();
@@ -131,30 +130,16 @@ export default function MegaphoneRadarPanel({
     // Primera carga inmediata
     loadQuotes();
 
-    // Reintento rápido y polling de respaldo cada 3 segundos
+    // Reintento y sondeo de respaldo cada 3 segundos
     const pollInterval = setInterval(loadQuotes, 3000);
 
-    // a) Sincronización instantánea cross-tab
-    const unsubscribeBroadcast = subscribeToMegaphoneBroadcast((event) => {
-      if (event.type === 'NEW_QUOTE') {
-        const newQuote = event.payload as MegaphoneQuote;
-        if (newQuote.request_id === activeRequest.id) {
-          setQuotes((prev) => {
-            if (prev.some((q) => q.id === newQuote.id)) return prev;
-            playAlertChime();
-            return [newQuote, ...prev];
-          });
-        }
-      }
-    });
-
-    // b) Canal Realtime Supabase (cuando las tablas existen en la nube)
+    // Canal Realtime en Supabase conectado a megaphone_quotes
     const channel = supabase
-      .channel(`megaphone_${activeRequest.id}`)
+      .channel(`megaphone_quotes_${activeRequest.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'megaphone_quotes', filter: `request_id=eq.${activeRequest.id}` },
-        async () => {
+        () => {
           loadQuotes();
         }
       )
@@ -163,7 +148,6 @@ export default function MegaphoneRadarPanel({
     return () => {
       isSubscribed = false;
       clearInterval(pollInterval);
-      unsubscribeBroadcast();
       supabase.removeChannel(channel);
     };
   }, [activeRequest?.id, step, playAlertChime]);
@@ -193,6 +177,12 @@ export default function MegaphoneRadarPanel({
         city: 'Cumaná',
         customerPhone: customerPhone || undefined,
       });
+
+      if (!res.success || !res.request) {
+        setErrorMsg(res.error || 'No se pudo emitir la señal.');
+        setIsSubmitting(false);
+        return;
+      }
 
       setActiveRequest(res.request);
       setQuotes([]);

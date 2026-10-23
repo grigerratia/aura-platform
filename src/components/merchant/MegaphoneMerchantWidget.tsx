@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Store, MegaphoneRequest } from '@/types';
-import { fetchOpenRequestsForStore, submitMegaphoneQuote, subscribeToMegaphoneBroadcast } from '@/lib/megaphone';
+import { fetchOpenRequestsForStore, submitMegaphoneQuote } from '@/lib/megaphone';
 import { useGameSound } from '@/hooks/useGameSound';
 import {
   Megaphone,
@@ -80,32 +80,12 @@ export default function MegaphoneMerchantWidget({
     loadRequests();
   }, [loadRequests]);
 
-  // 2. Suscripción en tiempo real a nuevas solicitudes del Megáfono
+  // 2. Suscripción Realtime en Supabase a la tabla megaphone_requests
   useEffect(() => {
     if (!store.id) return;
 
-    // a) Sincronización inmediata entre pestañas en el mismo navegador
-    const unsubscribeBroadcast = subscribeToMegaphoneBroadcast((event) => {
-      if (event.type === 'NEW_REQUEST') {
-        const newReq = event.payload as MegaphoneRequest;
-        setRequests((prev) => {
-          if (prev.some((r) => r.id === newReq.id)) return prev;
-          playAlertChime();
-          return [newReq, ...prev];
-        });
-      } else if (event.type === 'QUOTE_ACCEPTED') {
-        loadRequests();
-      }
-    });
-
-    // b) Polling de sincronización cada 3 segundos
-    const pollInterval = setInterval(() => {
-      loadRequests();
-    }, 3000);
-
-    // c) Supabase Realtime (cuando las tablas existen en la nube)
     const channel = supabase
-      .channel(`megaphone_merchant_requests_${store.id}`)
+      .channel(`megaphone_merchant_live_${store.id}`)
       .on(
         'postgres_changes',
         {
@@ -113,22 +93,26 @@ export default function MegaphoneMerchantWidget({
           schema: 'public',
           table: 'megaphone_requests',
         },
-        async (payload) => {
+        (payload) => {
           if (payload.eventType === 'INSERT') {
             const newReq = payload.new as MegaphoneRequest;
             if (newReq.status === 'OPEN') {
               playAlertChime();
             }
           }
-          await loadRequests();
+          loadRequests();
         }
       )
       .subscribe();
 
+    // Sondeo de respaldo cada 3 segundos (igual que en reservas de mostrador)
+    const pollInterval = setInterval(() => {
+      loadRequests();
+    }, 3000);
+
     return () => {
-      unsubscribeBroadcast();
-      clearInterval(pollInterval);
       supabase.removeChannel(channel);
+      clearInterval(pollInterval);
     };
   }, [store.id, loadRequests, playAlertChime]);
 
