@@ -29,15 +29,6 @@ export default function OwnerDashboard() {
   const [loading, setLoading] = useState(true);
   const [openMegaphoneCount, setOpenMegaphoneCount] = useState(0);
 
-  // Alerta de nuevo ticket en tiempo real
-  const [newTicketAlert, setNewTicketAlert] = useState<{
-    pin: string;
-    productName: string;
-    price: number;
-    customerName?: string;
-  } | null>(null);
-  const prevPendingCount = useRef<number>(0);
-
   // Inventario
   const [products, setProducts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -310,14 +301,7 @@ export default function OwnerDashboard() {
         { event: '*', schema: 'public', table: 'reservations', filter: `store_id=eq.${storeId}` },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newRes = payload.new as any;
             playAlertChime();
-            setNewTicketAlert({
-              pin: newRes.pin_code || newRes.pin || '0000',
-              productName: newRes.product_name || 'Nuevo Producto Apartado',
-              price: Number(newRes.total_price || newRes.price_usd || 0),
-              customerName: newRes.customer_name,
-            });
           }
           fetchReservations(storeId);
         }
@@ -484,12 +468,30 @@ export default function OwnerDashboard() {
 
     if (target) {
       try {
-        await supabase
-          .from('reservations')
-          .update({ status: 'completed' })
-          .eq('id', target.id);
+        const isValidUUID = Boolean(target.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.id));
+        const targetPin = target.pin || target.pin_code || cleanPin;
 
-        setPinSuccessMessage(`✓ Venta validada: PIN #${cleanPin} (${target.customer_name}).`);
+        if (isValidUUID) {
+          await supabase
+            .from('reservations')
+            .update({ 
+              status: 'completed',
+              confirmed_at: new Date().toISOString()
+            })
+            .eq('id', target.id);
+        }
+
+        if (targetPin) {
+          await supabase
+            .from('reservations')
+            .update({ 
+              status: 'completed',
+              confirmed_at: new Date().toISOString()
+            })
+            .eq('pin_code', targetPin);
+        }
+
+        setPinSuccessMessage(`Venta validada: PIN #${cleanPin} (${target.customer_name}).`);
         setPinInput('');
         if (storeId) fetchReservations(storeId);
       } catch {
@@ -503,12 +505,30 @@ export default function OwnerDashboard() {
   // Cobro directo en caja de una reserva confirmada
   const handleCompleteReservation = async (reservation: Reservation) => {
     try {
-      await supabase
-        .from('reservations')
-        .update({ status: 'completed' })
-        .eq('id', reservation.id);
+      const isValidUUID = Boolean(reservation.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reservation.id));
+      const targetPin = reservation.pin || reservation.pin_code;
 
-      setPinSuccessMessage(`✓ Venta cobrada y entregada: PIN #${reservation.pin} (${reservation.customer_name}).`);
+      if (isValidUUID) {
+        await supabase
+          .from('reservations')
+          .update({ 
+            status: 'completed',
+            confirmed_at: new Date().toISOString()
+          })
+          .eq('id', reservation.id);
+      }
+
+      if (targetPin) {
+        await supabase
+          .from('reservations')
+          .update({ 
+            status: 'completed',
+            confirmed_at: new Date().toISOString()
+          })
+          .eq('pin_code', targetPin);
+      }
+
+      setPinSuccessMessage(`Venta cobrada y entregada: PIN #${reservation.pin} (${reservation.customer_name}).`);
       if (storeId) fetchReservations(storeId);
     } catch (err) {
       console.error('Error completando reserva:', err);
@@ -1001,57 +1021,6 @@ export default function OwnerDashboard() {
 
   return (
     <div className="min-h-screen bg-[#020508] text-slate-200 flex flex-col md:flex-row font-sans selection:bg-[#00ffb2] selection:text-black">
-      {/* ALERTA EN VIVO: NUEVO BOLETO APARTADO */}
-      {newTicketAlert && (
-        <div className="fixed top-4 right-4 z-50 max-w-sm w-[92%] sm:w-full bg-[#030914] border-2 border-emerald-500 rounded-2xl p-4 shadow-[0_10px_40px_rgba(0,255,178,0.35)] animate-in slide-in-from-top duration-300">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center shrink-0 border border-emerald-500/40">
-                <Ticket size={22} className="animate-pulse" />
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-[#00ffb2] tracking-wider block">
-                  ¡Nuevo Boleto Apartado!
-                </span>
-                <h4 className="text-sm font-bold text-white leading-tight">
-                  {newTicketAlert.productName}
-                </h4>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="font-mono text-sm font-black text-emerald-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                    PIN #{newTicketAlert.pin}
-                  </span>
-                  <span className="text-xs font-bold text-white">
-                    ${newTicketAlert.price.toFixed(2)} USD
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setNewTicketAlert(null)}
-              className="text-slate-400 hover:text-white p-1 cursor-pointer"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={() => {
-                playTap();
-                setActiveTab('reservations');
-                setPinInput(newTicketAlert.pin);
-                setNewTicketAlert(null);
-              }}
-              className="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-            >
-              <CheckCircle2 size={14} />
-              <span>Ir a Validar PIN #{newTicketAlert.pin}</span>
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 1. SIDEBAR DE COMERCIO */}
       <aside className="w-full md:w-64 bg-[#030910] border-r border-slate-900 flex flex-col shrink-0">
         
@@ -1356,45 +1325,40 @@ export default function OwnerDashboard() {
         {activeTab === 'reservations' && (
           <div className="space-y-4">
             
-            {/* VALIDADOR DE PIN RÁPIDO */}
-            <div className="bg-[#030910] p-4 rounded-2xl border border-slate-900 space-y-2">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-white text-sm">Validar PIN de Cliente en Caja</h3>
-                  <p className="text-xs text-slate-400">Ingresa los 4 dígitos del boleto cuando el cliente retire en tu local.</p>
-                </div>
-
-                <form onSubmit={handleValidatePin} className="flex gap-2 shrink-0">
+            {/* LISTA DE RESERVAS */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400 font-bold bg-[#030910] p-3 rounded-2xl border border-slate-900">
+                <span className="text-white text-sm font-black">Pedidos por Entregar ({pendingReservations.length})</span>
+                
+                <form onSubmit={handleValidatePin} className="flex items-center gap-1.5 shrink-0">
                   <input
                     type="text"
                     maxLength={6}
-                    placeholder="PIN #4821"
+                    placeholder="PIN #0000"
                     value={pinInput}
                     onChange={(e) => setPinInput(e.target.value)}
-                    className="px-3 py-2 bg-[#020508] text-white rounded-xl font-mono text-center w-28 text-sm border border-slate-800 outline-none focus:border-emerald-500"
+                    className="px-3 py-1.5 bg-[#020508] text-white rounded-xl font-mono text-center w-28 text-xs border border-slate-800 outline-none focus:border-emerald-500"
                   />
                   <button
                     type="submit"
-                    className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
+                    className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 transition"
                   >
-                    <CheckCircle2 size={15} />
+                    <CheckCircle2 size={13} />
                     <span>Validar</span>
                   </button>
                 </form>
               </div>
 
               {pinSuccessMessage && (
-                <div className="p-2.5 bg-emerald-950/40 border border-emerald-900/60 rounded-xl text-emerald-300 text-xs font-semibold flex items-center gap-2">
-                  <CheckCircle2 size={14} /> {pinSuccessMessage}
+                <div className="p-3 bg-emerald-950/40 border border-emerald-900/60 rounded-xl text-emerald-300 text-xs font-semibold flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={14} /> <span>{pinSuccessMessage}</span>
+                  </div>
+                  <button onClick={() => setPinSuccessMessage(null)} className="text-emerald-400 hover:text-white cursor-pointer p-0.5">
+                    <X size={14} />
+                  </button>
                 </div>
               )}
-            </div>
-
-            {/* LISTA DE RESERVAS */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs text-slate-400 font-bold">
-                <span>Reservas en Curso ({pendingReservations.length})</span>
-              </div>
 
               {pendingReservations.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1469,7 +1433,7 @@ export default function OwnerDashboard() {
                               className="w-full cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 active:scale-95"
                             >
                               <CheckCircle2 size={15} />
-                              <span>Cobrar y Entregar Producto en Caja</span>
+                              <span>Validar y Entregar (PIN #{res.pin})</span>
                             </button>
 
                             <button
@@ -1478,7 +1442,7 @@ export default function OwnerDashboard() {
                               className="w-full text-slate-400 hover:text-white bg-[#020508] hover:bg-slate-900 border border-slate-850 rounded-xl py-1.5 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                               <ShieldCheck size={12} className="text-emerald-400" />
-                              <span>Cliente no llevó: Liberar stock a Billetera</span>
+                              <span>Cliente no concretó</span>
                             </button>
                           </div>
                         ) : (
@@ -1518,7 +1482,7 @@ export default function OwnerDashboard() {
                               className="w-full text-slate-400 hover:text-white bg-[#020508] hover:bg-slate-900 border border-slate-850 rounded-xl py-1.5 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                               <ShieldCheck size={12} className="text-emerald-400" />
-                              <span>Cliente no llevó: Liberar stock a Billetera</span>
+                              <span>Cliente no concretó</span>
                             </button>
                           </div>
                         )}

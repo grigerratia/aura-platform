@@ -145,11 +145,30 @@ export default function AuraGameShell({
     return () => window.removeEventListener('aura_trust_score_updated', handleScoreUpdated);
   }, []);
 
+  // Escuchar evento de ticket completado en mostrador para disparar celebración instantánea
+  useEffect(() => {
+    const handleTicketCompleted = (e: any) => {
+      const res = e.detail?.reservation;
+      if (res) {
+        playUnlockSuccess();
+        setBurstTrigger((prev) => prev + 1);
+        setSelectedProduct(null);
+        setCelebratedReservation({
+          ...res,
+          status: 'COMPLETED_IN_STORE',
+        });
+      }
+    };
+
+    window.addEventListener('aura_ticket_completed', handleTicketCompleted);
+    return () => window.removeEventListener('aura_ticket_completed', handleTicketCompleted);
+  }, [playUnlockSuccess]);
+
   // ==============================================================================
   // SINCRONIZACIÓN EN TIEMPO REAL DEL TICKET ACTIVO CON EL MOSTRADOR FÍSICO
   // ==============================================================================
   useEffect(() => {
-    if (!activeReservation?.id) return;
+    if (!activeReservation || (!activeReservation.id && !activeReservation.pin && !activeReservation.pin_code)) return;
 
     const resId = activeReservation.id;
     let isHandled = false;
@@ -273,7 +292,7 @@ export default function AuraGameShell({
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };
-  }, [activeReservation?.id, currentTrustScore, playUnlockSuccess, playAlertChime, clearActiveReservation, setActiveReservation]);
+  }, [activeReservation?.id, activeReservation?.pin_code, activeReservation?.pin, currentTrustScore, playUnlockSuccess, playAlertChime, clearActiveReservation, setActiveReservation]);
 
   return (
     <div className="min-h-screen bg-[#020508] text-white flex flex-col font-sans relative selection:bg-[#00ffb2] selection:text-black">

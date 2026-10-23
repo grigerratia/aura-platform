@@ -360,17 +360,7 @@ export default function ProductBottomSheet({
       setIsSubmitting(false);
     }
 
-    // 2. Si el producto tiene auto_confirm_stock activado (ej. comida o cupo diario)
-    if (product.auto_confirm_stock) {
-      setTimeout(() => {
-        playUnlockSuccess();
-        setStockConfirmationType('green');
-        setStep('STOCK_CONFIRMED');
-      }, 1400);
-      return;
-    }
-
-    // Sonido suave de sonar de radar
+    // Sonido suave de sonar de radar mientras el comercio revisa el estante
     playRadarPing();
   };
 
@@ -424,7 +414,7 @@ export default function ProductBottomSheet({
       // 1. SI LA CAJA O MOSTRADOR COBRÓ Y ENTREGÓ EL PRODUCTO
       if (status === 'completed' || status === 'COMPLETED_IN_STORE' || status === 'completada') {
         playUnlockSuccess();
-        setStep('PURCHASE_COMPLETED');
+        const completedRes = dbData ? { ...activeRes, ...dbData } : activeRes;
         
         // Guardar en historial de compras completadas
         try {
@@ -432,7 +422,7 @@ export default function ProductBottomSheet({
           const history = JSON.parse(historyRaw);
           if (!history.some((h: any) => h.id === (dbData?.id || resId) || h.pin === targetPin)) {
             history.unshift({
-              ...activeRes,
+              ...completedRes,
               status: 'COMPLETED_IN_STORE',
               completed_at: new Date().toISOString(),
             });
@@ -445,10 +435,12 @@ export default function ProductBottomSheet({
           localStorage.setItem('aura_trust_score', String(newScore));
 
           window.dispatchEvent(new CustomEvent('aura_trust_score_updated', { detail: { score: newScore } }));
-          window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: activeRes } }));
+          window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: completedRes } }));
         } catch {}
 
         clearActiveReservation();
+        handleClose();
+        return;
       }
 
       // 2. SI ESTÁBAMOS ESPERANDO EL SEMÁFORO DE DISPONIBILIDAD
@@ -832,62 +824,6 @@ export default function ProductBottomSheet({
                 )}
               </div>
 
-              {/* Selector de Modalidad: Opción A (Gratis 3h) vs Opción B (Apartado 7 Días) */}
-              <div className="space-y-2 pt-1">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                  Elige tu Modalidad de Apartado:
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {/* Opción A */}
-                  <button
-                    type="button"
-                    onClick={() => { playTap(); setSelectedModality('option_a'); }}
-                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
-                      selectedModality === 'option_a'
-                        ? 'bg-emerald-950/70 border-[#00ffb2] shadow-[0_0_15px_rgba(0,255,178,0.25)] ring-1 ring-[#00ffb2]'
-                        : 'bg-[#050b16] border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2]">
-                          Opción A
-                        </span>
-                        <span className="text-[11px] font-black text-[#00ffb2]">$0 Ahora</span>
-                      </div>
-                      <span className="text-xs font-bold text-white block">Ir hoy mismo</span>
-                      <p className="text-[10px] text-slate-400 font-light mt-1 line-clamp-2">
-                        Ticket QR de 3 horas. Pagas completo en caja física.
-                      </p>
-                    </div>
-                  </button>
-
-                  {/* Opción B */}
-                  <button
-                    type="button"
-                    onClick={() => { playTap(); setSelectedModality('option_b'); }}
-                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
-                      selectedModality === 'option_b'
-                        ? 'bg-indigo-950/70 border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.25)] ring-1 ring-indigo-400'
-                        : 'bg-[#050b16] border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">
-                          Opción B • 7 Días
-                        </span>
-                        <span className="text-[11px] font-black text-indigo-300">30% Inicial</span>
-                      </div>
-                      <span className="text-xs font-bold text-white block">Apartado Digital</span>
-                      <p className="text-[10px] text-slate-400 font-light mt-1 line-clamp-2">
-                        5% Aura + 30% inicial tienda. Guardado 7 días en depósito.
-                      </p>
-                    </div>
-                  </button>
-                </div>
-              </div>
-
               {/* Formulario de Contacto para el Mostrador */}
               <div className="space-y-2.5 pt-1">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
@@ -939,7 +875,7 @@ export default function ProductBottomSheet({
                 </div>
               )}
 
-              {/* Botón Principal: Verificar disponibilidad / Apartar (Sin pagar nada todavía) */}
+              {/* Botón Principal: Verificar disponibilidad en tienda */}
               <button
                 type="button"
                 disabled={isSubmitting || isUserBlocked}
@@ -952,11 +888,7 @@ export default function ProductBottomSheet({
               >
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={18} />
-                  <span>
-                    {selectedModality === 'option_b'
-                      ? 'Verificar disponibilidad • Apartar por 7 Días'
-                      : 'Verificar disponibilidad • Ir hoy mismo (Gratis 3h)'}
-                  </span>
+                  <span>Verificar disponibilidad en tienda</span>
                 </div>
                 <span className="text-[10px] font-normal text-slate-900 opacity-90">
                   Sin pagar nada todavía • Consulta en vivo al estante físico
@@ -989,30 +921,11 @@ export default function ProductBottomSheet({
                 <p className="text-xs text-slate-300 font-light leading-relaxed">
                   Al teléfono del mostrador llegó tu alerta. El encargado está mirando el estante físico en este momento.
                 </p>
-
-                {/* Badge de Modalidad Solicitada */}
-                <div className="inline-block mt-1 px-3 py-1 bg-slate-900/90 border border-slate-700/80 rounded-full text-[11px] text-slate-300">
-                  Modalidad solicitada: <strong className={selectedModality === 'option_b' ? 'text-indigo-300 font-bold' : 'text-emerald-400 font-bold'}>
-                    {selectedModality === 'option_b' ? 'Apartado Digital (7 Días • 30% Inicial)' : 'Ir hoy mismo (Gratis • Ticket QR 3 Horas)'}
-                  </strong>
-                </div>
               </div>
 
               <div className="p-3 bg-[#030812] border border-slate-800 rounded-2xl text-xs text-slate-400 max-w-xs mx-auto flex items-center justify-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span>Esperando respuesta de semáforo...</span>
-              </div>
-
-              {/* Botón rápido para demo / pruebas instantáneas */}
-              <div className="pt-1 max-w-xs mx-auto">
-                <button
-                  type="button"
-                  onClick={() => handleConfirmStockSimulated('green')}
-                  className="w-full py-2.5 px-4 bg-emerald-950/60 hover:bg-emerald-900/80 text-[#00ffb2] border border-emerald-500/40 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-95"
-                >
-                  <Zap size={14} className="text-[#00ffb2]" />
-                  <span>Confirmar Disponibilidad Ahora (Demo)</span>
-                </button>
+                <span>Esperando respuesta del comercio...</span>
               </div>
 
               <button

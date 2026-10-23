@@ -179,9 +179,11 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
               }
             } catch {}
 
+            const completedRes = { ...activeReservation, ...data, status: 'COMPLETED_IN_STORE' };
             clearActiveReservation();
             loadUserData();
             window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
+            window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: completedRes } }));
           } else if (data.status === 'ATTENDED_NO_SALE' || data.status === 'cancelled' || data.status === 'cancelada') {
             clearActiveReservation();
           } else if (data.status !== activeReservation.status || (isValidUUID && data.id !== activeReservation.id)) {
@@ -234,10 +236,11 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
             }
           } catch {}
 
-          alert('¡Tu ticket ya fue cobrado y entregado en mostrador! 🎉 Se sumaron +10 puntos a tu Nivel de Confianza.');
+          const completedRes = { ...activeReservation, ...data, status: 'COMPLETED_IN_STORE' };
           clearActiveReservation();
           loadUserData();
           window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
+          window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: completedRes } }));
         } else if (data.status === 'ATTENDED_NO_SALE') {
           alert('Mostrador: El stock fue liberado. Tu saldo ha sido acreditado en tu Billetera Aura.');
           clearActiveReservation();
