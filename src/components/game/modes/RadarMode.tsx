@@ -297,8 +297,8 @@ export default function RadarMode({
             }}
             className={`group relative bg-[#030812]/90 hover:bg-[#071322] backdrop-blur-xl rounded-xl px-3 py-1.5 flex items-center gap-2.5 shrink-0 transition-all cursor-pointer border ${
               selectedStoreId
-                ? 'border-[#00ffb2]/60 shadow-[0_0_15px_rgba(0,255,178,0.25)]'
-                : 'border-slate-800/80 hover:border-emerald-500/40 shadow-inner'
+                ? 'border-slate-600 shadow-md'
+                : 'border-slate-800/80 hover:border-slate-700 shadow-inner'
             } active:scale-95`}
             title="Ver comercios registrados y explorar sus vitrinas"
           >
@@ -306,7 +306,7 @@ export default function RadarMode({
               className={`p-1 rounded-lg transition-colors ${
                 selectedStoreId
                   ? 'bg-[#00ffb2] text-black'
-                  : 'bg-emerald-950/60 text-emerald-400 group-hover:bg-emerald-900/60'
+                  : 'bg-slate-900 text-slate-300 group-hover:text-white'
               }`}
             >
               <StoreIcon size={14} />
@@ -351,11 +351,11 @@ export default function RadarMode({
 
       {/* 2.2 BANNER PROACTIVO: EL MEGÁFONO */}
       <div className="mx-2 sm:mx-4">
-        <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-emerald-950/40 via-[#050b16]/90 to-teal-950/40 border border-emerald-500/30 p-2.5 sm:p-3 backdrop-blur-xl shadow-[0_8px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent" />
+        <div className="relative rounded-2xl overflow-hidden bg-[#050b16]/90 border border-slate-800 p-2.5 sm:p-3 backdrop-blur-xl shadow-[0_8px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
           
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-900/60 to-slate-950 border border-emerald-500/40 flex items-center justify-center text-[#00ffb2] shrink-0 shadow-inner">
+            <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-[#00ffb2] shrink-0 shadow-inner">
               <Megaphone size={16} />
             </div>
             <div className="min-w-0">
@@ -384,11 +384,11 @@ export default function RadarMode({
 
       {/* 2.5 BANNER DE VITRINA COMERCIAL ACTIVA (FILTRADO POR TIENDA) */}
       {selectedStore && (
-        <div className="relative mx-4 rounded-2xl overflow-hidden bg-gradient-to-r from-emerald-950/40 via-[#050b16]/90 to-teal-950/40 border border-emerald-500/40 p-3 sm:p-3.5 backdrop-blur-xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] flex flex-wrap items-center justify-between gap-3">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/60 to-transparent" />
+        <div className="relative mx-4 rounded-2xl overflow-hidden bg-[#050b16]/90 border border-slate-800 p-3 sm:p-3.5 backdrop-blur-xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] flex flex-wrap items-center justify-between gap-3">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
           
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-900/70 to-slate-950 border border-emerald-500/40 flex items-center justify-center text-[#00ffb2] font-black text-xs shrink-0 shadow-inner">
+            <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-[#00ffb2] font-black text-xs shrink-0 shadow-inner">
               {selectedStore.name.slice(0, 2).toUpperCase()}
             </div>
             <div className="min-w-0">
@@ -416,7 +416,7 @@ export default function RadarMode({
             <Link
               href={`/${selectedStore.slug}`}
               onClick={() => playTap()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00ffb2]/10 hover:bg-[#00ffb2]/20 text-[#00ffb2] text-xs font-bold border border-emerald-500/40 transition active:scale-95 shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold border border-slate-800 transition active:scale-95 shadow-sm"
             >
               <span>Ir a Tienda Ecommerce</span>
               <ArrowRight size={12} />
@@ -541,24 +541,24 @@ export default function RadarMode({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-lg rounded-2xl sm:rounded-3xl bg-[#040913]/95 border border-emerald-500/30 shadow-[0_25px_60px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col max-h-[85vh]"
+              className="relative w-full max-w-lg rounded-2xl sm:rounded-3xl bg-[#040913]/95 border border-slate-800 shadow-[0_25px_60px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col max-h-[85vh]"
             >
               {/* Reflejo especular superior fino */}
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
 
               {/* Halo de luz de fondo */}
-              <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 rounded-full bg-emerald-500/10 blur-[80px]" />
+              <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 rounded-full bg-slate-800/20 blur-[80px]" />
 
               {/* Header del Modal */}
               <div className="relative z-10 px-5 pt-5 pb-3 border-b border-slate-800/80 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-[#00ffb2]">
+                  <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-[#00ffb2]">
                     <StoreIcon size={16} />
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                       Vitrinas Comerciales
-                      <span className="text-[10px] font-mono font-normal px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="text-[10px] font-mono font-normal px-2 py-0.5 rounded-full bg-slate-900 text-slate-300 border border-slate-800">
                         {registeredStores.length} {registeredStores.length === 1 ? 'registrada' : 'registradas'}
                       </span>
                     </h3>
@@ -606,13 +606,13 @@ export default function RadarMode({
                       key={store.id}
                       className={`p-3.5 rounded-2xl transition-all border ${
                         isSelected
-                          ? 'bg-emerald-950/30 border-emerald-500/60 shadow-[0_0_20px_rgba(0,255,178,0.15)]'
+                          ? 'bg-slate-900/90 border-slate-600 shadow-lg'
                           : 'bg-[#060c18]/80 hover:bg-[#081224] border-slate-800/80 hover:border-slate-700'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-900/60 to-slate-900 border border-emerald-500/30 flex items-center justify-center text-emerald-300 font-black text-sm shrink-0">
+                          <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-white font-black text-sm shrink-0">
                             {store.name.slice(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0">
@@ -620,7 +620,7 @@ export default function RadarMode({
                               <h4 className="text-sm font-bold text-white truncate">
                                 {store.name}
                               </h4>
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20 shrink-0">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-300 font-semibold border border-slate-800 shrink-0">
                                 Verificado
                               </span>
                             </div>
@@ -650,7 +650,7 @@ export default function RadarMode({
                           }}
                           className={`px-2.5 py-1 rounded-xl text-[10.5px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
                             isFollowing
-                              ? 'bg-emerald-500/20 text-[#00ffb2] border-emerald-500/40 shadow-sm'
+                              ? 'bg-slate-800 text-[#00ffb2] border-slate-700 shadow-sm'
                               : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/80'
                           }`}
                         >
@@ -673,7 +673,7 @@ export default function RadarMode({
                           className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                             isSelected
                               ? 'bg-emerald-500 text-black shadow-md'
-                              : 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-200 border border-emerald-500/40'
+                              : 'bg-slate-900 hover:bg-slate-800 text-white border border-slate-800'
                           }`}
                         >
                           <RadarIcon size={12} />

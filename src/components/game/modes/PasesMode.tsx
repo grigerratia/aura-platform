@@ -31,15 +31,16 @@ interface Props {
 }
 
 export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
-  const { activeReservation, clearActiveReservation, setActiveReservation } = useReservations();
+  const { activeReservation, activeReservations, clearActiveReservation, setActiveReservation, removeActiveReservation } = useReservations();
   const { playTap } = useGameSound();
 
+  const [activeList, setActiveList] = useState<any[]>([]);
   const [showPagoMovilModal, setShowPagoMovilModal] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [trustScore, setTrustScore] = useState(100);
   const [completedTickets, setCompletedTickets] = useState<any[]>([]);
 
-  // Cargar nivel de confianza e historial completado
+  // Cargar nivel de confianza, pases activos e historial completado
   const loadUserData = useCallback(async () => {
     // 1. Cargar puntaje e historial local
     if (typeof window !== 'undefined') {
@@ -54,6 +55,9 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
       }
     }
 
+    // 2. Cargar lista de pases activos locales
+    const localActive = useReservations.getState().activeReservations || [];
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -67,24 +71,23 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
         }
       }
 
-      // Sincronizar compras completadas en Supabase
       const phoneSaved = typeof window !== 'undefined' ? localStorage.getItem('aura_customer_phone') : null;
-      let query = supabase
+
+      // Sincronizar compras completadas en Supabase
+      let compQuery = supabase
         .from('reservations')
         .select('*')
         .in('status', ['completed', 'completada', 'COMPLETED_IN_STORE']);
 
       if (user?.id && phoneSaved) {
-        query = query.or(`user_id.eq.${user.id},customer_phone.ilike.%${phoneSaved.trim()}%`);
+        compQuery = compQuery.or(`user_id.eq.${user.id},customer_phone.ilike.%${phoneSaved.trim()}%`);
       } else if (user?.id) {
-        query = query.eq('user_id', user.id);
+        compQuery = compQuery.eq('user_id', user.id);
       } else if (phoneSaved) {
-        query = query.ilike('customer_phone', `%${phoneSaved.trim()}%`);
-      } else {
-        return;
+        compQuery = compQuery.ilike('customer_phone', `%${phoneSaved.trim()}%`);
       }
 
-      const { data: dbCompleted } = await query.order('created_at', { ascending: false }).limit(25);
+      const { data: dbCompleted } = await compQuery.order('created_at', { ascending: false }).limit(25);
       if (dbCompleted && dbCompleted.length > 0) {
         setCompletedTickets((prev) => {
           const map = new Map<string, any>();
@@ -102,6 +105,47 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
           return Array.from(map.values());
         });
       }
+
+      // Sincronizar todos los pases activos en Supabase
+      let actQuery = supabase
+        .from('reservations')
+        .select('*')
+        .in('status', ['pending', 'pendiente', 'confirmed', 'confirmada', 'ultimo_par', 'PENDING_STOCK_CHECK', 'STOCK_VERIFIED', 'QR_ACTIVE']);
+
+      if (user?.id && phoneSaved) {
+        actQuery = actQuery.or(`user_id.eq.${user.id},customer_phone.ilike.%${phoneSaved.trim()}%`);
+      } else if (user?.id) {
+        actQuery = actQuery.eq('user_id', user.id);
+      } else if (phoneSaved) {
+        actQuery = actQuery.ilike('customer_phone', `%${phoneSaved.trim()}%`);
+      }
+
+      const { data: dbActive } = await actQuery.order('created_at', { ascending: false }).limit(20);
+
+      const mergedMap = new Map<string, any>();
+      localActive.forEach((r) => {
+        const key = r.id || r.pin || r.pin_code;
+        if (key) mergedMap.set(key, r);
+      });
+
+      if (dbActive) {
+        dbActive.forEach((r: any) => {
+          const key = r.id || r.pin_code || r.pin;
+          if (key) {
+            const existing = mergedMap.get(key);
+            mergedMap.set(key, {
+              ...existing,
+              ...r,
+              pin: r.pin_code || r.pin || existing?.pin || '0000',
+              product_name: r.product_name || existing?.product_name || 'Producto Apartado',
+              price_usd: Number(r.total_price || r.price_usd || existing?.price_usd || 0),
+              price_ves: Number((r.total_price || r.price_usd || 0) * (r.bcv_rate || 55)),
+            });
+          }
+        });
+      }
+
+      setActiveList(Array.from(mergedMap.values()));
     } catch {}
   }, []);
 
@@ -142,120 +186,86 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
     };
   }, [loadUserData]);
 
-  // Verificación en vivo automática cada 2.5s mientras el usuario ve sus pases
+  // Verificación en vivo automática cada 3s mientras el usuario ve sus pases
   useEffect(() => {
-    if (!activeReservation) return;
+    if (activeList.length === 0) return;
 
-    const targetPin = activeReservation.pin_code || activeReservation.pin;
-    const targetId = activeReservation.id;
-    const isValidUUID = Boolean(targetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId));
+    const checkLiveAll = async () => {
+      for (const pass of activeList) {
+        const targetPin = pass.pin_code || pass.pin;
+        const targetId = pass.id;
+        const isValidUUID = Boolean(targetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId));
 
-    const checkLive = async () => {
-      try {
-        let query = supabase.from('reservations').select('*');
-        if (isValidUUID) {
-          query = query.or(`id.eq.${targetId},pin_code.eq.${targetPin}`);
-        } else if (targetPin) {
-          query = query.eq('pin_code', targetPin);
-        } else {
-          return;
-        }
-
-        const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
-
-        if (data) {
-          if (data.status === 'COMPLETED_IN_STORE' || data.status === 'completed' || data.status === 'completada') {
-            // Guardar en historial local de pases concretados
-            try {
-              const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
-              const history = JSON.parse(historyRaw);
-              if (!history.some((h: any) => h.id === data.id || h.pin === data.pin_code)) {
-                history.unshift({
-                  ...activeReservation,
-                  status: 'COMPLETED_IN_STORE',
-                  completed_at: new Date().toISOString(),
-                });
-                localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
-              }
-            } catch {}
-
-            const completedRes = { ...activeReservation, ...data, status: 'COMPLETED_IN_STORE' };
-            clearActiveReservation();
-            loadUserData();
-            window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
-            window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: completedRes } }));
-          } else if (data.status === 'ATTENDED_NO_SALE' || data.status === 'cancelled' || data.status === 'cancelada') {
-            clearActiveReservation();
-          } else if (data.status !== activeReservation.status || (isValidUUID && data.id !== activeReservation.id)) {
-            setActiveReservation({
-              ...activeReservation,
-              id: data.id,
-              status: data.status,
-            });
+        try {
+          let query = supabase.from('reservations').select('*');
+          if (isValidUUID) {
+            query = query.or(`id.eq.${targetId},pin_code.eq.${targetPin}`);
+          } else if (targetPin) {
+            query = query.eq('pin_code', targetPin);
+          } else {
+            continue;
           }
-        }
-      } catch {}
+
+          const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+          if (data) {
+            if (data.status === 'COMPLETED_IN_STORE' || data.status === 'completed' || data.status === 'completada') {
+              // Guardar en historial local de pases concretados
+              try {
+                const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
+                const history = JSON.parse(historyRaw);
+                if (!history.some((h: any) => h.id === data.id || h.pin === data.pin_code)) {
+                  history.unshift({
+                    ...pass,
+                    status: 'COMPLETED_IN_STORE',
+                    completed_at: new Date().toISOString(),
+                  });
+                  localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
+                }
+              } catch {}
+
+              const completedRes = { ...pass, ...data, status: 'COMPLETED_IN_STORE' };
+              removeActiveReservation(data.id || data.pin_code || targetPin);
+              loadUserData();
+              window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
+              window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: completedRes } }));
+            } else if (data.status === 'ATTENDED_NO_SALE' || data.status === 'cancelled' || data.status === 'cancelada') {
+              removeActiveReservation(data.id || data.pin_code || targetPin);
+              loadUserData();
+            } else if (data.status !== pass.status) {
+              setActiveList((prev) =>
+                prev.map((p) => {
+                  if ((p.id && p.id === data.id) || (p.pin && p.pin === data.pin_code)) {
+                    return { ...p, status: data.status };
+                  }
+                  return p;
+                })
+              );
+            }
+          }
+        } catch {}
+      }
     };
 
-    const interval = setInterval(checkLive, 2500);
+    const interval = setInterval(checkLiveAll, 3000);
     return () => clearInterval(interval);
-  }, [activeReservation, clearActiveReservation, loadUserData, setActiveReservation]);
+  }, [activeList, loadUserData, removeActiveReservation]);
 
-  // Comprobar manualmente estado en vivo con el mostrador
-  const handleCheckLiveStatus = async () => {
-    if (!activeReservation) return;
-    playTap();
-    setIsRefreshing(true);
+  const handleCancelPass = async (res: any) => {
+    const targetPin = res.pin_code || res.pin;
+    const targetId = res.id;
+    const isValidUUID = Boolean(targetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId));
+
     try {
-      const targetPin = activeReservation.pin_code || activeReservation.pin;
-      const targetId = activeReservation.id;
-      const isValidUUID = Boolean(targetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId));
-
-      let query = supabase.from('reservations').select('id, status, pin_code, pin, store_name, customer_name, confirmed_at');
       if (isValidUUID) {
-        query = query.or(`id.eq.${targetId},pin_code.eq.${targetPin}`);
+        await supabase.from('reservations').update({ status: 'cancelled' }).eq('id', targetId);
       } else if (targetPin) {
-        query = query.eq('pin_code', targetPin);
+        await supabase.from('reservations').update({ status: 'cancelled' }).eq('pin_code', targetPin);
       }
+    } catch {}
 
-      const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
-
-      if (data) {
-        if (data.status === 'COMPLETED_IN_STORE' || data.status === 'completed' || data.status === 'completada') {
-          // Guardar en historial
-          try {
-            const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
-            const history = JSON.parse(historyRaw);
-            if (!history.some((h: any) => h.id === data.id || h.pin === data.pin_code)) {
-              history.unshift({
-                ...activeReservation,
-                status: 'COMPLETED_IN_STORE',
-                completed_at: new Date().toISOString(),
-              });
-              localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
-            }
-          } catch {}
-
-          const completedRes = { ...activeReservation, ...data, status: 'COMPLETED_IN_STORE' };
-          clearActiveReservation();
-          loadUserData();
-          window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
-          window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: completedRes } }));
-        } else if (data.status === 'ATTENDED_NO_SALE') {
-          alert('Mostrador: El stock fue liberado. Tu saldo ha sido acreditado en tu Billetera Aura.');
-          clearActiveReservation();
-        } else if (data.status === 'cancelled' || data.status === 'cancelada') {
-          alert('Mostrador: La tienda notificó que el producto se agotó.');
-          clearActiveReservation();
-        } else if (data.status !== activeReservation.status) {
-          setActiveReservation({ ...activeReservation, status: data.status });
-        }
-      }
-    } catch (err) {
-      console.warn('Error verificando estado:', err);
-    } finally {
-      setIsRefreshing(false);
-    }
+    removeActiveReservation(targetId || targetPin);
+    loadUserData();
   };
 
   const getRankInfo = (score: number) => {
@@ -263,7 +273,7 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
       return {
         name: 'Nivel Oro VIP',
         color: 'text-amber-400',
-        border: 'border-amber-500/40',
+        border: 'border-slate-800',
         bg: 'bg-amber-950/20',
         bar: 'bg-gradient-to-r from-amber-400 to-yellow-300',
         dot: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)]',
@@ -273,7 +283,7 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
       return {
         name: 'Nivel Plata',
         color: 'text-slate-200',
-        border: 'border-slate-400/40',
+        border: 'border-slate-800',
         bg: 'bg-slate-900/40',
         bar: 'bg-gradient-to-r from-slate-400 to-slate-200',
         dot: 'bg-slate-300 shadow-[0_0_8px_rgba(203,213,225,0.9)]',
@@ -282,8 +292,8 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
     return {
       name: 'Nivel Bronce',
       color: 'text-emerald-400',
-      border: 'border-emerald-500/40',
-      bg: 'bg-emerald-950/30',
+      border: 'border-slate-800',
+      bg: 'bg-slate-900/40',
       bar: 'bg-gradient-to-r from-teal-500 to-[#00ffb2]',
       dot: 'bg-emerald-400 shadow-[0_0_8px_rgba(0,255,178,0.9)]',
     };
@@ -300,212 +310,181 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
     <div className="space-y-6 pb-24 px-4 max-w-xl mx-auto select-none">
       
       {/* ==============================================================================
-          1. SECCIÓN DE PASE ACTIVO (TICKET QR DE 3 HORAS / APARTADO 7 DÍAS)
+          1. SECCIÓN DE PASES ACTIVOS (LISTA DE TICKETS QR Y APARTADOS EN VIVO)
           ============================================================================== */}
-      {activeReservation ? (
-        <ThanosCard intensity="epic">
-          <div className="relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.65)] space-y-5">
-            {/* Reflejo especular superior fino */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/40 to-transparent" />
-
-            {/* Header del Ticket con Estado en Vivo */}
-            <div className="relative z-10 flex items-center justify-between pb-3 border-b border-slate-800/40">
-              <div className="flex items-center gap-2">
-                {isApartado ? (
-                  <>
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
-                      📦 Apartado Digital en Depósito (7 Días)
-                    </span>
-                  </>
-                ) : isPendingCheck ? (
-                  <>
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-                      Esperando Semáforo en Mostrador
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#00ffb2] animate-ping" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-[#00ffb2]">
-                      Pase Oficial de Retiro Activo
-                    </span>
-                  </>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleCheckLiveStatus}
-                disabled={isRefreshing}
-                title="Sincronizar con mostrador"
-                className="cursor-pointer p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px]"
-              >
-                <RefreshCw size={12} className={isRefreshing ? 'animate-spin text-[#00ffb2]' : ''} />
-                <span className="font-mono text-slate-300">#{activeReservation.pin}</span>
-              </button>
+      {activeList.length > 0 ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2 text-white">
+              <Ticket size={16} className="text-[#00ffb2]" />
+              <h2 className="text-sm font-bold text-white tracking-wide">
+                Pases de Retiro Activos ({activeList.length})
+              </h2>
             </div>
-
-            {/* Banner condicional de Última Unidad */}
-            {isUltimoPar && (
-              <div className="p-3 bg-amber-950/40 border border-amber-500/40 rounded-2xl flex items-center gap-2.5 text-xs text-amber-300">
-                <AlertCircle size={16} className="text-amber-400 shrink-0" />
-                <span><strong>¡Última unidad en estante!</strong> El encargado la apartó en mostrador para tu retiro.</span>
-              </div>
-            )}
-
-            {/* Información del Producto y Comercio */}
-            <div className="relative z-10 flex items-center gap-3.5">
-              <div className="w-16 h-16 rounded-2xl bg-slate-950/80 overflow-hidden relative shrink-0 border border-slate-800">
-                {activeReservation.product_image ? (
-                  <img
-                    src={activeReservation.product_image}
-                    alt={activeReservation.product_name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs text-slate-600 font-bold">
-                    Aura
-                  </div>
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-0.5">
-                <h3 className="font-bold text-slate-100 text-base truncate">
-                  {activeReservation.product_name}
-                </h3>
-                <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                  <Store size={13} />
-                  <span className="truncate">{activeReservation.store_name}</span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] text-slate-400 font-light">
-                  <MapPin size={11} className="text-slate-500" />
-                  <span>{activeReservation.store_address || 'Cumaná, Sucre'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* CÓDIGO PIN DESTACADO & QR */}
-            <div className="relative overflow-hidden bg-[#030812]/90 backdrop-blur-xl rounded-2xl p-5 text-center space-y-3 shadow-inner">
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-emerald-400/20 to-transparent" />
-              
-              <div className="flex justify-center">
-                <QRCodeView value={activeReservation.pin} size={140} />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 block">
-                  Muestra este PIN al encargado en mostrador:
-                </span>
-                <div className="font-mono text-3xl sm:text-4xl font-black text-[#00ffb2] tracking-widest drop-shadow-[0_0_12px_rgba(0,255,178,0.5)]">
-                  #{activeReservation.pin}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-center gap-1.5 text-xs text-indigo-300 font-light pt-1">
-                <Clock size={13} className="text-indigo-400" />
-                <span>{isApartado ? 'Resguardado en depósito de la tienda (7 Días)' : 'Precio congelado por 3 horas en estante'}</span>
-              </div>
-            </div>
-
-            {/* DESGLOSE FINANCIERO */}
-            {isApartado ? (
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div className="p-3 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-emerald-500/30">
-                  <span className="text-[10px] text-slate-500 block uppercase font-light">Desbloqueo Aura:</span>
-                  <span className="font-bold text-[#00ffb2] text-xs sm:text-sm">
-                    ${(activeReservation.unlock_fee_usd || 2).toFixed(2)} USD
-                  </span>
-                  <span className="block text-[9px] text-slate-500 font-mono">5% custodia</span>
-                </div>
-
-                <div className="p-3 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-indigo-500/30">
-                  <span className="text-[10px] text-slate-500 block uppercase font-light">Abono Inicial:</span>
-                  <span className="font-bold text-indigo-300 text-xs sm:text-sm">
-                    ${(activeReservation.initial_deposit || 12).toFixed(2)} USD
-                  </span>
-                  <span className="block text-[9px] text-slate-500 font-mono">30% tienda</span>
-                </div>
-
-                <div className="p-3 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
-                  <span className="text-[10px] text-slate-500 block uppercase font-light">A Pagar en Caja:</span>
-                  <span className="font-bold text-slate-100 text-xs sm:text-sm">
-                    ${(activeReservation.store_pay_balance_usd || (activeReservation.price_usd * 0.7)).toFixed(2)} USD
-                  </span>
-                  <span className="block text-[9px] text-slate-500 font-mono">70% al retirar</span>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3.5 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
-                  <span className="text-[10px] text-slate-500 block uppercase font-light">Anticipo Desbloqueo:</span>
-                  <span className="font-bold text-[#00ffb2] text-sm sm:text-base">
-                    $0.00 USD
-                  </span>
-                </div>
-
-                <div className="p-3.5 bg-[#030812]/75 backdrop-blur-md rounded-2xl relative overflow-hidden border border-slate-800/80">
-                  <span className="text-[10px] text-slate-500 block uppercase font-light">A Pagar en Caja:</span>
-                  <span className="font-bold text-slate-100 text-sm sm:text-base">
-                    ${(activeReservation.price_usd).toFixed(2)} USD
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* ACCIÓN SEGÚN TIPO DE PASE */}
-            {isApartado ? (
-              <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl text-xs text-indigo-200 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-[#00ffb2] shrink-0" />
-                  <span>Guardado en depósito de {activeReservation.store_name}.</span>
-                </div>
-                {activeReservation.store_whatsapp && (
-                  <a
-                    href={`https://wa.me/${activeReservation.store_whatsapp.replace(/[^0-9]/g, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-emerald-400 font-bold hover:underline shrink-0 ml-2"
-                  >
-                    WhatsApp ↗
-                  </a>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  playTap();
-                  setShowPagoMovilModal(true);
-                }}
-                className="game-sweep w-full bg-gradient-to-r from-indigo-900/90 via-indigo-700/80 to-purple-800 text-slate-100 font-black py-3 px-4 rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-95"
-              >
-                <span>Asegurar Ya con Apartado Digital (14-30 Días)</span>
-                <ArrowRight size={14} />
-              </button>
-            )}
-
-            {/* Cancelar Reserva */}
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  playTap();
-                  if (confirm('¿Deseas liberar esta reserva para otros compradores?')) {
-                    clearActiveReservation();
-                  }
-                }}
-                className="text-xs text-rose-400/70 hover:text-rose-300 underline cursor-pointer font-light transition-colors"
-              >
-                Liberar reserva
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                playTap();
+                setIsRefreshing(true);
+                await loadUserData();
+                setIsRefreshing(false);
+              }}
+              disabled={isRefreshing}
+              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <RefreshCw size={12} className={isRefreshing ? 'animate-spin text-[#00ffb2]' : ''} />
+              <span>Sincronizar</span>
+            </button>
           </div>
-        </ThanosCard>
+
+          <div className="space-y-4">
+            {activeList.map((pass) => {
+              const isApartado = pass.payment_type === 'apartado_7d' || pass.payment_type === 'apartado_15d' || Boolean(pass.initial_deposit);
+              const isPendingCheck = pass.status === 'pending' || pass.status === 'PENDING_STOCK_CHECK';
+              const isUltimo = pass.status === 'ultimo_par';
+              const targetPin = pass.pin_code || pass.pin || '0000';
+              const priceUsd = Number(pass.price_usd || pass.total_price || 0);
+              const priceVes = Number(pass.price_ves || (priceUsd * (pass.bcv_rate || 55)));
+
+              return (
+                <div
+                  key={pass.id || targetPin}
+                  className="relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.65)] space-y-4"
+                >
+                  {/* Reflejo especular superior fino */}
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
+
+                  {/* Header de la tarjeta */}
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/60">
+                    <div className="flex items-center gap-2">
+                      {isApartado ? (
+                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-indigo-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                          Apartado en Depósito (7 Días)
+                        </span>
+                      ) : isPendingCheck ? (
+                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-amber-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          Esperando confirmación en mostrador
+                        </span>
+                      ) : isUltimo ? (
+                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-amber-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400" />
+                          ¡Última unidad en estante!
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-emerald-400 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          Listo para retirar en mostrador
+                        </span>
+                      )}
+                    </div>
+
+                    <span className="font-mono text-xs font-black text-white bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">
+                      PIN #{targetPin}
+                    </span>
+                  </div>
+
+                  {/* Producto y Tienda */}
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-950 overflow-hidden relative shrink-0 border border-slate-800">
+                      {pass.product_image ? (
+                        <img
+                          src={pass.product_image}
+                          alt={pass.product_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-xs text-slate-600 font-bold">
+                          Aura
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <h3 className="font-bold text-slate-100 text-sm sm:text-base truncate">
+                        {pass.product_name}
+                      </h3>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium">
+                        <Store size={12} className="text-emerald-400" />
+                        <span className="truncate">{pass.store_name}</span>
+                      </div>
+                      {pass.store_address && (
+                        <div className="flex items-center gap-1 text-[11px] text-slate-500 font-light truncate">
+                          <MapPin size={10} className="text-slate-500" />
+                          <span className="truncate">{pass.store_address}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-black text-white block">
+                        ${priceUsd.toFixed(2)} USD
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono block">
+                        Bs. {priceVes.toLocaleString('es-VE')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* CÓDIGO QR Y PIN DESTACADO */}
+                  <div className="bg-[#030812] border border-slate-800 rounded-2xl p-4 text-center space-y-2.5 shadow-inner">
+                    <div className="flex justify-center">
+                      <QRCodeView value={targetPin} size={120} />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 block">
+                        Muestra este PIN al encargado en mostrador:
+                      </span>
+                      <div className="font-mono text-3xl font-black text-[#00ffb2] tracking-widest drop-shadow-[0_0_12px_rgba(0,255,178,0.4)]">
+                        #{targetPin}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 font-light pt-0.5">
+                      <Clock size={12} className="text-amber-400" />
+                      <span>{isApartado ? 'Resguardado en depósito de la tienda (7 Días)' : 'Precio congelado por 3 horas en estante'}</span>
+                    </div>
+                  </div>
+
+                  {/* Acciones del pase */}
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    {pass.store_whatsapp ? (
+                      <a
+                        href={`https://wa.me/${pass.store_whatsapp.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-400 hover:text-emerald-300 font-bold transition flex items-center gap-1"
+                      >
+                        <span>WhatsApp tienda</span>
+                        <ArrowRight size={12} />
+                      </a>
+                    ) : (
+                      <span />
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTap();
+                        if (confirm(`¿Deseas liberar el pase #${targetPin}?`)) {
+                          handleCancelPass(pass);
+                        }
+                      }}
+                      className="text-slate-500 hover:text-rose-400 text-xs transition cursor-pointer underline font-light"
+                    >
+                      Liberar reserva
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ) : (
         /* ESTADO VACÍO (SIN PASES ACTIVOS) */
-        <div className="relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl rounded-3xl p-8 sm:p-10 text-center space-y-4 shadow-[0_20px_50px_rgba(0,0,0,0.65)]">
+        <div className="relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 sm:p-10 text-center space-y-4 shadow-[0_20px_50px_rgba(0,0,0,0.65)]">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent" />
 
           <div className="w-16 h-16 rounded-2xl bg-[#030812]/90 text-cyan-400 flex items-center justify-center mx-auto shadow-inner border border-slate-800">

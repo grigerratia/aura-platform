@@ -220,7 +220,7 @@ export default function AuraGameShell({
         });
 
         // Limpiar reserva activa para apagar el punto parpadeante en dock
-        clearActiveReservation();
+        clearActiveReservation(resId || targetPin);
       }
 
       // 2. CLIENTE ASISTIÓ PERO NO LLEVÓ (Candado de confianza -> saldo a favor)
@@ -228,14 +228,14 @@ export default function AuraGameShell({
         isHandled = true;
         playAlertChime();
         alert('Mostrador: Se confirmó tu visita al local. El producto fue liberado y tu abono fue acreditado a tu Billetera Aura.');
-        clearActiveReservation();
+        clearActiveReservation(resId || targetPin);
       }
 
       // 3. AGOTADO / CANCELADO EN MOSTRADOR
       else if (status === 'cancelled' || status === 'cancelada' || status === 'REJECTED_OUT_OF_STOCK') {
         isHandled = true;
         alert('Mostrador: El comercio notificó que este producto se acaba de agotar en estante.');
-        clearActiveReservation();
+        clearActiveReservation(resId || targetPin);
       }
 
       // 4. ACTUALIZACIÓN A ÚLTIMO PAR O CONFIRMADO
@@ -348,32 +348,6 @@ export default function AuraGameShell({
           )}
         </SmokeTransition>
       </main>
-
-      {/* BOTÓN FLOTANTE: REGRESAR A APARTADO O TICKET EN CURSO */}
-      {activeReservation && !selectedProduct && (
-        <aside
-          aria-label="Proceso de apartado en curso"
-          onClick={() => {
-            const found = productsList.find((p) => p.id === activeReservation.product_id) || ({
-              id: activeReservation.product_id,
-              name: activeReservation.product_name,
-              price: activeReservation.price_usd,
-              store_id: activeReservation.store_id,
-              imageUrl: activeReservation.product_image,
-            } as Product);
-            setSelectedProduct(found);
-          }}
-          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-emerald-500 via-teal-400 to-indigo-500 text-slate-950 px-4 py-2 rounded-full shadow-2xl shadow-emerald-500/30 flex items-center gap-2 cursor-pointer hover:scale-105 transition font-black text-xs border border-white/40 backdrop-blur-md animate-bounce"
-        >
-          <span className="w-2.5 h-2.5 rounded-full bg-slate-950 animate-ping" />
-          <span className="truncate max-w-[170px] sm:max-w-xs font-black">
-            Apartado en curso: {activeReservation.product_name}
-          </span>
-          <span className="bg-slate-950 text-white font-bold px-2 py-0.5 rounded-full text-[10px] shrink-0">
-            Regresar al proceso →
-          </span>
-        </aside>
-      )}
 
       {/* 4. BOTTOM DOCK: BARRA INFERIOR FIJA CON 4 MODOS DE JUEGO (SE MUESTRA DENTRO DE LOS MODOS) */}
       {activeMode !== 'portal' && (

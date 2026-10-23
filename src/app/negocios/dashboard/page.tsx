@@ -471,31 +471,35 @@ export default function OwnerDashboard() {
         const isValidUUID = Boolean(target.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.id));
         const targetPin = target.pin || target.pin_code || cleanPin;
 
+        let errorResult: any = null;
         if (isValidUUID) {
-          await supabase
+          const { error } = await supabase
             .from('reservations')
-            .update({ 
-              status: 'completed',
-              confirmed_at: new Date().toISOString()
-            })
+            .update({ status: 'completed' })
             .eq('id', target.id);
+          if (error) errorResult = error;
         }
 
         if (targetPin) {
-          await supabase
+          const { error } = await supabase
             .from('reservations')
-            .update({ 
-              status: 'completed',
-              confirmed_at: new Date().toISOString()
-            })
+            .update({ status: 'completed' })
             .eq('pin_code', targetPin);
+          if (error && !errorResult) errorResult = error;
+        }
+
+        if (errorResult) {
+          console.error('Error al validar PIN:', errorResult);
+          alert('Error al validar PIN en base de datos: ' + errorResult.message);
+          return;
         }
 
         setPinSuccessMessage(`Venta validada: PIN #${cleanPin} (${target.customer_name}).`);
         setPinInput('');
         if (storeId) fetchReservations(storeId);
-      } catch {
-        setPinSuccessMessage(`PIN #${cleanPin} validado con éxito.`);
+      } catch (err: any) {
+        console.error('Error al validar PIN:', err);
+        alert('Error inesperado: ' + err.message);
       }
     } else {
       alert('PIN no encontrado o ya expirado. Verifica los 4 dígitos.');
@@ -508,30 +512,34 @@ export default function OwnerDashboard() {
       const isValidUUID = Boolean(reservation.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reservation.id));
       const targetPin = reservation.pin || reservation.pin_code;
 
+      let errorResult: any = null;
       if (isValidUUID) {
-        await supabase
+        const { error } = await supabase
           .from('reservations')
-          .update({ 
-            status: 'completed',
-            confirmed_at: new Date().toISOString()
-          })
+          .update({ status: 'completed' })
           .eq('id', reservation.id);
+        if (error) errorResult = error;
       }
 
       if (targetPin) {
-        await supabase
+        const { error } = await supabase
           .from('reservations')
-          .update({ 
-            status: 'completed',
-            confirmed_at: new Date().toISOString()
-          })
+          .update({ status: 'completed' })
           .eq('pin_code', targetPin);
+        if (error && !errorResult) errorResult = error;
+      }
+
+      if (errorResult) {
+        console.error('Error al completar reserva:', errorResult);
+        alert('Error al actualizar reserva: ' + errorResult.message);
+        return;
       }
 
       setPinSuccessMessage(`Venta cobrada y entregada: PIN #${reservation.pin} (${reservation.customer_name}).`);
       if (storeId) fetchReservations(storeId);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error completando reserva:', err);
+      alert('Error inesperado: ' + err.message);
     }
   };
 

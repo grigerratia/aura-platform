@@ -438,7 +438,7 @@ export default function ProductBottomSheet({
           window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: completedRes } }));
         } catch {}
 
-        clearActiveReservation();
+        clearActiveReservation(resId || targetPin);
         handleClose();
         return;
       }
@@ -699,10 +699,10 @@ export default function ProductBottomSheet({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: '100%', opacity: 0 }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="relative w-full max-w-lg bg-[#040913]/95 border-t border-emerald-500/30 rounded-t-3xl sm:rounded-t-[2.5rem] shadow-[0_-20px_60px_rgba(0,0,0,0.85)] p-5 sm:p-6 max-h-[90vh] overflow-y-auto no-scrollbar z-10"
+            className="relative w-full max-w-lg bg-[#040913]/95 border-t border-slate-800 rounded-t-3xl sm:rounded-t-[2.5rem] shadow-[0_-20px_60px_rgba(0,0,0,0.85)] p-5 sm:p-6 max-h-[90vh] overflow-y-auto no-scrollbar z-10"
           >
             {/* Reflejo especular superior fino */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
 
             {/* Manija de arrastre */}
             <div className="w-12 h-1 rounded-full bg-slate-700/80 mx-auto mb-4" />
@@ -778,7 +778,7 @@ export default function ProductBottomSheet({
                           }}
                           className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-bold transition border ${
                             isSel
-                              ? 'bg-emerald-950/80 text-[#00ffb2] border-[#00ffb2] shadow-[0_0_12px_rgba(0,255,178,0.35)] scale-105'
+                              ? 'bg-slate-800 text-white border-slate-600 scale-105'
                               : 'bg-[#060c18] text-slate-400 border-slate-800 hover:border-slate-700'
                           }`}
                         >
@@ -838,7 +838,7 @@ export default function ProductBottomSheet({
                       placeholder="Tu Nombre y Apellido"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
+                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-slate-600"
                     />
 
                     <input
@@ -847,7 +847,7 @@ export default function ProductBottomSheet({
                       placeholder="Cédula (ej. V-12345678)"
                       value={customerCedula}
                       onChange={(e) => setCustomerCedula(e.target.value)}
-                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
+                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-slate-600"
                     />
                   </div>
 
@@ -857,7 +857,7 @@ export default function ProductBottomSheet({
                     placeholder="Teléfono / WhatsApp de Retiro (0414...)"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="w-full p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#00ffb2]"
+                    className="w-full p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-slate-600"
                   />
                 </div>
               </div>
@@ -904,10 +904,10 @@ export default function ProductBottomSheet({
             <div className="py-8 text-center space-y-6">
               {/* Animación de Ondas de Radar Concéntricas */}
               <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
-                <span className="absolute w-full h-full rounded-full border border-emerald-500/20 animate-ping" />
-                <span className="absolute w-20 h-20 rounded-full border border-[#00ffb2]/40 animate-pulse" />
-                <div className="w-16 h-16 rounded-2xl bg-emerald-950/80 border border-emerald-500/60 text-[#00ffb2] flex items-center justify-center shadow-[0_0_30px_rgba(0,255,178,0.4)]">
-                  <Clock size={28} className="animate-spin" />
+                <span className="absolute w-full h-full rounded-full border border-slate-700/30 animate-ping" />
+                <span className="absolute w-20 h-20 rounded-full border border-slate-700/50 animate-pulse" />
+                <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 text-white flex items-center justify-center shadow-lg">
+                  <Clock size={28} className="animate-spin text-slate-300" />
                 </div>
               </div>
 
@@ -958,7 +958,7 @@ export default function ProductBottomSheet({
                   </div>
                 </div>
               ) : (
-                <div className="p-4 bg-emerald-950/30 border border-emerald-500/50 rounded-2xl flex items-center gap-3 text-emerald-200">
+                <div className="p-4 bg-[#050c18] border border-slate-800 rounded-2xl flex items-center gap-3 text-slate-200">
                   <Check size={24} className="text-[#00ffb2] shrink-0" />
                   <div>
                     <h4 className="text-xs font-black uppercase text-emerald-300 tracking-wide">
@@ -976,16 +976,16 @@ export default function ProductBottomSheet({
                 {/* OPCIÓN A: IR HOY MISMO (GRATIS) */}
                 <div
                   onClick={handleSelectOptionA}
-                  className={`cursor-pointer group relative overflow-hidden bg-[#050c18] hover:bg-[#071326] border-2 rounded-2xl p-4 transition active:scale-98 shadow-md ${
+                  className={`cursor-pointer group relative overflow-hidden bg-[#050c18] hover:bg-[#071326] border rounded-2xl p-4 transition active:scale-98 shadow-md ${
                     selectedModality === 'option_a'
-                      ? 'border-[#00ffb2] ring-1 ring-[#00ffb2]/50'
-                      : 'border-emerald-500/40 hover:border-emerald-400'
+                      ? 'border-slate-600 ring-1 ring-slate-600'
+                      : 'border-slate-800 hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30">
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-900 text-emerald-400 border border-slate-800">
                           Opción A • Gratis
                         </span>
                         <span className="text-xs font-bold text-white">Ir hoy mismo a la tienda</span>
@@ -995,14 +995,14 @@ export default function ProductBottomSheet({
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="text-sm font-black text-[#00ffb2] block">$0.00 Ahora</span>
+                      <span className="text-sm font-black text-white block">$0.00 Ahora</span>
                       <span className="text-[10px] text-slate-400 block">${auraPrice.toFixed(2)} en caja</span>
                     </div>
                   </div>
 
                   <button
                     type="button"
-                    className="mt-3 w-full bg-emerald-500/20 group-hover:bg-[#00ffb2] text-[#00ffb2] group-hover:text-black font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-emerald-500/40 cursor-pointer"
+                    className="mt-3 w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 border border-slate-800 cursor-pointer"
                   >
                     <span>Generar Ticket QR de 3 Horas (Gratis)</span>
                     <ArrowRight size={13} />
@@ -1012,10 +1012,10 @@ export default function ProductBottomSheet({
                 {/* OPCIÓN B: APARTADO DIGITAL (CASHEA INVERSO 7 DÍAS) */}
                 <div
                   onClick={handleSelectOptionB}
-                  className={`cursor-pointer group relative overflow-hidden bg-[#070b18] hover:bg-[#0c1228] border-2 rounded-2xl p-4 transition active:scale-98 shadow-md ${
+                  className={`cursor-pointer group relative overflow-hidden bg-[#070b18] hover:bg-[#0c1228] border rounded-2xl p-4 transition active:scale-98 shadow-md ${
                     selectedModality === 'option_b'
-                      ? 'border-indigo-400 ring-1 ring-indigo-400/50'
-                      : 'border-indigo-500/40 hover:border-indigo-400'
+                      ? 'border-indigo-500/60 ring-1 ring-indigo-500/40'
+                      : 'border-slate-800 hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -1054,7 +1054,7 @@ export default function ProductBottomSheet({
               ===================================================================== */}
           {step === 'OPTION_A_TICKET' && (
             <div className="space-y-4 py-2 text-center animate-in zoom-in-95 duration-200">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider border border-emerald-500/30">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-emerald-400 text-xs font-bold uppercase tracking-wider border border-slate-800">
                 <Check size={14} className="text-[#00ffb2]" />
                 <span>Ticket de Retiro Activo</span>
               </div>
@@ -1069,7 +1069,7 @@ export default function ProductBottomSheet({
               </div>
 
               {/* CÓDIGO QR GENERADO & PIN */}
-              <div className="bg-[#030812] border border-emerald-500/40 rounded-3xl p-5 max-w-xs mx-auto space-y-3 shadow-inner">
+              <div className="bg-[#030812] border border-slate-800 rounded-3xl p-5 max-w-xs mx-auto space-y-3 shadow-inner">
                 <QRCodeView value={generatedPin} size={150} />
 
                 <div>
@@ -1150,7 +1150,7 @@ export default function ProductBottomSheet({
                   onClick={() => setLayawaySubStep(1)}
                   className={`p-2 rounded-xl border transition cursor-pointer text-left ${
                     layawaySubStep === 1
-                      ? 'bg-emerald-950/60 border-emerald-400 text-white shadow-sm'
+                      ? 'bg-slate-800 border-slate-600 text-white shadow-sm'
                       : 'bg-[#030812] border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -1168,7 +1168,7 @@ export default function ProductBottomSheet({
                   }}
                   className={`p-2 rounded-xl border transition cursor-pointer text-left ${
                     layawaySubStep === 2
-                      ? 'bg-indigo-950/60 border-indigo-400 text-white shadow-sm'
+                      ? 'bg-slate-800 border-slate-600 text-white shadow-sm'
                       : 'bg-[#030812] border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -1181,10 +1181,10 @@ export default function ProductBottomSheet({
               {/* SUB-PASO 1: PAGO DEL 5% DESBLOQUEO AURA */}
               {layawaySubStep === 1 && (
                 <div className="space-y-4 animate-in fade-in duration-150">
-                  <div className="bg-[#030812] border border-emerald-500/40 rounded-2xl p-4 space-y-3 text-xs">
+                  <div className="bg-[#030812] border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#00ffb2] flex items-center gap-1.5 text-xs sm:text-sm">
-                        <Sparkles size={15} />
+                      <span className="font-bold text-white flex items-center gap-1.5 text-xs sm:text-sm">
+                        <Sparkles size={15} className="text-emerald-400" />
                         Paso 1: Desbloqueo y Custodia Aura (5%)
                       </span>
                       <span className="font-black text-white text-sm sm:text-base">${auraUnlockFeeUSD.toFixed(2)} USD</span>
@@ -1195,7 +1195,7 @@ export default function ProductBottomSheet({
                     </p>
 
                     {userWalletCredit >= auraUnlockFeeUSD && (
-                      <label className="flex items-center gap-2 p-2.5 bg-emerald-950/50 border border-emerald-500/50 rounded-xl cursor-pointer">
+                      <label className="flex items-center gap-2 p-2.5 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer">
                         <input
                           type="checkbox"
                           checked={payAuraWithWallet}
@@ -1236,7 +1236,7 @@ export default function ProductBottomSheet({
                             placeholder="Nº Referencia Aura (últimos 4-6 dígitos)"
                             value={pagoMovilAuraRef}
                             onChange={(e) => setPagoMovilAuraRef(e.target.value)}
-                            className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-emerald-400"
+                            className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-slate-600"
                           />
                         </div>
                       </div>
@@ -1346,7 +1346,7 @@ export default function ProductBottomSheet({
               </div>
 
               <div className="space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3 py-1 rounded-full inline-block">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-slate-900 border border-slate-800 px-3 py-1 rounded-full inline-block">
                   ✓ Transacción Finalizada en Caja
                 </span>
                 <h3 className="text-xl font-black text-white">
@@ -1357,7 +1357,7 @@ export default function ProductBottomSheet({
                 </p>
               </div>
 
-              <div className="p-3 bg-[#030812] border border-emerald-500/30 rounded-2xl max-w-xs mx-auto text-xs text-slate-300 space-y-1">
+              <div className="p-3 bg-[#030812] border border-slate-800 rounded-2xl max-w-xs mx-auto text-xs text-slate-300 space-y-1">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Producto:</span>
                   <span className="text-white font-bold truncate max-w-[150px]">{product.name}</span>
@@ -1388,7 +1388,7 @@ export default function ProductBottomSheet({
               </div>
 
               <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3 py-1 rounded-full inline-block mb-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-slate-900 border border-slate-800 px-3 py-1 rounded-full inline-block mb-1.5">
                   📦 Apartado en Depósito Activo (7 Días)
                 </span>
                 <h3 className="text-xl font-black text-white">

@@ -63,10 +63,10 @@ export default function PurchaseCelebrationModal({
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="relative w-full max-w-md bg-[#040913]/95 border-2 border-emerald-500/60 rounded-3xl p-6 sm:p-7 shadow-[0_0_60px_rgba(0,255,178,0.25)] space-y-5 z-10 text-center overflow-hidden"
+          className="relative w-full max-w-md bg-[#040913]/95 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-[0_25px_60px_rgba(0,0,0,0.85)] space-y-5 z-10 text-center overflow-hidden"
         >
           {/* Reflejo especular superior fino */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2] to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
 
           {/* Botón Cerrar */}
           <button
@@ -79,15 +79,15 @@ export default function PurchaseCelebrationModal({
 
           {/* Ícono de Victoria / Celebración */}
           <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
-            <span className="absolute w-full h-full rounded-full bg-emerald-500/20 animate-ping" />
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-[#00ffb2] text-slate-950 flex items-center justify-center shadow-[0_0_30px_rgba(0,255,178,0.5)]">
+            <span className="absolute w-full h-full rounded-full bg-slate-800/40 animate-ping" />
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-[#00ffb2] text-slate-950 flex items-center justify-center shadow-lg">
               <CheckCircle2 size={34} />
             </div>
           </div>
 
           {/* Encabezado */}
           <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2] text-[11px] font-black uppercase tracking-wider border border-emerald-500/40">
+            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-900 text-emerald-400 text-[11px] font-black uppercase tracking-wider border border-slate-800">
               <Sparkles size={12} />
               <span>¡Compra Concretada en Tienda!</span>
             </div>
@@ -116,7 +116,7 @@ export default function PurchaseCelebrationModal({
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-xs font-black text-[#00ffb2] bg-emerald-950 border border-emerald-500/40 px-2 py-0.5 rounded-lg inline-block animate-pulse">
+                <span className="text-xs font-black text-[#00ffb2] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-lg inline-block animate-pulse">
                   +10 PUNTOS
                 </span>
                 <span className="text-[10px] text-slate-300 block font-bold mt-0.5">
@@ -174,7 +174,7 @@ export default function PurchaseCelebrationModal({
                 <span className="text-[10px] text-slate-400 block">Total Pagado en Caja:</span>
                 <span className="text-base font-black text-white">${paidBalance.toFixed(2)} USD</span>
               </div>
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-2.5 py-1 rounded-xl">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-xl">
                 <ShieldCheck size={12} />
                 <span>Entregado en Mano</span>
               </span>
