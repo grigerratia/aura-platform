@@ -109,3 +109,4 @@ DO $$ BEGIN
     ON public.megaphone_quotes FOR UPDATE
     USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+

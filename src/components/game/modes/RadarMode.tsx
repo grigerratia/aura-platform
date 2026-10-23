@@ -19,6 +19,7 @@ import {
   Store as StoreIcon,
   Radio,
   Sparkles,
+  Megaphone,
 } from 'lucide-react';
 import MegaphoneRadarPanel from '../MegaphoneRadarPanel';
 import { useGameSound } from '@/hooks/useGameSound';
@@ -349,26 +350,21 @@ export default function RadarMode({
         accentColor="#00ffb2"
       />
 
-      {/* 2.2 BANNER PROACTIVO: EL MEGÁFONO (BÚSQUEDA INVERSA EN VIVO) */}
+      {/* 2.2 BANNER PROACTIVO: EL MEGÁFONO */}
       <div className="mx-2 sm:mx-4">
         <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-emerald-950/40 via-[#050b16]/90 to-teal-950/40 border border-emerald-500/30 p-2.5 sm:p-3 backdrop-blur-xl shadow-[0_8px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#00ffb2]/50 to-transparent" />
           
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-900/60 to-slate-950 border border-emerald-500/40 flex items-center justify-center text-[#00ffb2] shrink-0 shadow-inner">
-              <Radio size={16} className="animate-pulse" />
+              <Megaphone size={16} />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[9px] uppercase font-bold text-[#00ffb2] tracking-wider">
-                  Búsqueda Inversa en Tiempo Real
-                </span>
-                <span className="text-[9px] font-mono font-medium text-emerald-400/80 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
-                  Gratis
-                </span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-200 font-medium truncate">
-                ¿No consigues lo que buscas? <span className="text-white font-bold">Lanza El Megáfono</span> a todos los mostradores de Cumaná
+              <span className="text-[9px] uppercase font-bold text-[#00ffb2] tracking-wider block">
+                El Megáfono
+              </span>
+              <p className="text-xs text-white font-semibold truncate">
+                ¿No consigues lo que buscas? Pregunta a las vitrinas de Cumaná
               </p>
             </div>
           </div>
@@ -382,9 +378,8 @@ export default function RadarMode({
             }}
             className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-950 text-xs font-bold transition active:scale-95 shadow-sm cursor-pointer"
           >
-            <Radio size={13} />
-            <span className="hidden sm:inline">Lanzar</span>
-            <span>Megáfono</span>
+            <Megaphone size={13} />
+            <span>Usar Megáfono</span>
           </button>
         </div>
       </div>
@@ -517,8 +512,8 @@ export default function RadarMode({
                 }}
                 className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition active:scale-95 shadow-md"
               >
-                <Radio size={14} />
-                <span>📢 Preguntar a mostradores con El Megáfono</span>
+                <Megaphone size={14} />
+                <span>Preguntar con El Megáfono</span>
               </button>
 
               {(selectedStoreId || activeQuery || selectedCategory !== 'all' || !activeFilters.near || activeFilters.rating || activeFilters.favorites || activeFilters.followedStores) && (

@@ -6,6 +6,7 @@ import { Store, MegaphoneRequest } from '@/types';
 import { fetchOpenRequestsForStore, submitMegaphoneQuote } from '@/lib/megaphone';
 import { useGameSound } from '@/hooks/useGameSound';
 import {
+  Megaphone,
   Radio,
   Clock,
   Send,
@@ -217,23 +218,20 @@ export default function MegaphoneMerchantWidget({
   return (
     <div className="space-y-4">
       {/* HEADER DE ESTADO Y CUOTA */}
-      <div className="relative overflow-hidden rounded-2xl bg-[#030812]/90 border border-emerald-500/30 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="relative overflow-hidden rounded-2xl bg-[#030812]/90 border border-emerald-500/30 p-3.5 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-emerald-950/70 border border-emerald-500/40 flex items-center justify-center text-[#00ffb2] shadow-inner">
-            <Radio size={18} className="animate-pulse" />
+          <div className="w-8 h-8 rounded-xl bg-emerald-950/70 border border-emerald-500/40 flex items-center justify-center text-[#00ffb2]">
+            <Megaphone size={16} />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
-                📢 El Megáfono en Vivo
+                El Megáfono
               </h4>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30">
-                {activeCount} {activeCount === 1 ? 'solicitud abierta' : 'solicitudes abiertas'}
+              <span className="text-[10px] font-mono font-bold px-2 py-0.2 rounded-full bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30">
+                {activeCount} {activeCount === 1 ? 'solicitud' : 'solicitudes'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-light">
-              Clientes en Cumaná buscando artículos en este momento. Responde en 3 segundos.
-            </p>
           </div>
         </div>
 
@@ -317,17 +315,14 @@ export default function MegaphoneMerchantWidget({
 
       {/* LISTADO DE SOLICITUDES */}
       {loading ? (
-        <div className="py-12 text-center space-y-2">
-          <Loader2 size={24} className="animate-spin text-[#00ffb2] mx-auto" />
-          <p className="text-xs text-slate-400 font-light">Sintonizando el Megáfono de Cumaná...</p>
+        <div className="py-8 text-center space-y-2">
+          <Loader2 size={20} className="animate-spin text-[#00ffb2] mx-auto" />
+          <p className="text-xs text-slate-400">Buscando solicitudes...</p>
         </div>
       ) : requests.length === 0 ? (
-        <div className="p-8 rounded-2xl bg-[#030812]/50 border border-slate-900 text-center space-y-2">
-          <Radio size={28} className="text-slate-600 mx-auto" />
-          <h5 className="text-xs font-bold text-slate-300">No hay búsquedas activas en este momento</h5>
-          <p className="text-[11px] text-slate-500 max-w-sm mx-auto font-light">
-            En cuanto un cliente busque un producto o repuesto en Radar, sonará la alerta y aparecerá aquí para que respondas de inmediato.
-          </p>
+        <div className="p-6 rounded-2xl bg-[#030812]/50 border border-slate-900 text-center space-y-1.5">
+          <Megaphone size={24} className="text-slate-600 mx-auto" />
+          <h5 className="text-xs font-bold text-slate-300">No hay solicitudes pendientes</h5>
         </div>
       ) : (
         <div className="space-y-3">
@@ -584,3 +579,4 @@ export default function MegaphoneMerchantWidget({
     </div>
   );
 }
+

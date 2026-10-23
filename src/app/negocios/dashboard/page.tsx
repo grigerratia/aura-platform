@@ -12,7 +12,7 @@ import {
   Clock, Check, X, QrCode, Printer,
   Flame, ArrowRight, TrendingUp, Users, Smartphone,
   ShieldCheck, Zap, Crown, Award, Layers, Sparkles, Lock, ArrowUpRight,
-  Upload, Image as ImageIcon, Camera, Compass, Radio
+  Upload, Image as ImageIcon, Camera, Compass, Radio, Megaphone
 } from 'lucide-react';
 import Link from 'next/link';
 import MegaphoneMerchantWidget from '@/components/merchant/MegaphoneMerchantWidget';
@@ -885,8 +885,8 @@ export default function OwnerDashboard() {
                 : 'text-slate-400 hover:bg-slate-900/50 hover:text-white'
             }`}
           >
-            <Radio size={16} className={activeTab === 'megaphone' ? 'text-emerald-400' : 'text-[#00ffb2] animate-pulse'} />
-            <span className="whitespace-nowrap">📢 El Megáfono</span>
+            <Megaphone size={16} className={activeTab === 'megaphone' ? 'text-emerald-400' : 'text-[#00ffb2]'} />
+            <span className="whitespace-nowrap">El Megáfono</span>
           </button>
 
           <Link
@@ -1999,16 +1999,11 @@ export default function OwnerDashboard() {
         {/* PESTAÑA 5: EL MEGÁFONO EN VIVO */}
         {activeTab === 'megaphone' && store && (
           <div className="space-y-4">
-            <header>
-              <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                <span>📢 El Megáfono en Vivo</span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30">
-                  Radar Inverso
-                </span>
+            <header className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+                <Megaphone size={18} className="text-[#00ffb2]" />
+                <span>El Megáfono</span>
               </h2>
-              <p className="text-xs text-slate-400">
-                Responde en 3 segundos a compradores que buscan artículos específicos en Radar. Cada respuesta auto-alimenta tu catálogo en Aura.
-              </p>
             </header>
 
             <MegaphoneMerchantWidget

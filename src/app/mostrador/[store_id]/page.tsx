@@ -9,7 +9,7 @@ import { useGameSound } from '@/hooks/useGameSound';
 import {
   Store as StoreIcon, Lock, CheckCircle2, AlertCircle,
   Clock, Check, X, ShieldCheck, RefreshCw, LogOut,
-  Smartphone, Search, ChevronRight, Sparkles, QrCode, Radio
+  Smartphone, Search, ChevronRight, Sparkles, QrCode, Radio, Megaphone
 } from 'lucide-react';
 import Link from 'next/link';
 import MegaphoneMerchantWidget from '@/components/merchant/MegaphoneMerchantWidget';
@@ -601,8 +601,8 @@ export default function MostradorPage() {
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Radio size={16} className={activeTab === 'megaphone' ? 'text-[#00ffb2]' : 'text-amber-400 animate-pulse'} />
-            <span>📢 El Megáfono</span>
+            <Megaphone size={16} className={activeTab === 'megaphone' ? 'text-[#00ffb2]' : 'text-slate-400'} />
+            <span>El Megáfono</span>
           </button>
         </div>
       </header>
@@ -902,15 +902,6 @@ export default function MostradorPage() {
         {/* PESTAÑA 4: EL MEGÁFONO EN CAJA */}
         {activeTab === 'megaphone' && store && (
           <div className="space-y-4">
-            <div className="bg-[#030812] border border-emerald-500/30 rounded-2xl p-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Radio size={18} className="text-[#00ffb2] animate-pulse" />
-                <span>📢 Terminal de Búsqueda Inversa — El Megáfono</span>
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Cotiza directamente desde mostrador cuando un cliente busque repuestos o productos que tienes en estante.
-              </p>
-            </div>
             <MegaphoneMerchantWidget store={store} />
           </div>
         )}
