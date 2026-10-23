@@ -23,3 +23,4 @@ CREATE INDEX IF NOT EXISTS idx_products_is_wholesale ON public.products(is_whole
 CREATE INDEX IF NOT EXISTS idx_products_has_discount ON public.products(has_discount);
 CREATE INDEX IF NOT EXISTS idx_store_products_is_wholesale ON public.store_products(is_wholesale);
 CREATE INDEX IF NOT EXISTS idx_store_products_has_discount ON public.store_products(has_discount);
+

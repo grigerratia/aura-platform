@@ -319,13 +319,19 @@ export default function RelampagoMode({
             const isFavProduct = isFavoriteProduct(product.id);
             const isFollowing = product.store_id ? isFavoriteStore(product.store_id) : false;
 
+            const calcDiscount = product.discount_percent && product.discount_percent > 0
+              ? product.discount_percent
+              : (product.regular_price_usd && product.aura_price_usd && product.regular_price_usd > product.aura_price_usd)
+              ? Math.round(((product.regular_price_usd - product.aura_price_usd) / product.regular_price_usd) * 100)
+              : 0;
+
             return (
               <ThanosCard key={product.id} intensity="epic">
                 <GameProductCard
                   product={product}
                   onSelect={onSelectProduct}
                   badgeType="clearance"
-                  customBadge={product.discount_percent ? `-${product.discount_percent}%` : 'Flash'}
+                  customBadge={calcDiscount > 0 ? `-${calcDiscount}%` : 'Oferta'}
                   storeName={store?.name}
                   storeRating={storeRating}
                   distanceFormatted={distance}

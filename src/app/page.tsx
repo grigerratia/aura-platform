@@ -16,15 +16,7 @@ export default async function HomePage() {
     supabase
       .from('store_products')
       .select(`
-        id,
-        price,
-        stock,
-        discount_percent,
-        has_discount,
-        is_wholesale,
-        wholesale_min_units,
-        wholesale_price_usd,
-        store_id,
+        *,
         products (*)
       `)
       .eq('is_active', true)
@@ -50,31 +42,48 @@ export default async function HomePage() {
       rawCat.includes('ferretería') || rawCat.includes('farmacia') || rawCat.includes('repuesto') ? 'URGENT_SEARCH' : 'RETAIL_STANDARD'
     );
 
-    const price = sp.price || sp.products?.price || 10;
-    const regularPrice = sp.products?.regular_price_usd || price;
-    const discountPercent = sp.discount_percent || sp.products?.discount_percent || 0;
-    const auraPrice = sp.products?.aura_price_usd || (discountPercent > 0 ? Number((price * (1 - discountPercent / 100)).toFixed(2)) : price);
-    const unlockFee = sp.products?.unlock_fee_usd !== undefined ? sp.products?.unlock_fee_usd : Number((auraPrice * 0.10).toFixed(2));
+    const price = Number(sp.price || sp.products?.price || 10);
+    const regularPrice = Number(sp.products?.regular_price_usd || price);
+    const discountPercent = Number(sp.discount_percent || sp.products?.discount_percent || sp.products?.discount_percentage || 0);
+
+    let auraPrice = sp.products?.aura_price_usd ? Number(sp.products.aura_price_usd) : price;
+    if (discountPercent > 0 && regularPrice <= auraPrice) {
+      auraPrice = Number((regularPrice * (1 - discountPercent / 100)).toFixed(2));
+    }
+
+    const unlockFee = sp.products?.unlock_fee_usd !== undefined
+      ? Number(sp.products?.unlock_fee_usd)
+      : Number((auraPrice * 0.10).toFixed(2));
 
     const isWholesale = Boolean(
       sp.is_wholesale ||
+      sp.metadata?.is_wholesale ||
       sp.products?.is_wholesale ||
       sp.products?.specs?.is_wholesale
     );
     const wholesaleMinUnits = Number(
       sp.wholesale_min_units ||
+      sp.metadata?.wholesale_min_units ||
       sp.products?.wholesale_min_units ||
       sp.products?.specs?.wholesale_min_units ||
       1
     );
-    const wholesalePriceUsd = sp.wholesale_price_usd || sp.products?.wholesale_price_usd || sp.products?.specs?.wholesale_price_usd || null;
+    const wholesalePriceUsd = sp.wholesale_price_usd ||
+      sp.metadata?.wholesale_price_usd ||
+      sp.products?.wholesale_price_usd ||
+      sp.products?.specs?.wholesale_price_usd ||
+      null;
 
     const hasDiscount = Boolean(
       sp.has_discount ||
+      sp.metadata?.has_discount ||
       sp.products?.has_discount ||
+      sp.products?.specs?.has_discount ||
       discountPercent > 0 ||
       (regularPrice > auraPrice) ||
-      sp.products?.is_clearance
+      (sp.products?.sale_price && Number(sp.products.sale_price) < regularPrice) ||
+      sp.products?.is_clearance ||
+      sp.products?.isOffer
     );
 
     return {

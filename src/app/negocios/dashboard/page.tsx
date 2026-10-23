@@ -604,10 +604,6 @@ export default function OwnerDashboard() {
             is_sponsored: formData.is_sponsored,
             published_at: new Date().toISOString(),
             price: regularPriceNum || finalAuraPrice,
-            is_wholesale: isWholesale,
-            wholesale_min_units: wholesaleMinUnits,
-            wholesale_price_usd: wholesalePriceNum,
-            has_discount: hasDiscount,
           }])
           .select()
           .single();
@@ -628,10 +624,12 @@ export default function OwnerDashboard() {
           stock: finalStock,
           discount_percent: discountPercent,
           is_active: formData.is_active,
-          is_wholesale: isWholesale,
-          wholesale_min_units: wholesaleMinUnits,
-          wholesale_price_usd: wholesalePriceNum,
-          has_discount: hasDiscount,
+          metadata: {
+            is_wholesale: isWholesale,
+            wholesale_min_units: wholesaleMinUnits,
+            wholesale_price_usd: wholesalePriceNum,
+            has_discount: hasDiscount,
+          }
         }]);
 
       if (spError) throw spError;
