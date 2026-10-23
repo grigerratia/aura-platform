@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MegaphoneQuote } from '@/types';
+import { supabase } from '@/lib/supabase';
 import {
   createMegaphoneRequest,
   acceptMegaphoneQuote,
 } from '@/lib/megaphone';
 import { AURA_OFFICIAL_CATEGORIES } from '@/lib/categories';
 import { useMegaphoneStore } from '@/store/useMegaphoneStore';
+import { useReservations } from '@/store/useReservations';
 import { useGameSound } from '@/hooks/useGameSound';
 import QRCodeView from '@/components/QRCodeView';
 import {
@@ -62,7 +64,7 @@ export default function MegaphoneRadarPanel({
   const [acceptingQuoteId, setAcceptingQuoteId] = useState<string | null>(null);
 
   const [scanSecondsRemaining, setScanSecondsRemaining] = useState(1800);
-  const [ticketSecondsRemaining, setTicketSecondsRemaining] = useState(5400);
+  const [ticketSecondsRemaining, setTicketSecondsRemaining] = useState(10800); // 3 horas
 
   useEffect(() => {
     if (initialQuery) setQueryText(initialQuery);
@@ -95,7 +97,7 @@ export default function MegaphoneRadarPanel({
     return () => clearInterval(interval);
   }, [step, activeRequest]);
 
-  // Temporizador del ticket
+  // Temporizador del ticket (3 horas estándar)
   useEffect(() => {
     if (step !== 'WINNER_REVEALED' || !winnerReservation?.expires_at) return;
 
@@ -108,6 +110,97 @@ export default function MegaphoneRadarPanel({
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [step, winnerReservation]);
+
+  // ESCUCHAR EN TIEMPO REAL CUANDO EL COMERCIO VALIDA EL PIN
+  useEffect(() => {
+    if (step !== 'WINNER_REVEALED' || !winnerReservation) return;
+
+    const targetPin = winnerReservation.pin_code || winnerReservation.pin;
+    const resId = winnerReservation.id;
+
+    // A. Evento local si se valida en la misma máquina o ventana
+    const handleTicketFinished = (e: any) => {
+      const finishedRes = e.detail?.reservation;
+      if (!finishedRes) return;
+      const finishedPin = finishedRes.pin_code || finishedRes.pin;
+      const finishedId = finishedRes.id;
+      if (
+        (targetPin && finishedPin && targetPin === finishedPin) ||
+        (resId && finishedId && resId === finishedId)
+      ) {
+        playUnlockSuccess();
+        clearActiveMegaphone();
+        setIsPanelOpen(false);
+      }
+    };
+
+    window.addEventListener('aura_ticket_completed', handleTicketFinished);
+
+    // B. Suscripción Postgres Changes en Supabase a la tabla reservations
+    const channel = supabase
+      .channel(`megaphone_live_completion_${resId || targetPin || 'res'}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'reservations',
+        },
+        (payload) => {
+          const updated = payload.new as any;
+          if (
+            (targetPin && updated.pin_code === targetPin) ||
+            (resId && updated.id === resId)
+          ) {
+            if (
+              updated.status === 'completed' ||
+              updated.status === 'COMPLETED_IN_STORE' ||
+              updated.status === 'completada'
+            ) {
+              playUnlockSuccess();
+              window.dispatchEvent(
+                new CustomEvent('aura_ticket_completed', {
+                  detail: { reservation: updated },
+                })
+              );
+              clearActiveMegaphone();
+              setIsPanelOpen(false);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // C. Sondeo de respaldo cada 3 segundos
+    const pollInterval = setInterval(async () => {
+      if (!targetPin && !resId) return;
+      try {
+        let query = supabase.from('reservations').select('id, pin_code, status');
+        if (resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId)) {
+          query = query.eq('id', resId);
+        } else if (targetPin) {
+          query = query.eq('pin_code', targetPin);
+        }
+        const { data } = await query.maybeSingle();
+        if (data && (data.status === 'completed' || data.status === 'COMPLETED_IN_STORE' || data.status === 'completada')) {
+          playUnlockSuccess();
+          window.dispatchEvent(
+            new CustomEvent('aura_ticket_completed', {
+              detail: { reservation: data },
+            })
+          );
+          clearActiveMegaphone();
+          setIsPanelOpen(false);
+        }
+      } catch {}
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('aura_ticket_completed', handleTicketFinished);
+      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+    };
+  }, [step, winnerReservation, playUnlockSuccess, clearActiveMegaphone, setIsPanelOpen]);
 
   // Emisión rápida de solicitud
   const handleEmitMegaphone = async (e?: React.FormEvent) => {
@@ -170,6 +263,12 @@ export default function MegaphoneRadarPanel({
       }
 
       setWinner(res.revealedStore, res.reservation);
+
+      // Sincronizar con el store general de reservaciones para que figure en Pases y en AuraGameShell
+      if (res.reservation) {
+        useReservations.getState().setActiveReservation(res.reservation);
+      }
+
       playUnlockSuccess();
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al procesar la reserva.');
@@ -452,8 +551,8 @@ export default function MegaphoneRadarPanel({
                     <Sparkles size={16} />
                   </div>
                   <h4 className="text-sm font-bold text-white">Precio Congelado con Éxito</h4>
-                  <p className="text-[11px] text-slate-400">
-                    Resguardado en tienda por los próximos 90 minutos.
+                  <p className="text-[11px] text-slate-300">
+                    Resguardado en tienda por las próximas 3 horas (o aparta por 7 días en caja).
                   </p>
                 </div>
 

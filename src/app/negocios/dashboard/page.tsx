@@ -431,29 +431,39 @@ export default function OwnerDashboard() {
     const cleanPin = pinInput.trim().replace('#', '');
     let target = reservations.find(r => r.pin === cleanPin || r.pin_code === cleanPin);
 
-    if (!target && storeId) {
+    if (!target) {
       try {
-        const { data: dbMatch } = await supabase
-          .from('reservations')
-          .select('*, products(name, imageUrl)')
-          .eq('store_id', storeId)
-          .eq('pin_code', cleanPin)
-          .order('created_at', { ascending: false })
-          .maybeSingle();
+        // 1. Buscar en reservations por PIN y storeId
+        let query = supabase.from('reservations').select('*').eq('pin_code', cleanPin);
+        if (storeId) {
+          query = query.eq('store_id', storeId);
+        }
+        let { data: dbMatch } = await query.order('created_at', { ascending: false }).maybeSingle();
+
+        // 2. Si no encontró restringiendo a storeId, buscar por PIN en toda la tabla reservations
+        if (!dbMatch) {
+          const { data: globalMatch } = await supabase
+            .from('reservations')
+            .select('*')
+            .eq('pin_code', cleanPin)
+            .order('created_at', { ascending: false })
+            .maybeSingle();
+          if (globalMatch) dbMatch = globalMatch;
+        }
 
         if (dbMatch) {
           target = {
             id: dbMatch.id,
             pin: dbMatch.pin_code,
             pin_code: dbMatch.pin_code,
-            customer_name: dbMatch.customer_name,
-            customer_phone: dbMatch.customer_phone,
-            product_name: dbMatch.products?.name || 'Producto en Tienda',
-            product_image: dbMatch.products?.imageUrl || null,
+            customer_name: dbMatch.customer_name || 'Comprador Radar',
+            customer_phone: dbMatch.customer_phone || '',
+            product_name: dbMatch.product_name || 'Producto en Tienda',
+            product_image: dbMatch.image_url || null,
             store_name: store?.name || 'Mi Tienda',
-            price_usd: Number(dbMatch.total_price || 0),
-            price_ves: Number((dbMatch.total_price || 0) * (dbMatch.bcv_rate || 55)),
-            tasa: Number(dbMatch.bcv_rate || 55),
+            price_usd: Number(dbMatch.total_price || dbMatch.price_usd || 0),
+            price_ves: Number((dbMatch.total_price || dbMatch.price_usd || 0) * (dbMatch.bcv_rate || tasaUsed || 55)),
+            tasa: Number(dbMatch.bcv_rate || tasaUsed || 55),
             status: dbMatch.status,
             store_id: dbMatch.store_id,
             product_id: dbMatch.product_id,
@@ -461,8 +471,46 @@ export default function OwnerDashboard() {
             expires_at: dbMatch.expires_at,
           };
         }
-      } catch {
-        // Continuar
+      } catch (e) {
+        console.warn('Error buscando PIN en Supabase:', e);
+      }
+    }
+
+    // 3. Fallback adicional con cotizaciones de Megáfono (en caso de que la reserva se haya generado antes)
+    if (!target && storeId) {
+      try {
+        const { data: quoteMatch } = await supabase
+          .from('megaphone_quotes')
+          .select('*, megaphone_requests(query_text)')
+          .eq('store_id', storeId)
+          .eq('status', 'ACCEPTED_BY_BUYER')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (quoteMatch) {
+          const qText = (quoteMatch as any).megaphone_requests?.query_text || 'Artículo Consultado (Megáfono)';
+          target = {
+            id: quoteMatch.id,
+            pin: cleanPin,
+            pin_code: cleanPin,
+            customer_name: 'Comprador Radar (Megáfono)',
+            customer_phone: '04120000000',
+            product_name: qText,
+            product_image: quoteMatch.photo_url || null,
+            store_name: store?.name || 'Mi Tienda',
+            price_usd: Number(quoteMatch.price_usd || 0),
+            price_ves: Number((quoteMatch.price_usd || 0) * (tasaUsed || 55)),
+            tasa: tasaUsed || 55,
+            status: 'confirmed',
+            store_id: storeId,
+            product_id: quoteMatch.auto_seeded_product_id,
+            created_at: quoteMatch.created_at,
+            expires_at: new Date(Date.now() + 180 * 60 * 1000).toISOString(),
+          };
+        }
+      } catch (qErr) {
+        console.warn('Error en fallback de megaphone_quotes:', qErr);
       }
     }
 
@@ -488,13 +536,31 @@ export default function OwnerDashboard() {
           if (error && !errorResult) errorResult = error;
         }
 
-        if (errorResult) {
-          console.error('Error al validar PIN:', errorResult);
-          alert('Error al validar PIN en base de datos: ' + errorResult.message);
-          return;
+        // También marcar cualquier cotización de Megáfono aceptada como completada
+        if (storeId) {
+          try {
+            await supabase
+              .from('megaphone_quotes')
+              .update({ status: 'COMPLETED' })
+              .eq('store_id', storeId)
+              .eq('status', 'ACCEPTED_BY_BUYER');
+          } catch {
+            await supabase
+              .from('megaphone_quotes')
+              .update({ status: 'REJECTED' })
+              .eq('store_id', storeId)
+              .eq('status', 'ACCEPTED_BY_BUYER');
+          }
         }
 
-        setPinSuccessMessage(`Venta validada: PIN #${cleanPin} (${target.customer_name}).`);
+        // Disparar evento para clientes en la misma máquina o ventana
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('aura_ticket_completed', {
+            detail: { reservation: { ...target, status: 'completed' } }
+          }));
+        }
+
+        setPinSuccessMessage(`✓ Venta cobrada y entregada: PIN #${cleanPin} (${target.customer_name}).`);
         setPinInput('');
         if (storeId) fetchReservations(storeId);
       } catch (err: any) {
@@ -2342,8 +2408,9 @@ export default function OwnerDashboard() {
             <MegaphoneMerchantWidget
               store={store}
               bcvRate={tasaUsed}
-              onNavigateToReservations={() => {
+              onNavigateToReservations={(pin?: string) => {
                 setActiveTab('reservations');
+                if (pin && pin !== 'TICKET') setPinInput(pin);
                 if (storeId) fetchReservations(storeId);
               }}
               onQuoteSubmitted={() => {

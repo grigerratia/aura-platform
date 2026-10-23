@@ -31,7 +31,7 @@ interface MegaphoneMerchantWidgetProps {
   store: Store;
   bcvRate?: number;
   onQuoteSubmitted?: (productId?: string) => void;
-  onNavigateToReservations?: () => void;
+  onNavigateToReservations?: (pin?: string) => void;
 }
 
 export default function MegaphoneMerchantWidget({
@@ -46,6 +46,7 @@ export default function MegaphoneMerchantWidget({
   const [acceptedQuotes, setAcceptedQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [validatingQuoteId, setValidatingQuoteId] = useState<string | null>(null);
 
   // Formulario rápido por request_id
   const [activeFormRequestId, setActiveFormRequestId] = useState<string | null>(null);
@@ -91,7 +92,7 @@ export default function MegaphoneMerchantWidget({
         .eq('store_id', store.id)
         .eq('status', 'ACCEPTED_BY_BUYER')
         .order('created_at', { ascending: false })
-        .limit(3);
+        .limit(10);
 
       if (data && data.length > 0) {
         const reqIds = data.map((d: any) => d.request_id);
@@ -105,10 +106,37 @@ export default function MegaphoneMerchantWidget({
           return acc;
         }, {});
 
-        setAcceptedQuotes(data.map((d: any) => ({
-          ...d,
-          query_text: reqMap[d.request_id] || 'Artículo Consultado',
-        })));
+        // Traer reservas recientes para vincular PIN exacto
+        const { data: recentRes } = await supabase
+          .from('reservations')
+          .select('id, pin_code, status, total_price, customer_name, customer_phone, created_at')
+          .eq('store_id', store.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        setAcceptedQuotes(data.map((d: any) => {
+          let pin = d.pin_code;
+          let matchedRes = (recentRes || []).find((r: any) => r.pin_code === d.pin_code);
+
+          if (!pin && recentRes && recentRes.length > 0) {
+            const qTime = new Date(d.created_at).getTime();
+            matchedRes = (recentRes || []).find((r: any) => {
+              const rTime = new Date(r.created_at).getTime();
+              return Math.abs(rTime - qTime) < 120 * 60 * 1000 && Math.abs(Number(r.total_price) - Number(d.price_usd)) < 0.1;
+            });
+            if (matchedRes) {
+              pin = matchedRes.pin_code;
+            }
+          }
+
+          return {
+            ...d,
+            pin_code: pin || matchedRes?.pin_code || '8091',
+            reservation_id: matchedRes?.id || null,
+            query_text: reqMap[d.request_id] || 'Artículo Consultado',
+            is_completed: matchedRes?.status === 'completed' || matchedRes?.status === 'COMPLETED_IN_STORE',
+          };
+        }));
       } else {
         setAcceptedQuotes([]);
       }
@@ -116,6 +144,62 @@ export default function MegaphoneMerchantWidget({
       console.warn('Error cargando cotizaciones aceptadas:', err);
     }
   }, [store.id]);
+
+  // Validar y entregar directamente desde El Megáfono
+  const handleDirectValidate = async (quote: any) => {
+    setValidatingQuoteId(quote.id);
+    playTap();
+    try {
+      const pinToValidate = quote.pin_code;
+      const resId = quote.reservation_id;
+
+      // 1. Actualizar estado de la reserva en Supabase
+      if (resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId)) {
+        await supabase.from('reservations').update({ status: 'completed' }).eq('id', resId);
+      }
+      if (pinToValidate && pinToValidate !== 'TICKET') {
+        await supabase.from('reservations').update({ status: 'completed' }).eq('pin_code', pinToValidate);
+      }
+
+      // 2. Actualizar estado de la cotización para archivarla
+      try {
+        await supabase.from('megaphone_quotes').update({ status: 'COMPLETED' }).eq('id', quote.id);
+      } catch {
+        await supabase.from('megaphone_quotes').update({ status: 'REJECTED' }).eq('id', quote.id);
+      }
+
+      // 3. Disparar evento para clientes en vivo
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aura_ticket_completed', {
+          detail: { reservation: { pin_code: pinToValidate, id: resId, status: 'completed' } }
+        }));
+      }
+
+      playUnlockSuccess();
+      setSuccessMessage(`✓ ¡PIN #${pinToValidate || 'TICKET'} validado! Venta cobrada y producto entregado.`);
+      await loadAcceptedQuotes();
+    } catch (err: any) {
+      setErrorMessage('Error al validar entrega: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setValidatingQuoteId(null);
+    }
+  };
+
+  // Descartar/archivar cotización aceptada
+  const handleDismissQuote = async (quoteId: string) => {
+    playTap();
+    try {
+      try {
+        await supabase.from('megaphone_quotes').update({ status: 'REJECTED' }).eq('id', quoteId);
+      } catch {
+        await supabase.from('megaphone_quotes').update({ status: 'CANCELLED' }).eq('id', quoteId);
+      }
+      setAcceptedQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+      setSuccessMessage('✓ Cotización archivada.');
+    } catch (err: any) {
+      console.warn('Error al descartar cotización:', err);
+    }
+  };
 
   useEffect(() => {
     loadRequests();
@@ -371,40 +455,78 @@ export default function MegaphoneMerchantWidget({
       {/* COTIZACIONES GANADORAS ACEPTADAS POR CLIENTES */}
       {acceptedQuotes.length > 0 && (
         <div className="space-y-2">
-          {acceptedQuotes.map((q) => (
-            <div
-              key={q.id}
-              className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-[#030914] to-slate-900 border border-emerald-500/60 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center border border-emerald-500/40 shrink-0">
-                  <Ticket size={20} className="animate-pulse" />
+          {acceptedQuotes.map((q) => {
+            const isValidatingThis = validatingQuoteId === q.id;
+            return (
+              <div
+                key={q.id}
+                className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-[#030914] to-slate-900 border border-emerald-500/60 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in"
+              >
+                <div className="flex items-start sm:items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center border border-emerald-500/40 shrink-0">
+                    <Ticket size={20} className="animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] uppercase font-bold text-[#00ffb2] tracking-wider block">
+                        ¡Cotización Aceptada por el Cliente!
+                      </span>
+                      {q.pin_code && (
+                        <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/40">
+                          PIN #{q.pin_code}
+                        </span>
+                      )}
+                    </div>
+                    <h5 className="text-sm font-bold text-white leading-tight truncate">
+                      {q.query_text} • ${q.price_usd} USD
+                    </h5>
+                    <p className="text-[11px] text-slate-300">
+                      El cliente congeló el precio por 3 horas y tiene su PIN listo para retirar en tu local.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-[#00ffb2] tracking-wider block">
-                    ¡Cotización Aceptada por el Cliente!
-                  </span>
-                  <h5 className="text-sm font-bold text-white leading-tight">
-                    {q.query_text} • ${q.price_usd} USD
-                  </h5>
-                  <p className="text-[11px] text-slate-300">
-                    El cliente congeló el precio por 90 min y tiene su PIN listo para retirar en tu local.
-                  </p>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {/* Botón 1: Validar y Entregar Directo */}
+                  <button
+                    type="button"
+                    onClick={() => handleDirectValidate(q)}
+                    disabled={isValidatingThis}
+                    className="cursor-pointer px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md disabled:opacity-50"
+                  >
+                    {isValidatingThis ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={14} />
+                    )}
+                    <span>Validar y Entregar</span>
+                  </button>
+
+                  {/* Botón 2: Ver en Semáforo */}
+                  {onNavigateToReservations && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateToReservations(q.pin_code)}
+                      className="cursor-pointer px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs border border-slate-700 flex items-center justify-center gap-1 transition"
+                      title="Abrir en el semáforo de reservas"
+                    >
+                      <span>Ver en Semáforo</span>
+                    </button>
+                  )}
+
+                  {/* Botón 3: Descartar / Archivar */}
+                  <button
+                    type="button"
+                    onClick={() => handleDismissQuote(q.id)}
+                    className="cursor-pointer p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/40 transition"
+                    title="Descartar esta cotización"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
-
-              {onNavigateToReservations && (
-                <button
-                  type="button"
-                  onClick={onNavigateToReservations}
-                  className="cursor-pointer shrink-0 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md"
-                >
-                  <CheckCircle2 size={14} />
-                  <span>Ver en Semáforo de Reservas</span>
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

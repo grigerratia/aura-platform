@@ -1,9 +1,10 @@
 'use client';
 
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useMegaphoneStore } from '@/store/useMegaphoneStore';
 import { useGameSound } from '@/hooks/useGameSound';
-import { Megaphone, Sparkles, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Megaphone, Sparkles, ChevronRight, X, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface Props {
   hasActiveReservation?: boolean;
@@ -18,7 +19,17 @@ export default function MegaphoneFloatingCapsule({ hasActiveReservation = false 
     setIsPanelOpen,
     clearActiveMegaphone,
     step,
+    winnerReservation,
   } = useMegaphoneStore();
+
+  // Auto-cerrar cuando el ticket sea validado y entregado por el comercio
+  useEffect(() => {
+    const handleTicketFinished = () => {
+      clearActiveMegaphone();
+    };
+    window.addEventListener('aura_ticket_completed', handleTicketFinished);
+    return () => window.removeEventListener('aura_ticket_completed', handleTicketFinished);
+  }, [clearActiveMegaphone]);
 
   if (!activeRequest || isPanelOpen) return null;
 
@@ -68,7 +79,12 @@ export default function MegaphoneFloatingCapsule({ hasActiveReservation = false 
             </div>
 
             <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
-              {quoteCount > 0 ? (
+              {isWinner ? (
+                <span className="font-bold text-[#00ffb2] flex items-center gap-1">
+                  <CheckCircle2 size={11} />
+                  PIN #{winnerReservation?.pin_code || winnerReservation?.pin || 'TICKET'} • Retirar
+                </span>
+              ) : quoteCount > 0 ? (
                 <span className="font-bold text-[#00ffb2] flex items-center gap-1">
                   <Sparkles size={11} />
                   {quoteCount} {quoteCount === 1 ? 'oferta recibida' : 'ofertas recibidas'}

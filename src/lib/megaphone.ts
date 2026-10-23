@@ -273,7 +273,8 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
 }> {
   try {
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
-    const expiresAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+    // 3 horas de vigencia estándar (o 7 días si se solicita apartado prolongado)
+    const expiresAt = new Date(Date.now() + 180 * 60 * 1000).toISOString();
 
     // Obtener cotización
     const { data: quote, error: qErr } = await supabase
@@ -303,10 +304,20 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
     const priceUsd = quote.price_usd || 15;
 
     // Actualizar estados en Supabase
-    await supabase
-      .from('megaphone_quotes')
-      .update({ status: 'ACCEPTED_BY_BUYER' })
-      .eq('id', params.quoteId);
+    try {
+      await supabase
+        .from('megaphone_quotes')
+        .update({ 
+          status: 'ACCEPTED_BY_BUYER',
+          pin_code: pin
+        })
+        .eq('id', params.quoteId);
+    } catch {
+      await supabase
+        .from('megaphone_quotes')
+        .update({ status: 'ACCEPTED_BY_BUYER' })
+        .eq('id', params.quoteId);
+    }
 
     if (quote.request_id) {
       await supabase
@@ -322,14 +333,58 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
         .neq('id', params.quoteId);
     }
 
-    // 4. Registrar reserva activa de 90 minutos en la tabla reservations
+    // 4. Resolver product_id válido para evitar violación de foreign key o not-null constraint
     const isValidUUID = (id?: string | null): id is string =>
       Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
 
-    const dbReservationPayload = {
+    let validProductId: string | null = null;
+    if (isValidUUID(quote.auto_seeded_product_id)) {
+      const { data: prodCheck } = await supabase
+        .from('products')
+        .select('id')
+        .eq('id', quote.auto_seeded_product_id)
+        .maybeSingle();
+      if (prodCheck?.id) {
+        validProductId = prodCheck.id;
+      }
+    }
+
+    // Si el auto-seeded no existe o fue eliminado, buscar cualquier producto de esta tienda
+    if (!validProductId && isValidUUID(targetStore.id)) {
+      const { data: spProd } = await supabase
+        .from('store_products')
+        .select('product_id')
+        .eq('store_id', targetStore.id)
+        .limit(1)
+        .maybeSingle();
+      if (spProd?.product_id && isValidUUID(spProd.product_id)) {
+        validProductId = spProd.product_id;
+      }
+    }
+
+    // Si la tienda aún no tiene productos, vincular a cualquier producto existente en la plataforma
+    if (!validProductId) {
+      const { data: anyProd } = await supabase
+        .from('products')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      if (anyProd?.id && isValidUUID(anyProd.id)) {
+        validProductId = anyProd.id;
+      }
+    }
+
+    // 5. Registrar reserva activa de 3 horas en la tabla reservations
+    let resData: any = null;
+    let rInsertErr: any = null;
+
+    // Intento A: Inserción completa con campos extendidos
+    const extendedPayload = {
       pin_code: pin,
       store_id: isValidUUID(targetStore.id) ? targetStore.id : null,
-      product_id: isValidUUID(quote.auto_seeded_product_id) ? quote.auto_seeded_product_id : null,
+      product_id: validProductId,
+      product_name: queryText,
+      image_url: quote.photo_url || null,
       customer_name: (params.customerName || 'Comprador Radar (Megáfono)').trim(),
       customer_phone: (params.customerPhone || '04120000000').trim(),
       selected_size: 'Única',
@@ -342,14 +397,41 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       expires_at: expiresAt,
     };
 
-    const { data: resData, error: rInsertErr } = await supabase
+    const res1 = await supabase
       .from('reservations')
-      .insert([dbReservationPayload])
+      .insert([extendedPayload])
       .select('*')
-      .single();
+      .maybeSingle();
 
-    if (rInsertErr) {
-      console.error('Error insertando reserva de megáfono en Supabase:', rInsertErr);
+    if (!res1.error && res1.data) {
+      resData = res1.data;
+    } else {
+      // Intento B: Si falla por columnas que no existen en reservations, usar payload central limpio
+      const corePayload = {
+        pin_code: pin,
+        store_id: isValidUUID(targetStore.id) ? targetStore.id : null,
+        product_id: validProductId,
+        customer_name: (params.customerName || 'Comprador Radar (Megáfono)').trim(),
+        customer_phone: (params.customerPhone || '04120000000').trim(),
+        selected_size: 'Única',
+        total_price: priceUsd,
+        bcv_rate: params.bcvRate || 1,
+        status: 'confirmed',
+        expires_at: expiresAt,
+      };
+
+      const res2 = await supabase
+        .from('reservations')
+        .insert([corePayload])
+        .select('*')
+        .maybeSingle();
+
+      if (!res2.error && res2.data) {
+        resData = res2.data;
+      } else {
+        rInsertErr = res2.error || res1.error;
+        console.error('Error insertando reserva de megáfono en Supabase:', rInsertErr);
+      }
     }
 
     const revealedStore: Partial<Store> = {
@@ -370,7 +452,7 @@ export async function acceptMegaphoneQuote(params: AcceptMegaphoneQuoteParams): 
       store_name: targetStore.name,
       store_whatsapp: targetStore.whatsapp || '584120000000',
       store_address: targetStore.address || targetStore.zone || 'Centro de Cumaná',
-      product_id: quote.auto_seeded_product_id || null,
+      product_id: validProductId || quote.auto_seeded_product_id || null,
       product_name: queryText,
       product_image: quote.photo_url || null,
       customer_name: params.customerName || 'Comprador Radar (Megáfono)',

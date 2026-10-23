@@ -278,13 +278,27 @@ export default function MostradorPage() {
 
     if (!found) {
       try {
-        const { data: dbRes } = await supabase
+        let dbRes: any = null;
+        const resWithProd = await supabase
           .from('reservations')
           .select('*, products(name, imageUrl, archetype)')
           .or(`pin_code.eq.${clean},pin_code.eq.${ticketSearch.trim()}`)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
+
+        if (!resWithProd.error && resWithProd.data) {
+          dbRes = resWithProd.data;
+        } else {
+          const fallback = await supabase
+            .from('reservations')
+            .select('*')
+            .or(`pin_code.eq.${clean},pin_code.eq.${ticketSearch.trim()}`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (fallback.data) dbRes = fallback.data;
+        }
 
         if (dbRes) {
           const priceUsd = Number(dbRes.total_price || dbRes.price_usd || 0);
@@ -373,6 +387,9 @@ export default function MostradorPage() {
         }
       }
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: { ...reservation, status: 'completed' } } }));
+      }
       playUnlockSuccess();
       setValidationSuccessMsg(`✓ Venta completada con éxito. Producto entregado a ${reservation.customer_name}. ¡Nivel de confianza en Aura actualizado!`);
       setFoundReservation(null);
