@@ -8,7 +8,7 @@ import { createSpidiButtonSession, getSpidiConfig } from '@/lib/spidi';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { reservationId, pin, amountUsd, productName } = body;
+    const { reservationId, pin, amountUsd, productName, feeType = 'unlock_fee' } = body;
 
     if (!amountUsd || isNaN(Number(amountUsd)) || Number(amountUsd) <= 0) {
       return NextResponse.json(
@@ -17,9 +17,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isStoreDeposit = feeType === 'store_deposit';
     const cleanPin = pin ? String(pin).trim() : '';
-    const identifier = cleanPin ? `PIN-${cleanPin}` : `RES-${String(reservationId || Date.now()).slice(0, 12)}`;
-    const description = `Desbloqueo Aura (5%): ${productName || 'Reserva de producto'}`.slice(0, 100);
+    const identifier = cleanPin
+      ? (isStoreDeposit ? `PIN-${cleanPin}-TIENDA` : `PIN-${cleanPin}`)
+      : `RES-${String(reservationId || Date.now()).slice(0, 12)}`;
+
+    const description = isStoreDeposit
+      ? `Abono 30% Tienda: ${productName || 'Apartado'}`.slice(0, 100)
+      : `Desbloqueo Aura (5%): ${productName || 'Reserva de producto'}`.slice(0, 100);
 
     const config = getSpidiConfig();
 

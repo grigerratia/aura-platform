@@ -80,6 +80,18 @@ export default function ProductBottomSheet({
   const [spidiBankRef, setSpidiBankRef] = useState<string>('');
   const [showManualAuraPay, setShowManualAuraPay] = useState<boolean>(false);
 
+  // Estados de Pago Automatizado SPIDI (Abono 30% Tienda)
+  const [spidiStoreLoading, setSpidiStoreLoading] = useState<boolean>(false);
+  const [spidiStoreSession, setSpidiStoreSession] = useState<{
+    sessionId: string;
+    paymentUrl: string;
+    paymentQr?: string;
+    amountUsd: number;
+  } | null>(null);
+  const [spidiStorePaid, setSpidiStorePaid] = useState<boolean>(false);
+  const [spidiStoreBankRef, setSpidiStoreBankRef] = useState<string>('');
+  const [showManualStorePay, setShowManualStorePay] = useState<boolean>(false);
+
   // Contador regresivo para ticket de 3 horas
   const [timeLeft, setTimeLeft] = useState({ hours: 3, minutes: 0, seconds: 0 });
 
@@ -592,6 +604,68 @@ export default function ProductBottomSheet({
   }, [spidiSession?.sessionId, spidiPaid, playUnlockSuccess]);
 
   // ==============================================================================
+  // SPIDI: INICIAR SESIÓN Y ESCUCHAR CONFIRMACIÓN PARA ABONO TIENDA (PASO 2)
+  // ==============================================================================
+  const handleCreateSpidiStorePayment = async () => {
+    if (spidiStoreLoading || spidiStorePaid || !product) return;
+    setSpidiStoreLoading(true);
+    playTap();
+
+    try {
+      const pinToUse = generatedPin || activeRes?.pin_code || activeRes?.pin || '';
+      const res = await fetch('/api/spidi/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: activeRes?.id,
+          pin: pinToUse,
+          amountUsd: deposit30USD,
+          productName: product.name,
+          feeType: 'store_deposit',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'No se pudo iniciar la pasarela de pago para la tienda.');
+      }
+
+      setSpidiStoreSession({
+        sessionId: data.sessionId,
+        paymentUrl: data.paymentUrl,
+        paymentQr: data.paymentQr,
+        amountUsd: data.amountUsd,
+      });
+    } catch (err: any) {
+      alert(err.message || 'Error al conectar con la pasarela de pagos.');
+    } finally {
+      setSpidiStoreLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!spidiStoreSession?.sessionId || spidiStorePaid) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(spidiStoreSession.sessionId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isPaid) {
+            setSpidiStorePaid(true);
+            const ref = data.bankReferenceId || `SPIDI-${spidiStoreSession.sessionId.slice(-6).toUpperCase()}`;
+            setSpidiStoreBankRef(ref);
+            setPagoMovilRef(ref);
+            playUnlockSuccess();
+          }
+        }
+      } catch {}
+    }, 2500);
+
+    return () => clearInterval(pollInterval);
+  }, [spidiStoreSession?.sessionId, spidiStorePaid, playUnlockSuccess]);
+
+  // ==============================================================================
   // PASO 4A: ELECCIÓN CLIENTE -> OPCIÓN A (IR HOY MISMO - TICKET QR GRATIS 3 HORAS)
   // ==============================================================================
   const handleSelectOptionA = async () => {
@@ -656,27 +730,25 @@ export default function ProductBottomSheet({
   const handleConfirmApartadoPagoMovil = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!product || !activeRes) return;
-    if (!pagoMovilRef.trim()) {
-      alert('Por favor ingresa los dígitos de la referencia de tu Pago Móvil al comercio.');
+    if (!pagoMovilRef.trim() && !spidiStorePaid) {
+      alert('Por favor realiza el pago del abono a la tienda con SPIDI o ingresa el número de referencia.');
       return;
     }
-    if (!payAuraWithWallet && !pagoMovilAuraRef.trim()) {
-      alert('Por favor ingresa los dígitos de la referencia del desbloqueo a Aura (5%).');
+    if (!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()) {
+      alert('Por favor completa el arancel de desbloqueo a Aura (5%).');
       return;
     }
 
     playTap();
 
-    const auraPayDesc = payAuraWithWallet
-      ? 'Aura 5%: Billetera'
-      : `Aura 5%: Ref #${pagoMovilAuraRef.trim()}`;
+    const finalStoreRef = pagoMovilRef.trim() || spidiStoreBankRef || 'SPIDI-CONFIRMADO';
 
     const updatedRes: Reservation = {
       ...activeRes,
       status: 'confirmed',
       payment_method: 'pago_movil',
       payment_type: 'apartado_7d',
-      payment_reference: pagoMovilRef.trim(),
+      payment_reference: finalStoreRef,
       unlock_fee_usd: auraUnlockFeeUSD,
       aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
       aura_fee_status: spidiPaid || payAuraWithWallet ? 'paid' : 'pending',
@@ -711,7 +783,7 @@ export default function ProductBottomSheet({
           status: 'confirmed',
           payment_method: 'pago_movil',
           payment_type: 'apartado_7d',
-          payment_reference: pagoMovilRef.trim(),
+          payment_reference: finalStoreRef,
           customer_phone: customerPhone.trim(),
           unlock_fee_usd: auraUnlockFeeUSD,
           aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
@@ -1502,38 +1574,134 @@ export default function ProductBottomSheet({
                     </div>
 
                     <p className="text-[11px] text-slate-300 font-light leading-relaxed">
-                      Transfiere el 30% directo al comercio para que aparten tu producto físico en su depósito. El 70% restante (${remaining70USD.toFixed(2)} USD) se liquida en caja al retirar dentro de los 7 días.
+                      Transfiere el 30% directo al comercio para apartar tu producto en su depósito. El 70% restante (${remaining70USD.toFixed(2)} USD) se liquida en caja al retirar dentro de los 7 días.
                     </p>
 
-                    <div className="p-3 bg-[#020508] border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400">Banco / Teléfono Comercio:</span>
-                        <span className="text-white font-mono font-bold">0102 BDV • {storePhoneClean}</span>
+                    {/* ESTADO SPIDI TIENDA: YA PAGADO */}
+                    {spidiStorePaid ? (
+                      <div className="p-4 bg-indigo-950/40 border border-indigo-500/40 rounded-2xl space-y-2 text-center animate-in zoom-in-95">
+                        <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center mx-auto">
+                          <CheckCircle2 size={20} />
+                        </div>
+                        <p className="text-xs font-bold text-indigo-200">¡Abono a la Tienda Confirmado en Red Bancaria!</p>
+                        <p className="text-[11px] text-slate-300 font-mono">Ref. Bancaria: #{spidiStoreBankRef}</p>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400">RIF / Monto Inicial en Bs:</span>
-                        <span className="text-[#00ffb2] font-mono font-black text-xs">J-40812345-0 • Bs. {deposit30VES.toLocaleString('es-VE')}</span>
-                      </div>
-                    </div>
+                    ) : spidiStoreSession ? (
+                      /* ESTADO: SESIÓN SPIDI TIENDA ACTIVA (QR + ENLACE) */
+                      <div className="p-3 bg-[#020508] border border-slate-800 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <QrCode size={15} className="text-indigo-400" />
+                            Escanea o paga en línea
+                          </span>
+                          <span className="text-xs font-black text-indigo-300">${deposit30USD.toFixed(2)} USD</span>
+                        </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <button
-                        type="button"
-                        onClick={handleCopyBankData}
-                        className="py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer border border-slate-700"
-                      >
-                        <Copy size={13} />
-                        <span>{copiedBankData ? '¡Datos Copiados!' : 'Copiar Pago Móvil Tienda'}</span>
-                      </button>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nº Referencia Tienda (últimos 4-6 dígitos)"
-                        value={pagoMovilRef}
-                        onChange={(e) => setPagoMovilRef(e.target.value)}
-                        className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-indigo-400"
-                      />
-                    </div>
+                        {spidiStoreSession.paymentQr && (
+                          <div className="flex flex-col items-center py-1">
+                            <img
+                              src={spidiStoreSession.paymentQr}
+                              alt="QR de Pago SPIDI Tienda"
+                              className="w-40 h-40 rounded-xl bg-white p-2 border border-slate-700 shadow-md"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-1 font-light">
+                              Escanea con tu banco o app móvil
+                            </span>
+                          </div>
+                        )}
+
+                        <a
+                          href={spidiStoreSession.paymentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                        >
+                          <ExternalLink size={14} />
+                          <span>Pagar abono en este teléfono</span>
+                        </a>
+
+                        <div className="flex items-center justify-center gap-2 text-[11px] text-indigo-300 bg-indigo-950/30 border border-indigo-500/20 rounded-xl p-2.5">
+                          <Loader2 size={13} className="animate-spin text-indigo-400" />
+                          <span>Esperando confirmación bancaria en tiempo real...</span>
+                        </div>
+
+                        <div className="text-center pt-1">
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            Desarrollado por SPIDI • Pagos Inmediatos
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ESTADO: BOTÓN PRINCIPAL SPIDI TIENDA */
+                      <div className="space-y-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleCreateSpidiStorePayment}
+                          disabled={spidiStoreLoading}
+                          className="w-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:brightness-110 text-white font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm transition shadow-lg shadow-indigo-600/25 flex flex-col items-center justify-center gap-0.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            {spidiStoreLoading ? (
+                              <Loader2 size={16} className="animate-spin text-white" />
+                            ) : (
+                              <Smartphone size={16} className="text-white" />
+                            )}
+                            <span className="font-black text-sm">
+                              {spidiStoreLoading ? 'Generando pago seguro...' : 'Pagar Abono 30% con Pago Móvil o Débito'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-semibold text-indigo-200">
+                            Desarrollado por SPIDI • Confirmación automática
+                          </span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Alternativa de pago manual desplegable */}
+                    {!spidiStorePaid && (
+                      <div className="pt-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setShowManualStorePay(!showManualStorePay)}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
+                        >
+                          {showManualStorePay ? 'Ocultar pago manual' : '¿Prefieres transferir manualmente por Pago Móvil a la tienda?'}
+                        </button>
+
+                        {showManualStorePay && (
+                          <div className="space-y-3 pt-3 text-left animate-in fade-in">
+                            <div className="p-3 bg-[#020508] border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-400">Banco / Teléfono Comercio:</span>
+                                <span className="text-white font-mono font-bold">0102 BDV • {storePhoneClean}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-400">RIF / Monto Inicial en Bs:</span>
+                                <span className="text-[#00ffb2] font-mono font-black text-xs">J-40812345-0 • Bs. {deposit30VES.toLocaleString('es-VE')}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <button
+                                type="button"
+                                onClick={handleCopyBankData}
+                                className="py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer border border-slate-700"
+                              >
+                                <Copy size={13} />
+                                <span>{copiedBankData ? '¡Datos Copiados!' : 'Copiar Pago Móvil Tienda'}</span>
+                              </button>
+                              <input
+                                type="text"
+                                placeholder="Nº Referencia Tienda (últimos 4-6 dígitos)"
+                                value={pagoMovilRef}
+                                onChange={(e) => setPagoMovilRef(e.target.value)}
+                                className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-indigo-400"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <p className="text-[11px] text-slate-400 font-light leading-relaxed text-center">
@@ -1543,7 +1711,7 @@ export default function ProductBottomSheet({
                   <div className="space-y-2">
                     <button
                       type="submit"
-                      disabled={!pagoMovilRef.trim() || isSubmitting}
+                      disabled={(!pagoMovilRef.trim() && !spidiStorePaid) || isSubmitting}
                       className="game-sweep w-full cursor-pointer bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:brightness-110 text-white font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-indigo-600/25 active:scale-95 disabled:opacity-40"
                     >
                       {isSubmitting ? 'Generando Boleto...' : 'Confirmar Apartado y Guardar Boleto ✓'}

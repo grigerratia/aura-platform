@@ -80,18 +80,26 @@ export async function POST(req: NextRequest) {
         }
 
         // Localizar y actualizar la reserva asociada
-        // Identificador suele ser "PIN-8091" o UUID
+        // Identificador suele ser "PIN-8091" o "PIN-8091-TIENDA" o UUID
+        const isStoreDeposit = Boolean(identifier && identifier.includes('-TIENDA'));
         let pinCode = '';
         if (identifier && identifier.startsWith('PIN-')) {
-          pinCode = identifier.replace('PIN-', '').trim();
+          pinCode = identifier.replace('PIN-', '').replace('-TIENDA', '').trim();
         }
 
-        const updateData: Record<string, any> = {
-          aura_fee_status: 'paid',
-          aura_fee_verified_at: new Date().toISOString(),
-          aura_fee_reference: bankRef ? `SPIDI-${bankRef}` : `SPIDI-${sessionId}`,
-          spidi_status: 'paid',
-        };
+        const updateData: Record<string, any> = isStoreDeposit
+          ? {
+              payment_method: 'pago_movil',
+              payment_reference: bankRef ? `SPIDI-${bankRef}` : `SPIDI-${sessionId}`,
+              status: 'confirmed',
+              current_step: 'OPTION_B_CONFIRMED',
+            }
+          : {
+              aura_fee_status: 'paid',
+              aura_fee_verified_at: new Date().toISOString(),
+              aura_fee_reference: bankRef ? `SPIDI-${bankRef}` : `SPIDI-${sessionId}`,
+              spidi_status: 'paid',
+            };
 
         if (bankRef) {
           updateData.spidi_bank_reference = bankRef;
@@ -183,3 +191,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
