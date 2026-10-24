@@ -103,19 +103,29 @@ export default function MostradorPage() {
     if (!storeId || !isAuthenticated) return;
     setLoadingReservations(true);
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('reservations')
-        .select('*')
+        .select('*, products(name, imageUrl)')
         .eq('store_id', storeId)
         .order('created_at', { ascending: false });
+
+      if (error) {
+        const fallback = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('store_id', storeId)
+          .order('created_at', { ascending: false });
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (!error && data) {
         const mapped: Reservation[] = data.map((r: any) => {
           const priceUsd = Number(r.total_price || r.price_usd || 0);
           return {
             ...r,
-            product_name: r.product_name || 'Producto Reservado',
-            image_url: r.product_image || r.image_url,
+            product_name: r.products?.name || r.product_name || 'Producto Reservado',
+            image_url: r.products?.imageUrl || r.product_image || r.image_url,
             category_archetype: r.category_archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
             aura_price_usd: r.aura_price_usd ? Number(r.aura_price_usd) : priceUsd,

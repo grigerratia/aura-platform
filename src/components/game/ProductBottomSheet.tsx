@@ -363,8 +363,6 @@ export default function ProductBottomSheet({
           pin_code: trackingPin,
           store_id: effectiveStoreId,
           product_id: effectiveProductId,
-          product_name: product.name,
-          image_url: product.imageUrl || product.image_url,
           customer_name: fullCustomerName,
           customer_phone: customerPhone.trim(),
           selected_size: selectedVariant || 'Estándar',
