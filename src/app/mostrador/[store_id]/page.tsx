@@ -875,8 +875,8 @@ export default function MostradorPage() {
                             Cliente: <strong className="text-slate-200">{res.customer_name}</strong>
                           </p>
                         </div>
-                        <span className="font-mono text-[10px] bg-slate-950 text-slate-400 px-2 py-0.5 rounded border border-slate-800 shrink-0">
-                          PIN #{res.pin}
+                        <span className="text-[10px] bg-amber-950/60 text-amber-400 px-2 py-0.5 rounded border border-amber-900/40 shrink-0">
+                          Sin Boleto Aún
                         </span>
                       </div>
 
@@ -884,16 +884,6 @@ export default function MostradorPage() {
                         <Check size={12} className="text-emerald-400 shrink-0" />
                         <span>Confirmaste stock. Esperando elección de retiro (3h o 7d).</span>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleCompleteSale(res)}
-                        disabled={actionLoading}
-                        className="w-full cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
-                      >
-                        <CheckCircle2 size={13} />
-                        <span>Cobrar en Caja y Entregar (Ticket #{res.pin})</span>
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -1085,57 +1075,6 @@ export default function MostradorPage() {
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-
-            {/* RESERVAS CON STOCK CONFIRMADO - ESPERANDO QUE EL CLIENTE SE DECIDA */}
-            {waitingCustomerReservations.length > 0 && (
-              <div className="space-y-3 pt-4 border-t border-slate-800">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
-                      Esperando Elección del Cliente ({waitingCustomerReservations.length})
-                    </h3>
-                  </div>
-                  <span className="text-[11px] text-emerald-400 font-bold">Stock Verificado</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {waitingCustomerReservations.map((res) => (
-                    <div
-                      key={res.id}
-                      className="bg-slate-900/70 border border-slate-800 rounded-2xl p-3.5 space-y-2 text-xs"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h4 className="font-bold text-white truncate text-xs">{res.product_name}</h4>
-                          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                            Cliente: <strong className="text-slate-200">{res.customer_name}</strong>
-                          </p>
-                        </div>
-                        <span className="font-mono text-[10px] bg-slate-950 text-slate-400 px-2 py-0.5 rounded border border-slate-800 shrink-0">
-                          PIN #{res.pin}
-                        </span>
-                      </div>
-
-                      <div className="p-2 bg-emerald-950/30 border border-emerald-900/40 rounded-xl text-[10px] text-emerald-300 flex items-center gap-1.5">
-                        <Check size={12} className="text-emerald-400 shrink-0" />
-                        <span>Confirmaste stock. Esperando elección de retiro (3h o 7d).</span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleCompleteSale(res)}
-                        disabled={actionLoading}
-                        className="w-full cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
-                      >
-                        <CheckCircle2 size={13} />
-                        <span>Cobrar en Caja y Entregar (Ticket #{res.pin})</span>
-                      </button>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
           </div>

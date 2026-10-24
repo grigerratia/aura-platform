@@ -14,3 +14,4 @@ ALTER TABLE public.reservations
 
 CREATE INDEX IF NOT EXISTS idx_reservations_payment_type ON public.reservations(payment_type);
 CREATE INDEX IF NOT EXISTS idx_reservations_current_step ON public.reservations(current_step);
+

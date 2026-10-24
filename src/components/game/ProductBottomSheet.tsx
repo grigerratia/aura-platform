@@ -294,8 +294,8 @@ export default function ProductBottomSheet({
       localStorage.setItem('aura_customer_phone', customerPhone.trim());
     }
 
-    const pin = Math.floor(1000 + Math.random() * 9000).toString();
-    setGeneratedPin(pin);
+    // No se genera PIN todavía. El PIN oficial solo se genera cuando el cliente elija 3h o confirme el pago de 7d.
+    setGeneratedPin('');
 
     const expiresAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
 
@@ -327,8 +327,8 @@ export default function ProductBottomSheet({
     const newReservation: Reservation = {
       id: `res-${Date.now()}`,
       user_id: uid || undefined,
-      pin: pin,
-      pin_code: pin,
+      pin: '',
+      pin_code: '',
       store_id: effectiveStoreId || 'store-cumana',
       store_name: storeName,
       store_whatsapp: storePhoneRaw,
@@ -354,12 +354,12 @@ export default function ProductBottomSheet({
     setActiveRes(newReservation);
     setActiveReservation(newReservation);
 
-    // 1. Guardar la solicitud en Supabase para que llegue a Mostrador y Dashboard
+    // 1. Guardar la solicitud en Supabase para que llegue a Mostrador y Dashboard (sin PIN todavía)
     try {
       const { data: dbRes, error: insertError } = await supabase
         .from('reservations')
         .insert([{
-          pin_code: pin,
+          pin_code: null,
           store_id: effectiveStoreId,
           product_id: effectiveProductId,
           customer_name: fullCustomerName,
@@ -381,8 +381,8 @@ export default function ProductBottomSheet({
         const finalReservation: Reservation = {
           ...newReservation,
           id: dbRes.id,
-          pin: dbRes.pin_code || pin,
-          pin_code: dbRes.pin_code || pin,
+          pin: '',
+          pin_code: '',
           status: dbRes.status || 'pending',
           requested_modality: selectedModality,
         };
@@ -677,8 +677,17 @@ export default function ProductBottomSheet({
     playTap();
     if (!activeRes) return;
 
+    // Generar PIN oficial de retiro en este momento (no antes)
+    const officialPin = activeRes.pin_code && activeRes.pin_code.length === 4
+      ? activeRes.pin_code
+      : Math.floor(1000 + Math.random() * 9000).toString();
+
+    setGeneratedPin(officialPin);
+
     const updatedRes: Reservation = {
       ...activeRes,
+      pin: officialPin,
+      pin_code: officialPin,
       status: 'confirmed',
       payment_method: 'en_tienda',
       payment_type: 'reserva_3h',
@@ -695,12 +704,12 @@ export default function ProductBottomSheet({
 
     // Actualizar en Supabase de forma segura y con fallback garantizado
     const resId = activeRes.id;
-    const targetPin = activeRes.pin_code || activeRes.pin;
     const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
 
     try {
       const fullUpdate = {
         status: 'confirmed',
+        pin_code: officialPin,
         payment_method: 'en_tienda',
         payment_type: 'reserva_3h',
         current_step: 'OPTION_A_TICKET',
@@ -710,7 +719,7 @@ export default function ProductBottomSheet({
 
       const query = isValidUUID
         ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
-        : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+        : supabase.from('reservations').update(fullUpdate).eq('pin_code', officialPin);
 
       const { error: fullError } = await query;
 
@@ -718,24 +727,19 @@ export default function ProductBottomSheet({
         console.warn('Fallback a actualizacion core de status confirmed:', fullError.message);
         const coreUpdate = {
           status: 'confirmed',
+          pin_code: officialPin,
           unlock_fee_usd: 0,
           store_pay_balance_usd: auraPrice,
         };
         if (isValidUUID) {
           await supabase.from('reservations').update(coreUpdate).eq('id', resId);
         }
-        if (targetPin) {
-          await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
-        }
-      } else if (isValidUUID && targetPin) {
-        await supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
       }
     } catch (err) {
       console.error('Error actualizando Supabase en handleSelectOptionA:', err);
       try {
-        const coreUpdate = { status: 'confirmed' };
+        const coreUpdate = { status: 'confirmed', pin_code: officialPin };
         if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
-        if (targetPin) await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
       } catch {}
     }
   };
@@ -893,8 +897,17 @@ export default function ProductBottomSheet({
 
     const finalStoreRef = pagoMovilRef.trim() || spidiStoreBankRef || 'SPIDI-CONFIRMADO';
 
+    // Generar PIN oficial de retiro en este momento (no antes)
+    const officialPin = activeRes.pin_code && activeRes.pin_code.length === 4
+      ? activeRes.pin_code
+      : Math.floor(1000 + Math.random() * 9000).toString();
+
+    setGeneratedPin(officialPin);
+
     const updatedRes: Reservation = {
       ...activeRes,
+      pin: officialPin,
+      pin_code: officialPin,
       status: 'confirmed',
       payment_method: 'pago_movil',
       payment_type: 'apartado_7d',
@@ -927,11 +940,11 @@ export default function ProductBottomSheet({
     // Actualizar en Supabase de forma segura y con fallback garantizado
     try {
       const resId = activeRes.id;
-      const targetPin = activeRes.pin_code || activeRes.pin;
       const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
 
       const fullUpdate = {
         status: 'confirmed',
+        pin_code: officialPin,
         payment_method: 'pago_movil',
         payment_type: 'apartado_7d',
         payment_reference: finalStoreRef,
@@ -949,7 +962,7 @@ export default function ProductBottomSheet({
 
       const query = isValidUUID
         ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
-        : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+        : supabase.from('reservations').update(fullUpdate).eq('pin_code', officialPin);
 
       const { error: fullError } = await query;
 
@@ -957,6 +970,7 @@ export default function ProductBottomSheet({
         console.warn('Fallback a actualizacion base en handleConfirmApartadoPagoMovil:', fullError.message);
         const coreUpdate: Record<string, any> = {
           status: 'confirmed',
+          pin_code: officialPin,
           customer_phone: `${customerPhone.trim()} | REF: #${finalStoreRef} (Pago Móvil 30%)`,
           unlock_fee_usd: auraUnlockFeeUSD,
           aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
@@ -969,9 +983,6 @@ export default function ProductBottomSheet({
         if (spidiBankRef) coreUpdate.spidi_bank_reference = spidiBankRef;
 
         if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
-        if (targetPin) await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
-      } else if (isValidUUID && targetPin) {
-        await supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
       }
     } catch (err) {
       console.warn('Error actualizando reserva en Supabase:', err);
