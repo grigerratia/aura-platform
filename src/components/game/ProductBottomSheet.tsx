@@ -693,26 +693,51 @@ export default function ProductBottomSheet({
     playUnlockSuccess();
     onSuccessUnlock();
 
-    // Actualizar en Supabase
+    // Actualizar en Supabase de forma segura y con fallback garantizado
+    const resId = activeRes.id;
+    const targetPin = activeRes.pin_code || activeRes.pin;
+    const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
+
     try {
-      const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
-      const query = supabase
-        .from('reservations')
-        .update({
+      const fullUpdate = {
+        status: 'confirmed',
+        payment_method: 'en_tienda',
+        payment_type: 'reserva_3h',
+        current_step: 'OPTION_A_TICKET',
+        unlock_fee_usd: 0,
+        store_pay_balance_usd: auraPrice,
+      };
+
+      const query = isValidUUID
+        ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
+        : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+
+      const { error: fullError } = await query;
+
+      if (fullError) {
+        console.warn('Fallback a actualizacion core de status confirmed:', fullError.message);
+        const coreUpdate = {
           status: 'confirmed',
-          payment_method: 'en_tienda',
-          payment_type: 'reserva_3h',
-          current_step: 'OPTION_A_TICKET',
           unlock_fee_usd: 0,
           store_pay_balance_usd: auraPrice,
-        });
-
-      if (isValidUUID) {
-        await query.eq('id', activeRes.id);
-      } else if (activeRes.pin_code || activeRes.pin) {
-        await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
+        };
+        if (isValidUUID) {
+          await supabase.from('reservations').update(coreUpdate).eq('id', resId);
+        }
+        if (targetPin) {
+          await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
+        }
+      } else if (isValidUUID && targetPin) {
+        await supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
       }
-    } catch {}
+    } catch (err) {
+      console.error('Error actualizando Supabase en handleSelectOptionA:', err);
+      try {
+        const coreUpdate = { status: 'confirmed' };
+        if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
+        if (targetPin) await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
+      } catch {}
+    }
   };
 
   // Cancelar orden o apartado en cualquier punto del flujo
@@ -759,14 +784,27 @@ export default function ProductBottomSheet({
           setUserWalletCredit(newCredit);
         }
 
-        const query = supabase.from('reservations').update({
+        const fullUpdate = {
           status: 'cancelled',
           aura_fee_status: 'refunded_to_wallet',
           notes: `Cancelado por el cliente en Paso 2. Se acreditaron $${feeToRefund.toFixed(2)} USD a su Billetera Aura.`
-        });
+        };
 
-        if (isValidUUID) await query.eq('id', resId);
-        else if (targetPin) await query.eq('pin_code', targetPin);
+        const query = isValidUUID
+          ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
+          : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+
+        const { error: cancelErr } = await query;
+        if (cancelErr) {
+          const coreUpdate = {
+            status: 'cancelled',
+            aura_fee_status: 'refunded_to_wallet',
+          };
+          if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
+          if (targetPin) await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
+        } else if (isValidUUID && targetPin) {
+          await supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+        }
 
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('aura_wallet_updated'));
@@ -775,13 +813,23 @@ export default function ProductBottomSheet({
 
         alert(`✓ Apartado cancelado. Se han acreditado $${feeToRefund.toFixed(2)} USD a tu Billetera Aura.`);
       } else {
-        const query = supabase.from('reservations').update({
+        const fullUpdate = {
           status: 'cancelled',
           notes: 'Cancelado por el cliente antes de concretar la reserva'
-        });
+        };
 
-        if (isValidUUID) await query.eq('id', resId);
-        else if (targetPin) await query.eq('pin_code', targetPin);
+        const query = isValidUUID
+          ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
+          : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+
+        const { error: cancelErr } = await query;
+        if (cancelErr) {
+          const coreUpdate = { status: 'cancelled' };
+          if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
+          if (targetPin) await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
+        } else if (isValidUUID && targetPin) {
+          await supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+        }
 
         alert('Has cancelado la solicitud. El producto ha sido liberado.');
       }
@@ -808,20 +856,21 @@ export default function ProductBottomSheet({
       setActiveRes(updatedRes);
       setActiveReservation(updatedRes);
 
-      // Persistir de inmediato en Supabase
+      // Persistir de inmediato en Supabase de forma segura
       try {
-        const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
-        const query = supabase
-          .from('reservations')
-          .update({
-            payment_type: 'apartado_7d',
-            current_step: 'OPTION_B_LAYAWAY',
-          });
-        if (isValidUUID) {
-          await query.eq('id', activeRes.id);
-        } else if (activeRes.pin_code || activeRes.pin) {
-          await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
-        }
+        const resId = activeRes.id;
+        const targetPin = activeRes.pin_code || activeRes.pin;
+        const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
+        
+        const fullUpdate = {
+          payment_type: 'apartado_7d',
+          current_step: 'OPTION_B_LAYAWAY',
+        };
+        const query = isValidUUID
+          ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
+          : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+        
+        await query;
       } catch {}
     }
     setLayawaySubStep(1);
@@ -875,32 +924,54 @@ export default function ProductBottomSheet({
       } catch {}
     }
 
-    // Actualizar en Supabase
+    // Actualizar en Supabase de forma segura y con fallback garantizado
     try {
-      const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
-      const query = supabase
-        .from('reservations')
-        .update({
+      const resId = activeRes.id;
+      const targetPin = activeRes.pin_code || activeRes.pin;
+      const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
+
+      const fullUpdate = {
+        status: 'confirmed',
+        payment_method: 'pago_movil',
+        payment_type: 'apartado_7d',
+        payment_reference: finalStoreRef,
+        customer_phone: customerPhone.trim(),
+        unlock_fee_usd: auraUnlockFeeUSD,
+        aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
+        aura_fee_status: spidiPaid || payAuraWithWallet ? 'paid' : 'pending',
+        aura_fee_mode: 'radar',
+        spidi_session_id: spidiSession?.sessionId || null,
+        spidi_status: spidiPaid ? 'paid' : null,
+        spidi_bank_reference: spidiBankRef || null,
+        initial_deposit: deposit30USD,
+        store_pay_balance_usd: remaining70USD,
+      };
+
+      const query = isValidUUID
+        ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
+        : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+
+      const { error: fullError } = await query;
+
+      if (fullError) {
+        console.warn('Fallback a actualizacion base en handleConfirmApartadoPagoMovil:', fullError.message);
+        const coreUpdate: Record<string, any> = {
           status: 'confirmed',
-          payment_method: 'pago_movil',
-          payment_type: 'apartado_7d',
-          payment_reference: finalStoreRef,
-          customer_phone: customerPhone.trim(),
+          customer_phone: `${customerPhone.trim()} | REF: #${finalStoreRef} (Pago Móvil 30%)`,
           unlock_fee_usd: auraUnlockFeeUSD,
           aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
           aura_fee_status: spidiPaid || payAuraWithWallet ? 'paid' : 'pending',
           aura_fee_mode: 'radar',
-          spidi_session_id: spidiSession?.sessionId || null,
-          spidi_status: spidiPaid ? 'paid' : null,
-          spidi_bank_reference: spidiBankRef || null,
-          initial_deposit: deposit30USD,
           store_pay_balance_usd: remaining70USD,
-        });
+        };
+        if (spidiSession?.sessionId) coreUpdate.spidi_session_id = spidiSession.sessionId;
+        if (spidiPaid) coreUpdate.spidi_status = 'paid';
+        if (spidiBankRef) coreUpdate.spidi_bank_reference = spidiBankRef;
 
-      if (isValidUUID) {
-        await query.eq('id', activeRes.id);
-      } else if (activeRes.pin_code || activeRes.pin) {
-        await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
+        if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
+        if (targetPin) await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
+      } else if (isValidUUID && targetPin) {
+        await supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
       }
     } catch (err) {
       console.warn('Error actualizando reserva en Supabase:', err);

@@ -1559,6 +1559,24 @@ export default function OwnerDashboard() {
                                   </div>
                                   <span className="font-mono text-[10px] text-slate-400">PIN #{res.pin}</span>
                                 </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleCompleteReservation(res)}
+                                  className="w-full cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 active:scale-95"
+                                >
+                                  <CheckCircle2 size={15} />
+                                  <span>Validar y Entregar (PIN #{res.pin})</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleAttendedNoSale(res)}
+                                  className="w-full text-slate-400 hover:text-white bg-[#020508] hover:bg-slate-900 border border-slate-850 rounded-xl py-1.5 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <ShieldCheck size={12} className="text-emerald-400" />
+                                  <span>Cliente no concretó</span>
+                                </button>
                               </div>
                             );
                           }

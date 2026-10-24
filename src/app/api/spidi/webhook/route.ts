@@ -106,17 +106,39 @@ export async function POST(req: NextRequest) {
         }
 
         if (sessionId) {
-          await supabase
+          const { error } = await supabase
             .from('reservations')
             .update(updateData)
             .eq('spidi_session_id', sessionId);
+
+          if (error && isStoreDeposit) {
+            await supabase
+              .from('reservations')
+              .update({
+                status: 'confirmed',
+                spidi_status: 'paid',
+                spidi_bank_reference: bankRef || undefined,
+              })
+              .eq('spidi_session_id', sessionId);
+          }
         }
 
         if (pinCode) {
-          await supabase
+          const { error } = await supabase
             .from('reservations')
             .update(updateData)
             .eq('pin_code', pinCode);
+
+          if (error && isStoreDeposit) {
+            await supabase
+              .from('reservations')
+              .update({
+                status: 'confirmed',
+                spidi_status: 'paid',
+                spidi_bank_reference: bankRef || undefined,
+              })
+              .eq('pin_code', pinCode);
+          }
         }
 
         break;

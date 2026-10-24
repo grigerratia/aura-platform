@@ -43,6 +43,31 @@ export default function MostradorPage() {
   const [validationSuccessMsg, setValidationSuccessMsg] = useState<string | null>(null);
   const [dismissedCancelledIds, setDismissedCancelledIds] = useState<string[]>([]);
 
+  // Cargar IDs de alertas canceladas descartadas previamente
+  useEffect(() => {
+    if (typeof window !== 'undefined' && storeId) {
+      try {
+        const saved = localStorage.getItem(`aura_dismissed_cancelled_${storeId}`);
+        if (saved) {
+          setDismissedCancelledIds(JSON.parse(saved));
+        }
+      } catch {}
+    }
+  }, [storeId]);
+
+  const handleDismissCancelled = useCallback((id: string, pin?: string) => {
+    setDismissedCancelledIds((prev) => {
+      const itemsToAdd = [id, pin].filter(Boolean) as string[];
+      const next = Array.from(new Set([...prev, ...itemsToAdd]));
+      if (typeof window !== 'undefined' && storeId) {
+        try {
+          localStorage.setItem(`aura_dismissed_cancelled_${storeId}`, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, [storeId]);
+
   // 1. Cargar datos básicos de la tienda para verificar PIN
   const fetchStore = useCallback(async () => {
     if (!storeId) return;
@@ -544,9 +569,22 @@ export default function MostradorPage() {
   });
 
   // 4. Canceladas recientemente para alertar al comercio y liberar stock
-  const cancelledAlerts = reservations.filter(
-    (r) => (r.status === 'cancelled' || r.status === 'cancelada') && !dismissedCancelledIds.includes(r.id)
-  );
+  const cancelledAlerts = reservations.filter((r) => {
+    if (r.status !== 'cancelled' && r.status !== 'cancelada') return false;
+    const pin = r.pin || r.pin_code;
+    if (dismissedCancelledIds.includes(r.id) || (pin && dismissedCancelledIds.includes(pin))) {
+      return false;
+    }
+    // Solo alertar de cancelaciones ocurridas en las últimas 2 horas
+    const refDate = (r as any).updated_at || r.created_at;
+    if (refDate) {
+      const diffMs = Date.now() - new Date(refDate).getTime();
+      if (!isNaN(diffMs) && diffMs > 2 * 60 * 60 * 1000) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   // Historial de canjes completados en mostrador
   const completedToday = reservations.filter(
@@ -682,25 +720,41 @@ export default function MostradorPage() {
         {/* AVISOS DE PEDIDOS CANCELADOS POR CLIENTES */}
         {cancelledAlerts.map((res) => (
           <div key={res.id} className="p-4 bg-rose-950/60 border border-rose-800 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-lg animate-in fade-in">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-rose-900/80 flex items-center justify-center text-rose-300 font-bold shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => handleDismissCancelled(res.id, res.pin)}
+                className="w-8 h-8 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-300 hover:text-white flex items-center justify-center font-bold shrink-0 cursor-pointer transition"
+                title="Descartar aviso"
+              >
                 <X size={16} />
-              </div>
-              <div>
-                <h4 className="font-bold text-rose-200">
+              </button>
+              <div className="min-w-0">
+                <h4 className="font-bold text-rose-200 truncate">
                   Aviso: El cliente {res.customer_name || 'Un cliente'} canceló el pedido
                 </h4>
-                <p className="text-[11px] text-slate-300">
+                <p className="text-[11px] text-slate-300 truncate">
                   Producto: <strong className="text-white">{res.product_name}</strong> (Ticket #{res.pin}). La unidad queda disponible para la venta.
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setDismissedCancelledIds((prev) => [...prev, res.id])}
-              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-[11px] font-bold border border-slate-700 cursor-pointer shrink-0 transition"
-            >
-              Entendido
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleDismissCancelled(res.id, res.pin)}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-[11px] font-bold border border-slate-700 cursor-pointer shrink-0 transition"
+              >
+                Entendido
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDismissCancelled(res.id, res.pin)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg cursor-pointer transition"
+                title="Descartar"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
         ))}
 
@@ -828,8 +882,18 @@ export default function MostradorPage() {
 
                       <div className="p-2 bg-emerald-950/30 border border-emerald-900/40 rounded-xl text-[10px] text-emerald-300 flex items-center gap-1.5">
                         <Check size={12} className="text-emerald-400 shrink-0" />
-                        <span>Confirmaste stock. El cliente está seleccionando 3h o Apartado 7d.</span>
+                        <span>Confirmaste stock. Esperando elección de retiro (3h o 7d).</span>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCompleteSale(res)}
+                        disabled={actionLoading}
+                        className="w-full cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>Cobrar en Caja y Entregar (Ticket #{res.pin})</span>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1057,8 +1121,18 @@ export default function MostradorPage() {
 
                       <div className="p-2 bg-emerald-950/30 border border-emerald-900/40 rounded-xl text-[10px] text-emerald-300 flex items-center gap-1.5">
                         <Check size={12} className="text-emerald-400 shrink-0" />
-                        <span>Confirmaste stock. El cliente está seleccionando 3h o Apartado 7d.</span>
+                        <span>Confirmaste stock. Esperando elección de retiro (3h o 7d).</span>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCompleteSale(res)}
+                        disabled={actionLoading}
+                        className="w-full cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>Cobrar en Caja y Entregar (Ticket #{res.pin})</span>
+                      </button>
                     </div>
                   ))}
                 </div>

@@ -286,8 +286,17 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
           notes: `Cancelado por el cliente. Reembolsados $${feeToRefund.toFixed(2)} USD a Billetera Aura.`
         };
 
-        if (isValidUUID) await supabase.from('reservations').update(updateData).eq('id', targetId);
-        else if (targetPin) await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+        const dbResult = isValidUUID
+          ? await supabase.from('reservations').update(updateData).eq('id', targetId)
+          : await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+
+        if (dbResult?.error) {
+          const coreData = { status: 'cancelled', aura_fee_status: 'refunded_to_wallet' };
+          if (isValidUUID) await supabase.from('reservations').update(coreData).eq('id', targetId);
+          if (targetPin) await supabase.from('reservations').update(coreData).eq('pin_code', targetPin);
+        } else if (isValidUUID && targetPin) {
+          await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+        }
 
         window.dispatchEvent(new CustomEvent('aura_wallet_updated'));
         window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
@@ -297,8 +306,18 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
           status: 'cancelled',
           notes: 'Cancelado por el cliente antes de concretar la reserva'
         };
-        if (isValidUUID) await supabase.from('reservations').update(updateData).eq('id', targetId);
-        else if (targetPin) await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+
+        const dbResult = isValidUUID
+          ? await supabase.from('reservations').update(updateData).eq('id', targetId)
+          : await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+
+        if (dbResult?.error) {
+          const coreData = { status: 'cancelled' };
+          if (isValidUUID) await supabase.from('reservations').update(coreData).eq('id', targetId);
+          if (targetPin) await supabase.from('reservations').update(coreData).eq('pin_code', targetPin);
+        } else if (isValidUUID && targetPin) {
+          await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+        }
       }
     } catch {}
 
