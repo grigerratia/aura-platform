@@ -531,7 +531,7 @@ export default function MegaphoneRadarPanel({
                             ) : (
                               <>
                                 <CheckCircle2 size={13} />
-                                <span>Aceptar y Congelar Precio (90 min)</span>
+                                <span>Aceptar y Congelar Precio (3 Horas)</span>
                               </>
                             )}
                           </button>

@@ -13,7 +13,7 @@ import PasesMode from './modes/PasesMode';
 import ProductBottomSheet from './ProductBottomSheet';
 import PurchaseCelebrationModal from './PurchaseCelebrationModal';
 import WalletModal from '../WalletModal';
-import { useReservations } from '@/store/useReservations';
+import { useReservations, recordCompletedPurchase } from '@/store/useReservations';
 import { supabase } from '@/lib/supabase';
 import { useGameSound } from '@/hooks/useGameSound';
 import MegaphoneGlobalListener from './MegaphoneGlobalListener';
@@ -145,24 +145,45 @@ export default function AuraGameShell({
     return () => window.removeEventListener('aura_trust_score_updated', handleScoreUpdated);
   }, []);
 
+  const lastCelebratedPinRef = useRef<string | null>(null);
+
+  const triggerCelebration = useCallback((res: any) => {
+    const pin = res?.pin_code || res?.pin || res?.id;
+    if (!pin || lastCelebratedPinRef.current === pin) return;
+    lastCelebratedPinRef.current = pin;
+
+    playUnlockSuccess();
+    setBurstTrigger((prev) => prev + 1);
+    setSelectedProduct(null);
+    setCelebratedReservation({
+      ...res,
+      status: 'COMPLETED_IN_STORE',
+    });
+  }, [playUnlockSuccess]);
+
+  // Escuchar evento para abrir detalle de producto / reanudar reserva
+  useEffect(() => {
+    const handleOpenProduct = (e: any) => {
+      if (e.detail?.product) {
+        setSelectedProduct(e.detail.product);
+      }
+    };
+    window.addEventListener('aura_open_product', handleOpenProduct);
+    return () => window.removeEventListener('aura_open_product', handleOpenProduct);
+  }, []);
+
   // Escuchar evento de ticket completado en mostrador para disparar celebración instantánea
   useEffect(() => {
     const handleTicketCompleted = (e: any) => {
       const res = e.detail?.reservation;
       if (res) {
-        playUnlockSuccess();
-        setBurstTrigger((prev) => prev + 1);
-        setSelectedProduct(null);
-        setCelebratedReservation({
-          ...res,
-          status: 'COMPLETED_IN_STORE',
-        });
+        triggerCelebration(res);
       }
     };
 
     window.addEventListener('aura_ticket_completed', handleTicketCompleted);
     return () => window.removeEventListener('aura_ticket_completed', handleTicketCompleted);
-  }, [playUnlockSuccess]);
+  }, [triggerCelebration]);
 
   // ==============================================================================
   // SINCRONIZACIÓN EN TIEMPO REAL DEL TICKET ACTIVO CON EL MOSTRADOR FÍSICO
@@ -180,8 +201,6 @@ export default function AuraGameShell({
       // 1. COMPRA CONCRETADA EN CAJA (Cajero escaneó el QR / PIN y cobró)
       if (status === 'COMPLETED_IN_STORE' || status === 'completed' || status === 'completada') {
         isHandled = true;
-        playUnlockSuccess();
-        setBurstTrigger((prev) => prev + 1);
 
         // Aumentar +10 Puntos de Confianza
         const newScore = Math.min(200, (currentTrustScore || 100) + 10);
@@ -189,17 +208,12 @@ export default function AuraGameShell({
         if (typeof window !== 'undefined') {
           localStorage.setItem('aura_trust_score', String(newScore));
 
-          // Guardar en historial de compras completadas
-          try {
-            const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
-            const history = JSON.parse(historyRaw);
-            history.unshift({
-              ...activeReservation,
-              status: 'COMPLETED_IN_STORE',
-              completed_at: new Date().toISOString(),
-            });
-            localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
-          } catch {}
+          // Guardar en historial de compras completadas (con deduplicación estricta por PIN)
+          recordCompletedPurchase({
+            ...activeReservation,
+            status: 'COMPLETED_IN_STORE',
+            completed_at: new Date().toISOString(),
+          });
 
           window.dispatchEvent(new CustomEvent('aura_trust_score_updated', { detail: { score: newScore } }));
         }
@@ -212,12 +226,7 @@ export default function AuraGameShell({
           }
         } catch {}
 
-        // Cerrar bottom sheet si estaba abierto y abrir modal de celebración
-        setSelectedProduct(null);
-        setCelebratedReservation({
-          ...activeReservation,
-          status: 'COMPLETED_IN_STORE',
-        });
+        triggerCelebration(activeReservation);
 
         // Limpiar reserva activa para apagar el punto parpadeante en dock
         clearActiveReservation(resId || targetPin);

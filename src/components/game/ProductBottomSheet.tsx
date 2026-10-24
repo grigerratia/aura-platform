@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Product, Store, Reservation } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
-import { useReservations } from '@/store/useReservations';
+import { useReservations, recordCompletedPurchase } from '@/store/useReservations';
 import { supabase } from '@/lib/supabase';
 import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
@@ -134,29 +134,39 @@ export default function ProductBottomSheet({
         setSelectedModality('option_b');
       }
 
-      if (activeReservation.status === 'confirmed' || activeReservation.status === 'confirmada') {
-        // Solo ir a confirmación de apartado si ya se ingresó la referencia de pago
-        if (
-          (activeReservation.payment_type === 'apartado_7d' || activeReservation.payment_type === 'apartado_15d') &&
-          activeReservation.payment_reference
-        ) {
+      const isApartadoType =
+        activeReservation.payment_type === 'apartado_7d' ||
+        activeReservation.payment_type === 'apartado_15d' ||
+        activeReservation.current_step === 'OPTION_B_LAYAWAY' ||
+        activeReservation.current_step === 'OPTION_B_CONFIRMED';
+
+      if (isApartadoType) {
+        if (activeReservation.payment_reference) {
           setStep('OPTION_B_CONFIRMED');
-        } else if (activeReservation.payment_type === 'reserva_3h') {
-          setStep('OPTION_A_TICKET');
-        } else if (activeReservation.current_step === 'OPTION_B_LAYAWAY') {
-          setStep('OPTION_B_LAYAWAY');
         } else {
-          // El mostrador confirmó stock -> el cliente elige entre Opción A y Opción B
-          setStockConfirmationType('green');
-          setStep('STOCK_CONFIRMED');
+          setStep('OPTION_B_LAYAWAY');
+          // Verificar si el paso 1 ya fue pagado para restaurar exactamente el paso
+          const isFeePaid =
+            activeReservation.aura_fee_status === 'paid' ||
+            activeReservation.spidi_status === 'paid' ||
+            Boolean(activeReservation.aura_fee_reference && activeReservation.aura_fee_reference !== 'Pendiente');
+
+          if (isFeePaid) {
+            setSpidiPaid(true);
+            setSpidiBankRef(activeReservation.spidi_bank_reference || activeReservation.aura_fee_reference || '');
+            setLayawaySubStep(2);
+          } else {
+            setLayawaySubStep(1);
+          }
         }
+      } else if (activeReservation.payment_type === 'reserva_3h') {
+        setStep('OPTION_A_TICKET');
+      } else if (activeReservation.status === 'confirmed' || activeReservation.status === 'confirmada') {
+        setStockConfirmationType('green');
+        setStep('STOCK_CONFIRMED');
       } else if (activeReservation.status === 'ultimo_par') {
         setStockConfirmationType('yellow');
-        if (activeReservation.current_step === 'OPTION_B_LAYAWAY') {
-          setStep('OPTION_B_LAYAWAY');
-        } else {
-          setStep('STOCK_CONFIRMED');
-        }
+        setStep('STOCK_CONFIRMED');
       } else if (activeReservation.status === 'pending' || activeReservation.status === 'PENDING_STOCK_CHECK') {
         setStep('WAITING_VERIFICATION');
       }
@@ -441,18 +451,13 @@ export default function ProductBottomSheet({
         playUnlockSuccess();
         const completedRes = dbData ? { ...activeRes, ...dbData } : activeRes;
         
-        // Guardar en historial de compras completadas
+        // Guardar en historial de compras completadas (con deduplicación estricta por PIN)
         try {
-          const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
-          const history = JSON.parse(historyRaw);
-          if (!history.some((h: any) => h.id === (dbData?.id || resId) || h.pin === targetPin)) {
-            history.unshift({
-              ...completedRes,
-              status: 'COMPLETED_IN_STORE',
-              completed_at: new Date().toISOString(),
-            });
-            localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 30)));
-          }
+          recordCompletedPurchase({
+            ...completedRes,
+            status: 'COMPLETED_IN_STORE',
+            completed_at: new Date().toISOString(),
+          });
 
           // Aumentar +10 Puntos de Confianza
           const currentScore = Number(localStorage.getItem('aura_trust_score')) || 100;
@@ -709,10 +714,89 @@ export default function ProductBottomSheet({
     } catch {}
   };
 
+  // Cancelar orden o apartado en cualquier punto del flujo
+  const handleCancelOrder = async () => {
+    if (!activeRes) {
+      handleClose();
+      return;
+    }
+
+    const isStep1Paid =
+      spidiPaid ||
+      activeRes.aura_fee_status === 'paid' ||
+      activeRes.spidi_status === 'paid' ||
+      Boolean(activeRes.aura_fee_reference && activeRes.aura_fee_reference !== 'Pendiente');
+
+    const promptMessage = isStep1Paid
+      ? `¿Deseas cancelar este apartado? La tarifa del 5% pagada ($${auraUnlockFeeUSD.toFixed(2)} USD) se acreditará de inmediato a tu Billetera Aura.`
+      : '¿Deseas cancelar esta solicitud? El producto será liberado para la tienda.';
+
+    if (!confirm(promptMessage)) return;
+
+    setIsSubmitting(true);
+    playTap();
+
+    try {
+      const resId = activeRes.id;
+      const targetPin = activeRes.pin_code || activeRes.pin;
+      const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
+
+      if (isStep1Paid) {
+        const feeToRefund = activeRes.unlock_fee_usd || auraUnlockFeeUSD || Number((auraPrice * 0.05).toFixed(2));
+        let userId = currentUserId || activeRes.user_id;
+        if (!userId) {
+          const { data: { user } } = await supabase.auth.getUser();
+          userId = user?.id;
+        }
+
+        if (userId) {
+          const { data: prof } = await supabase.from('profiles').select('wallet_credit_usd').eq('id', userId).maybeSingle();
+          const currentCredit = Number(prof?.wallet_credit_usd || 0);
+          const newCredit = Number((currentCredit + feeToRefund).toFixed(2));
+
+          await supabase.from('profiles').update({ wallet_credit_usd: newCredit }).eq('id', userId);
+          setUserWalletCredit(newCredit);
+        }
+
+        const query = supabase.from('reservations').update({
+          status: 'cancelled',
+          aura_fee_status: 'refunded_to_wallet',
+          notes: `Cancelado por el cliente en Paso 2. Se acreditaron $${feeToRefund.toFixed(2)} USD a su Billetera Aura.`
+        });
+
+        if (isValidUUID) await query.eq('id', resId);
+        else if (targetPin) await query.eq('pin_code', targetPin);
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('aura_wallet_updated'));
+          window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
+        }
+
+        alert(`✓ Apartado cancelado. Se han acreditado $${feeToRefund.toFixed(2)} USD a tu Billetera Aura.`);
+      } else {
+        const query = supabase.from('reservations').update({
+          status: 'cancelled',
+          notes: 'Cancelado por el cliente antes de concretar la reserva'
+        });
+
+        if (isValidUUID) await query.eq('id', resId);
+        else if (targetPin) await query.eq('pin_code', targetPin);
+
+        alert('Has cancelado la solicitud. El producto ha sido liberado.');
+      }
+    } catch (err: any) {
+      console.warn('Error cancelando reserva:', err);
+    } finally {
+      setIsSubmitting(false);
+      clearActiveReservation(activeRes.id || activeRes.pin_code || activeRes.pin);
+      handleClose();
+    }
+  };
+
   // ==============================================================================
   // PASO 4B: ELECCIÓN CLIENTE -> OPCIÓN B (APARTADO DIGITAL 7 DÍAS - PASO 1 Y 2)
   // ==============================================================================
-  const handleSelectOptionB = () => {
+  const handleSelectOptionB = async () => {
     playTap();
     if (activeRes) {
       const updatedRes: Reservation = {
@@ -722,6 +806,22 @@ export default function ProductBottomSheet({
       };
       setActiveRes(updatedRes);
       setActiveReservation(updatedRes);
+
+      // Persistir de inmediato en Supabase
+      try {
+        const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
+        const query = supabase
+          .from('reservations')
+          .update({
+            payment_type: 'apartado_7d',
+            current_step: 'OPTION_B_LAYAWAY',
+          });
+        if (isValidUUID) {
+          await query.eq('id', activeRes.id);
+        } else if (activeRes.pin_code || activeRes.pin) {
+          await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
+        }
+      } catch {}
     }
     setLayawaySubStep(1);
     setStep('OPTION_B_LAYAWAY');
@@ -1082,13 +1182,24 @@ export default function ProductBottomSheet({
                 <span>Esperando respuesta del comercio...</span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setStep('SELECTION')}
-                className="text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer transition font-light block mx-auto"
-              >
-                Volver a la selección de producto
-              </button>
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCancelOrder}
+                  className="flex items-center justify-center gap-1.5 text-xs text-rose-400/90 hover:text-rose-300 transition py-2 px-4 rounded-xl border border-rose-950/60 bg-rose-950/20 hover:bg-rose-950/40 cursor-pointer"
+                >
+                  <X size={14} />
+                  <span>Cancelar solicitud</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep('SELECTION')}
+                  className="text-[11px] text-slate-500 hover:text-slate-300 underline cursor-pointer transition font-light"
+                >
+                  Volver a la selección de variante
+                </button>
+              </div>
             </div>
           )}
 
@@ -1199,6 +1310,17 @@ export default function ProductBottomSheet({
                   </button>
                 </div>
 
+                {/* BOTÓN CANCELAR SOLICITUD ANTES DE ELEGIR */}
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={handleCancelOrder}
+                    className="text-xs text-slate-500 hover:text-rose-400 underline transition cursor-pointer font-light inline-flex items-center gap-1"
+                  >
+                    <X size={13} />
+                    <span>Cancelar solicitud y liberar este producto</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1727,6 +1849,22 @@ export default function ProductBottomSheet({
                   </div>
                 </form>
               )}
+
+              {/* BOTÓN CANCELAR APARTADO CON REEMBOLSO A BILLETERA */}
+              <div className="pt-2 text-center border-t border-slate-800/60">
+                <button
+                  type="button"
+                  onClick={handleCancelOrder}
+                  className="text-xs text-slate-500 hover:text-rose-400 underline transition cursor-pointer font-light inline-flex items-center gap-1"
+                >
+                  <X size={13} />
+                  <span>
+                    {spidiPaid || activeRes?.aura_fee_status === 'paid'
+                      ? `Cancelar apartado (Reembolsar $${auraUnlockFeeUSD.toFixed(2)} USD a Billetera)`
+                      : 'Cancelar este apartado'}
+                  </span>
+                </button>
+              </div>
             </div>
           )}
 

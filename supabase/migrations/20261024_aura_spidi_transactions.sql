@@ -52,3 +52,4 @@ ALTER TABLE public.reservations
   ADD COLUMN IF NOT EXISTS spidi_bank_reference TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_reservations_spidi_session_id ON public.reservations(spidi_session_id);
+

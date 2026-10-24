@@ -41,6 +41,7 @@ export default function MostradorPage() {
   const [foundReservation, setFoundReservation] = useState<Reservation | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [validationSuccessMsg, setValidationSuccessMsg] = useState<string | null>(null);
+  const [dismissedCancelledIds, setDismissedCancelledIds] = useState<string[]>([]);
 
   // 1. Cargar datos básicos de la tienda para verificar PIN
   const fetchStore = useCallback(async () => {
@@ -212,12 +213,12 @@ export default function MostradorPage() {
   ) => {
     setActionLoading(true);
     try {
-      // Preservar exactamente el estado elegido: Verde ('confirmed'), Amarillo ('ultimo_par'), Rojo ('cancelled')
+      // Preservar exactamente el estado elegido: Verde ('STOCK_VERIFIED'), Amarillo ('ultimo_par'), Rojo ('cancelled')
       const targetDbStatus = newStatus === 'cancelled'
         ? 'cancelled'
         : newStatus === 'ultimo_par'
         ? 'ultimo_par'
-        : 'confirmed';
+        : 'STOCK_VERIFIED';
 
       await supabase
         .from('reservations')
@@ -525,19 +526,32 @@ export default function MostradorPage() {
     );
   }
 
-  // Filtrar reservas pendientes que requieren semáforo
+  // 1. Filtrar reservas pendientes que requieren semáforo del personal
   const pendingReservations = reservations.filter(
     (r) => r.status === 'pending' || r.status === 'pendiente' || r.status === 'PENDING_STOCK_CHECK'
   );
 
-  // Reservas activas listas para canje en caja
-  const activeTickets = reservations.filter(
+  // 2. Stock verificado por tienda pero esperando que el cliente elija (3h o 7d)
+  const waitingCustomerReservations = reservations.filter(
     (r) =>
-      r.status === 'confirmed' ||
-      r.status === 'confirmada' ||
-      r.status === 'ultimo_par' ||
-      r.status === 'STOCK_VERIFIED' ||
-      r.status === 'QR_ACTIVE'
+      (r.status === 'STOCK_VERIFIED' || r.status === 'confirmed' || r.status === 'confirmada' || r.status === 'ultimo_par') &&
+      !r.payment_type &&
+      r.current_step !== 'OPTION_A_TICKET' &&
+      r.current_step !== 'OPTION_B_CONFIRMED'
+  );
+
+  // 3. Reservas activas listas para canje en caja (Ticket oficialmente generado por el cliente)
+  const activeTickets = reservations.filter((r) => {
+    if (['cancelled', 'cancelada', 'completed', 'completada', 'COMPLETED_IN_STORE', 'ATTENDED_NO_SALE', 'EXPIRED_NO_SHOW'].includes(r.status)) return false;
+    if (['pending', 'pendiente', 'PENDING_STOCK_CHECK', 'STOCK_VERIFIED'].includes(r.status)) return false;
+    if (r.payment_type === 'reserva_3h' || r.current_step === 'OPTION_A_TICKET') return true;
+    if ((r.payment_type === 'apartado_7d' || r.payment_type === 'apartado_15d') && (r.payment_reference || r.current_step === 'OPTION_B_CONFIRMED')) return true;
+    return false;
+  });
+
+  // 4. Canceladas recientemente para alertar al comercio y liberar stock
+  const cancelledAlerts = reservations.filter(
+    (r) => (r.status === 'cancelled' || r.status === 'cancelada') && !dismissedCancelledIds.includes(r.id)
   );
 
   // Historial de canjes completados en mostrador
@@ -671,6 +685,31 @@ export default function MostradorPage() {
           </div>
         )}
 
+        {/* AVISOS DE PEDIDOS CANCELADOS POR CLIENTES */}
+        {cancelledAlerts.map((res) => (
+          <div key={res.id} className="p-4 bg-rose-950/60 border border-rose-800 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-lg animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-rose-900/80 flex items-center justify-center text-rose-300 font-bold shrink-0">
+                <X size={16} />
+              </div>
+              <div>
+                <h4 className="font-bold text-rose-200">
+                  Aviso: El cliente {res.customer_name || 'Un cliente'} canceló el pedido
+                </h4>
+                <p className="text-[11px] text-slate-300">
+                  Producto: <strong className="text-white">{res.product_name}</strong> (Ticket #{res.pin}). La unidad queda disponible para la venta.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDismissedCancelledIds((prev) => [...prev, res.id])}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-[11px] font-bold border border-slate-700 cursor-pointer shrink-0 transition"
+            >
+              Entendido
+            </button>
+          </div>
+        ))}
+
         {/* ==============================================================================
             PESTAÑA A: SEMÁFORO DE STOCK EN TIEMPO REAL
             ============================================================================== */}
@@ -759,6 +798,47 @@ export default function MostradorPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* RESERVAS CON STOCK CONFIRMADO - ESPERANDO QUE EL CLIENTE SE DECIDA */}
+            {waitingCustomerReservations.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
+                      Esperando Elección del Cliente ({waitingCustomerReservations.length})
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-emerald-400 font-bold">Stock Verificado</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {waitingCustomerReservations.map((res) => (
+                    <div
+                      key={res.id}
+                      className="bg-slate-900/70 border border-slate-800 rounded-2xl p-3.5 space-y-2 text-xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-white truncate text-xs">{res.product_name}</h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                            Cliente: <strong className="text-slate-200">{res.customer_name}</strong>
+                          </p>
+                        </div>
+                        <span className="font-mono text-[10px] bg-slate-950 text-slate-400 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                          PIN #{res.pin}
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-emerald-950/30 border border-emerald-900/40 rounded-xl text-[10px] text-emerald-300 flex items-center gap-1.5">
+                        <Check size={12} className="text-emerald-400 shrink-0" />
+                        <span>Confirmaste stock. El cliente está seleccionando 3h o Apartado 7d.</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -947,6 +1027,47 @@ export default function MostradorPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* RESERVAS CON STOCK CONFIRMADO - ESPERANDO QUE EL CLIENTE SE DECIDA */}
+            {waitingCustomerReservations.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
+                      Esperando Elección del Cliente ({waitingCustomerReservations.length})
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-emerald-400 font-bold">Stock Verificado</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {waitingCustomerReservations.map((res) => (
+                    <div
+                      key={res.id}
+                      className="bg-slate-900/70 border border-slate-800 rounded-2xl p-3.5 space-y-2 text-xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-white truncate text-xs">{res.product_name}</h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                            Cliente: <strong className="text-slate-200">{res.customer_name}</strong>
+                          </p>
+                        </div>
+                        <span className="font-mono text-[10px] bg-slate-950 text-slate-400 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                          PIN #{res.pin}
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-emerald-950/30 border border-emerald-900/40 rounded-xl text-[10px] text-emerald-300 flex items-center gap-1.5">
+                        <Check size={12} className="text-emerald-400 shrink-0" />
+                        <span>Confirmaste stock. El cliente está seleccionando 3h o Apartado 7d.</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

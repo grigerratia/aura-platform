@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useReservations } from '@/store/useReservations';
+import { useReservations, getCleanCompletedTickets, recordCompletedPurchase } from '@/store/useReservations';
 import { useGameSound } from '@/hooks/useGameSound';
 import { supabase } from '@/lib/supabase';
 import {
@@ -42,17 +42,13 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
   // Cargar nivel de confianza, pases activos e historial completado
   const loadUserData = useCallback(async () => {
-    // 1. Cargar puntaje e historial local
+    // 1. Cargar puntaje e historial local limpio de duplicados
     if (typeof window !== 'undefined') {
       const localScore = localStorage.getItem('aura_trust_score');
       if (localScore) setTrustScore(Number(localScore) || 100);
 
-      const historyRaw = localStorage.getItem('aura_completed_tickets');
-      if (historyRaw) {
-        try {
-          setCompletedTickets(JSON.parse(historyRaw));
-        } catch {}
-      }
+      const cleanHistory = getCleanCompletedTickets();
+      setCompletedTickets(cleanHistory);
     }
 
     // 2. Cargar lista de pases activos locales
@@ -90,19 +86,38 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
       const { data: dbCompleted } = await compQuery.order('created_at', { ascending: false }).limit(25);
       if (dbCompleted && dbCompleted.length > 0) {
         setCompletedTickets((prev) => {
-          const map = new Map<string, any>();
-          prev.forEach((t) => map.set(t.pin_code || t.pin || t.id, t));
-          dbCompleted.forEach((r: any) => {
-            const key = r.pin_code || r.pin || r.id;
-            if (!map.has(key)) {
-              map.set(key, {
-                ...r,
-                product_name: r.product_name || 'Producto Retirado',
-                pin: r.pin_code || r.pin,
-              });
-            }
-          });
-          return Array.from(map.values());
+          const seen = new Set<string>();
+          const clean: any[] = [];
+
+          // Local primero
+          for (const t of prev) {
+            const pin = String(t.pin_code || t.pin || t.id || '').trim();
+            if (!pin || seen.has(pin)) continue;
+            seen.add(pin);
+            clean.push({
+              ...t,
+              pin: t.pin_code || t.pin || pin,
+              pin_code: t.pin_code || t.pin || pin,
+            });
+          }
+
+          // Remoto de Supabase después
+          for (const r of dbCompleted) {
+            const pin = String(r.pin_code || r.pin || r.id || '').trim();
+            if (!pin || seen.has(pin)) continue;
+            seen.add(pin);
+            clean.push({
+              ...r,
+              product_name: r.product_name || 'Producto Retirado',
+              pin: r.pin_code || r.pin || pin,
+              pin_code: r.pin_code || r.pin || pin,
+            });
+          }
+
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('aura_completed_tickets', JSON.stringify(clean.slice(0, 25)));
+          }
+          return clean;
         });
       }
 
@@ -124,18 +139,19 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
       const mergedMap = new Map<string, any>();
       localActive.forEach((r) => {
-        const key = r.id || r.pin || r.pin_code;
-        if (key) mergedMap.set(key, r);
+        const pinKey = r.pin_code || r.pin || r.id;
+        if (pinKey) mergedMap.set(pinKey, r);
       });
 
       if (dbActive) {
         dbActive.forEach((r: any) => {
-          const key = r.id || r.pin_code || r.pin;
-          if (key) {
-            const existing = mergedMap.get(key);
-            mergedMap.set(key, {
+          const pinKey = r.pin_code || r.pin || r.id;
+          if (pinKey) {
+            const existing = mergedMap.get(pinKey);
+            mergedMap.set(pinKey, {
               ...existing,
               ...r,
+              id: r.id || existing?.id,
               pin: r.pin_code || r.pin || existing?.pin || '0000',
               product_name: r.product_name || existing?.product_name || 'Producto Apartado',
               price_usd: Number(r.total_price || r.price_usd || existing?.price_usd || 0),
@@ -210,21 +226,8 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
           if (data) {
             if (data.status === 'COMPLETED_IN_STORE' || data.status === 'completed' || data.status === 'completada') {
-              // Guardar en historial local de pases concretados
-              try {
-                const historyRaw = localStorage.getItem('aura_completed_tickets') || '[]';
-                const history = JSON.parse(historyRaw);
-                if (!history.some((h: any) => h.id === data.id || h.pin === data.pin_code)) {
-                  history.unshift({
-                    ...pass,
-                    status: 'COMPLETED_IN_STORE',
-                    completed_at: new Date().toISOString(),
-                  });
-                  localStorage.setItem('aura_completed_tickets', JSON.stringify(history.slice(0, 20)));
-                }
-              } catch {}
-
               const completedRes = { ...pass, ...data, status: 'COMPLETED_IN_STORE' };
+              recordCompletedPurchase(completedRes);
               removeActiveReservation(data.id || data.pin_code || targetPin);
               loadUserData();
               window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
@@ -256,11 +259,46 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
     const targetId = res.id;
     const isValidUUID = Boolean(targetId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId));
 
+    const isStep1Paid =
+      res.aura_fee_status === 'paid' ||
+      res.spidi_status === 'paid' ||
+      Boolean(res.aura_fee_reference && res.aura_fee_reference !== 'Pendiente');
+
+    const promptMsg = isStep1Paid
+      ? `¿Deseas cancelar este apartado? La tarifa del 5% que pagaste se acreditará de inmediato a tu Billetera Aura.`
+      : `¿Deseas cancelar esta reserva (#${targetPin})? El producto quedará disponible nuevamente para la tienda.`;
+
+    if (!confirm(promptMsg)) return;
+
     try {
-      if (isValidUUID) {
-        await supabase.from('reservations').update({ status: 'cancelled' }).eq('id', targetId);
-      } else if (targetPin) {
-        await supabase.from('reservations').update({ status: 'cancelled' }).eq('pin_code', targetPin);
+      if (isStep1Paid) {
+        const feeToRefund = Number(res.unlock_fee_usd || (Number(res.price_usd || 0) * 0.05).toFixed(2));
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: prof } = await supabase.from('profiles').select('wallet_credit_usd').eq('id', user.id).maybeSingle();
+          const currentCredit = Number(prof?.wallet_credit_usd || 0);
+          await supabase.from('profiles').update({ wallet_credit_usd: Number((currentCredit + feeToRefund).toFixed(2)) }).eq('id', user.id);
+        }
+
+        const updateData = {
+          status: 'cancelled',
+          aura_fee_status: 'refunded_to_wallet',
+          notes: `Cancelado por el cliente. Reembolsados $${feeToRefund.toFixed(2)} USD a Billetera Aura.`
+        };
+
+        if (isValidUUID) await supabase.from('reservations').update(updateData).eq('id', targetId);
+        else if (targetPin) await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+
+        window.dispatchEvent(new CustomEvent('aura_wallet_updated'));
+        window.dispatchEvent(new CustomEvent('aura_trust_score_updated'));
+        alert(`✓ Reserva cancelada. Se han acreditado $${feeToRefund.toFixed(2)} USD a tu Billetera Aura.`);
+      } else {
+        const updateData = {
+          status: 'cancelled',
+          notes: 'Cancelado por el cliente antes de concretar la reserva'
+        };
+        if (isValidUUID) await supabase.from('reservations').update(updateData).eq('id', targetId);
+        else if (targetPin) await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
       }
     } catch {}
 
@@ -339,12 +377,46 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
           <div className="space-y-4">
             {activeList.map((pass) => {
-              const isApartado = pass.payment_type === 'apartado_7d' || pass.payment_type === 'apartado_15d' || Boolean(pass.initial_deposit);
-              const isPendingCheck = pass.status === 'pending' || pass.status === 'PENDING_STOCK_CHECK';
-              const isUltimo = pass.status === 'ultimo_par';
               const targetPin = pass.pin_code || pass.pin || '0000';
               const priceUsd = Number(pass.price_usd || pass.total_price || 0);
               const priceVes = Number(pass.price_ves || (priceUsd * (pass.bcv_rate || 55)));
+
+              // 1. ¿Es un pase o ticket oficial confirmado y listo para retirar en caja?
+              const isTrueReadyTicket =
+                (pass.payment_type === 'reserva_3h' || pass.current_step === 'OPTION_A_TICKET') ||
+                ((pass.payment_type === 'apartado_7d' || pass.payment_type === 'apartado_15d') && (pass.payment_reference || pass.current_step === 'OPTION_B_CONFIRMED'));
+
+              // 2. ¿Está en proceso de apartado esperando el pago?
+              const isApartadoPendingPayment =
+                (pass.payment_type === 'apartado_7d' || pass.payment_type === 'apartado_15d' || pass.current_step === 'OPTION_B_LAYAWAY') &&
+                !pass.payment_reference &&
+                pass.current_step !== 'OPTION_B_CONFIRMED';
+
+              // 3. ¿El comercio confirmó stock pero el cliente aún no elige opción (3h o 7d)?
+              const isStockConfirmedWaitingChoice =
+                !isTrueReadyTicket &&
+                !isApartadoPendingPayment &&
+                (pass.status === 'STOCK_VERIFIED' || pass.status === 'confirmed' || pass.status === 'confirmada' || pass.status === 'ultimo_par');
+
+              // 4. ¿Esperando semáforo del encargado?
+              const isWaitingStock =
+                pass.status === 'pending' || pass.status === 'pendiente' || pass.status === 'PENDING_STOCK_CHECK';
+
+              const handleResume = () => {
+                playTap();
+                const productFromPass = {
+                  id: pass.product_id,
+                  name: pass.product_name,
+                  price: priceUsd,
+                  regular_price_usd: priceUsd,
+                  aura_price_usd: priceUsd,
+                  store_id: pass.store_id,
+                  imageUrl: pass.product_image || '',
+                  category: 'RETAIL_STANDARD' as const,
+                };
+                useReservations.getState().setActiveReservation(pass);
+                window.dispatchEvent(new CustomEvent('aura_open_product', { detail: { product: productFromPass } }));
+              };
 
               return (
                 <div
@@ -357,25 +429,36 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
                   {/* Header de la tarjeta */}
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800/60">
                     <div className="flex items-center gap-2">
-                      {isApartado ? (
+                      {isTrueReadyTicket ? (
+                        pass.payment_type === 'apartado_7d' ? (
+                          <span className="px-2.5 py-1 rounded-full bg-slate-900 text-indigo-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                            Apartado en Depósito (7 Días)
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-slate-900 text-emerald-400 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            Listo para retirar en mostrador (3 Horas)
+                          </span>
+                        )
+                      ) : isApartadoPendingPayment ? (
                         <span className="px-2.5 py-1 rounded-full bg-slate-900 text-indigo-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-                          Apartado en Depósito (7 Días)
+                          Apartado en Progreso (Pago Pendiente)
                         </span>
-                      ) : isPendingCheck ? (
-                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-amber-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                          Esperando confirmación en mostrador
-                        </span>
-                      ) : isUltimo ? (
-                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-amber-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-400" />
-                          ¡Última unidad en estante!
-                        </span>
-                      ) : (
+                      ) : isStockConfirmedWaitingChoice ? (
                         <span className="px-2.5 py-1 rounded-full bg-slate-900 text-emerald-400 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                          Listo para retirar en mostrador
+                          Stock Confirmado • Elige tu forma de retiro
+                        </span>
+                      ) : isWaitingStock ? (
+                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-amber-300 text-[11px] font-bold border border-slate-800 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          Esperando confirmación de mostrador
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full bg-slate-900 text-slate-300 text-[11px] font-bold border border-slate-800">
+                          Solicitud Activa
                         </span>
                       )}
                     </div>
@@ -427,26 +510,95 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
                     </div>
                   </div>
 
-                  {/* CÓDIGO QR Y PIN DESTACADO */}
-                  <div className="bg-[#030812] border border-slate-800 rounded-2xl p-4 text-center space-y-2.5 shadow-inner">
-                    <div className="flex justify-center">
-                      <QRCodeView value={targetPin} size={120} />
-                    </div>
+                  {/* CONTENIDO SEGÚN ESTADO DE LA RESERVA */}
 
-                    <div>
-                      <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 block">
-                        Muestra este PIN al encargado en mostrador:
-                      </span>
-                      <div className="font-mono text-3xl font-black text-[#00ffb2] tracking-widest drop-shadow-[0_0_12px_rgba(0,255,178,0.4)]">
-                        #{targetPin}
+                  {/* CASO A: TICKET OFICIAL LISTO PARA COBRO Y ENTREGA */}
+                  {isTrueReadyTicket && (
+                    <div className="bg-[#030812] border border-slate-800 rounded-2xl p-4 text-center space-y-2.5 shadow-inner">
+                      <div className="flex justify-center">
+                        <QRCodeView value={targetPin} size={120} />
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 block">
+                          Muestra este PIN al encargado en mostrador:
+                        </span>
+                        <div className="font-mono text-3xl font-black text-[#00ffb2] tracking-widest drop-shadow-[0_0_12px_rgba(0,255,178,0.4)]">
+                          #{targetPin}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 font-light pt-0.5">
+                        <Clock size={12} className="text-amber-400" />
+                        <span>{pass.payment_type === 'apartado_7d' ? 'Resguardado en depósito de la tienda (7 Días)' : 'Precio congelado por 3 horas en estante'}</span>
                       </div>
                     </div>
+                  )}
 
-                    <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 font-light pt-0.5">
-                      <Clock size={12} className="text-amber-400" />
-                      <span>{isApartado ? 'Resguardado en depósito de la tienda (7 Días)' : 'Precio congelado por 3 horas en estante'}</span>
+                  {/* CASO B: STOCK CONFIRMADO POR TIENDA - ESPERANDO ELECCIÓN DEL CLIENTE */}
+                  {isStockConfirmedWaitingChoice && (
+                    <div className="bg-[#030812] border border-emerald-900/50 rounded-2xl p-4 space-y-3">
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-emerald-300">
+                          ¡La tienda confirmó que tiene tu producto disponible!
+                        </h4>
+                        <p className="text-[11px] text-slate-300 font-light">
+                          Selecciona si deseas ir a retirarlo hoy mismo gratis (3 horas) o apartarlo por 7 días en depósito para generar tu boleto oficial.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleResume}
+                        className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                      >
+                        <span>Elegir Opción de Retiro</span>
+                        <ArrowRight size={13} />
+                      </button>
                     </div>
-                  </div>
+                  )}
+
+                  {/* CASO C: APARTADO EN PROGRESO PENDIENTE DE PAGO */}
+                  {isApartadoPendingPayment && (
+                    <div className="bg-[#030812] border border-indigo-900/50 rounded-2xl p-4 space-y-3">
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-indigo-300">
+                          Apartado Digital en Progreso (7 Días)
+                        </h4>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-2 pt-0.5">
+                          <span>
+                            Paso 1 (Tarifa Aura 5%):{' '}
+                            <strong className={pass.aura_fee_status === 'paid' ? 'text-emerald-400' : 'text-amber-400'}>
+                              {pass.aura_fee_status === 'paid' ? '✓ Pagado' : 'Pendiente'}
+                            </strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Paso 2 (Inicial 30%): <strong className="text-amber-400">Pendiente</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleResume}
+                        className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                      >
+                        <span>Reanudar y Completar Pago</span>
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* CASO D: ESPERANDO SEMÁFORO DE MOSTRADOR */}
+                  {isWaitingStock && (
+                    <div className="bg-[#030812] border border-slate-800 rounded-2xl p-4 text-center space-y-2">
+                      <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse mx-auto" />
+                      <p className="text-xs text-slate-300 font-light">
+                        El personal de <strong className="text-white">{pass.store_name}</strong> está verificando el estante físico en este momento. Te avisaremos apenas respondan.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Acciones del pase */}
                   <div className="flex items-center justify-between pt-1 text-xs">
@@ -466,15 +618,12 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        playTap();
-                        if (confirm(`¿Deseas liberar el pase #${targetPin}?`)) {
-                          handleCancelPass(pass);
-                        }
-                      }}
+                      onClick={() => handleCancelPass(pass)}
                       className="text-slate-500 hover:text-rose-400 text-xs transition cursor-pointer underline font-light"
                     >
-                      Liberar reserva
+                      {isApartadoPendingPayment && pass.aura_fee_status === 'paid'
+                        ? 'Cancelar apartado (Reembolsar a Billetera)'
+                        : 'Cancelar solicitud'}
                     </button>
                   </div>
                 </div>
