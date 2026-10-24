@@ -180,6 +180,7 @@ export default function OwnerDashboard() {
           const priceUsd = Number(r.total_price || r.price_usd || 0);
           const bcvRate = Number(r.bcv_rate || r.tasa || 55);
           return {
+            ...r,
             id: r.id,
             pin: r.pin_code || r.pin || '0000',
             pin_code: r.pin_code || r.pin || '0000',
@@ -203,7 +204,9 @@ export default function OwnerDashboard() {
             status: r.status,
             expires_at: r.expires_at,
             created_at: r.created_at,
-            payment_reference: r.customer_phone?.includes('REF:') || r.customer_phone?.includes('PAGO_MOVIL') ? 'Sí' : undefined,
+            payment_type: r.payment_type,
+            current_step: r.current_step,
+            payment_reference: r.payment_reference || (r.customer_phone?.includes('REF:') || r.customer_phone?.includes('PAGO_MOVIL') ? 'Sí' : undefined),
           };
         });
         setReservations(mapped);
@@ -1499,14 +1502,20 @@ export default function OwnerDashboard() {
                         {/* ACCIONES DE ESTADO: SI YA ESTÁ CONFIRMADA O ES PAGO MÓVIL, MOSTRAR BOTÓN DE COBRAR/ENTREGAR */}
                         {/* ACCIONES DE ESTADO: DISTINGUIR ENTRE TICKET LISTO, ESPERANDO DECISIÓN DEL CLIENTE Y SEMÁFORO */}
                         {(() => {
+                          // A. Ticket oficialmente confirmado y listo para entregar
                           const isTrueReady =
-                            (res.payment_type === 'reserva_3h' || res.current_step === 'OPTION_A_TICKET') ||
-                            ((res.payment_type === 'apartado_7d' || res.payment_type === 'apartado_15d') && (res.payment_reference || res.current_step === 'OPTION_B_CONFIRMED')) ||
+                            res.status === 'confirmed' ||
+                            res.status === 'confirmada' ||
+                            res.status === 'QR_ACTIVE' ||
+                            res.current_step === 'OPTION_A_TICKET' ||
+                            res.current_step === 'OPTION_B_CONFIRMED' ||
+                            Boolean(res.payment_reference) ||
                             hasPagoMovil;
 
+                          // B. Stock verificado por tienda, pero el cliente está eligiendo 3h o 7d
                           const isWaitingCustomer =
                             !isTrueReady &&
-                            (res.status === 'STOCK_VERIFIED' || res.status === 'confirmed' || res.status === 'confirmada' || res.status === 'ultimo_par');
+                            (res.status === 'STOCK_VERIFIED' || res.status === 'ultimo_par');
 
                           if (isTrueReady) {
                             return (

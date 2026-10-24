@@ -702,6 +702,7 @@ export default function ProductBottomSheet({
           status: 'confirmed',
           payment_method: 'en_tienda',
           payment_type: 'reserva_3h',
+          current_step: 'OPTION_A_TICKET',
           unlock_fee_usd: 0,
           store_pay_balance_usd: auraPrice,
         });
