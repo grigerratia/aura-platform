@@ -23,6 +23,13 @@ export async function POST(req: NextRequest) {
 
     const config = getSpidiConfig();
 
+    if (!config.apiToken) {
+      return NextResponse.json(
+        { error: 'Falta configurar SPIDI_API_TOKEN en las variables de entorno de Vercel.' },
+        { status: 500 }
+      );
+    }
+
     // Crear sesión oficial en SPIDI
     const spidiRes = await createSpidiButtonSession({
       amountUsd: Number(amountUsd),
@@ -93,3 +100,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
