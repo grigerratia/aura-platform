@@ -197,9 +197,12 @@ export interface Reservation {
 
   // Verificación y Bóveda Central de Pagos Aura
   aura_fee_reference?: string;
-  aura_fee_status?: 'pending' | 'approved' | 'rejected';
+  aura_fee_status?: 'pending' | 'approved' | 'rejected' | 'paid';
   aura_fee_mode?: 'radar' | 'relampago' | 'manadas';
   aura_fee_verified_at?: string;
+  spidi_session_id?: string;
+  spidi_status?: string;
+  spidi_bank_reference?: string;
 
   // Doble Cierre & Pagos Directos
   payment_method?: 'en_tienda' | 'pago_movil';

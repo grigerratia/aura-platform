@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabase';
 import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
   AlertCircle, ArrowRight, ShieldCheck,
-  MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap
+  MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap,
+  Smartphone, ExternalLink, Loader2, QrCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -66,6 +67,18 @@ export default function ProductBottomSheet({
   const [payAuraWithWallet, setPayAuraWithWallet] = useState<boolean>(false);
   const [userWalletCredit, setUserWalletCredit] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Estados de Pago Automatizado SPIDI (Desbloqueo 5%)
+  const [spidiLoading, setSpidiLoading] = useState<boolean>(false);
+  const [spidiSession, setSpidiSession] = useState<{
+    sessionId: string;
+    paymentUrl: string;
+    paymentQr?: string;
+    amountUsd: number;
+  } | null>(null);
+  const [spidiPaid, setSpidiPaid] = useState<boolean>(false);
+  const [spidiBankRef, setSpidiBankRef] = useState<string>('');
+  const [showManualAuraPay, setShowManualAuraPay] = useState<boolean>(false);
 
   // Contador regresivo para ticket de 3 horas
   const [timeLeft, setTimeLeft] = useState({ hours: 3, minutes: 0, seconds: 0 });
@@ -518,6 +531,70 @@ export default function ProductBottomSheet({
   }, [step, activeRes?.id, activeRes?.pin, activeRes?.pin_code, playUnlockSuccess, setActiveReservation, clearActiveReservation]);
 
   // ==============================================================================
+  // SPIDI: INICIAR SESIÓN Y ESCUCHAR CONFIRMACIÓN EN TIEMPO REAL
+  // ==============================================================================
+  const handleCreateSpidiPayment = async () => {
+    if (spidiLoading || spidiPaid || !product) return;
+    setSpidiLoading(true);
+    playTap();
+
+    try {
+      const pinToUse = generatedPin || activeRes?.pin_code || activeRes?.pin || '';
+      const res = await fetch('/api/spidi/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: activeRes?.id,
+          pin: pinToUse,
+          amountUsd: auraUnlockFeeUSD,
+          productName: product.name,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'No se pudo iniciar la pasarela de pago SPIDI.');
+      }
+
+      setSpidiSession({
+        sessionId: data.sessionId,
+        paymentUrl: data.paymentUrl,
+        paymentQr: data.paymentQr,
+        amountUsd: data.amountUsd,
+      });
+    } catch (err: any) {
+      alert(err.message || 'Error al conectar con la pasarela de pagos SPIDI.');
+    } finally {
+      setSpidiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!spidiSession?.sessionId || spidiPaid) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(spidiSession.sessionId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isPaid) {
+            setSpidiPaid(true);
+            const ref = data.bankReferenceId || `SPIDI-${spidiSession.sessionId.slice(-6).toUpperCase()}`;
+            setSpidiBankRef(ref);
+            setPagoMovilAuraRef(ref);
+            playUnlockSuccess();
+            setTimeout(() => {
+              setLayawaySubStep(2);
+            }, 1200);
+          }
+        }
+      } catch {}
+    }, 2500);
+
+    return () => clearInterval(pollInterval);
+  }, [spidiSession?.sessionId, spidiPaid, playUnlockSuccess]);
+
+  // ==============================================================================
   // PASO 4A: ELECCIÓN CLIENTE -> OPCIÓN A (IR HOY MISMO - TICKET QR GRATIS 3 HORAS)
   // ==============================================================================
   const handleSelectOptionA = async () => {
@@ -604,6 +681,11 @@ export default function ProductBottomSheet({
       payment_type: 'apartado_7d',
       payment_reference: pagoMovilRef.trim(),
       unlock_fee_usd: auraUnlockFeeUSD,
+      aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
+      aura_fee_status: spidiPaid || payAuraWithWallet ? 'paid' : 'pending',
+      spidi_session_id: spidiSession?.sessionId || undefined,
+      spidi_status: spidiPaid ? 'paid' : undefined,
+      spidi_bank_reference: spidiBankRef || undefined,
       initial_deposit: deposit30USD,
       store_pay_balance_usd: remaining70USD,
       current_step: 'OPTION_B_CONFIRMED',
@@ -636,8 +718,11 @@ export default function ProductBottomSheet({
           customer_phone: customerPhone.trim(),
           unlock_fee_usd: auraUnlockFeeUSD,
           aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
-          aura_fee_status: 'pending',
+          aura_fee_status: spidiPaid || payAuraWithWallet ? 'paid' : 'pending',
           aura_fee_mode: 'radar',
+          spidi_session_id: spidiSession?.sessionId || null,
+          spidi_status: spidiPaid ? 'paid' : null,
+          spidi_bank_reference: spidiBankRef || null,
           initial_deposit: deposit30USD,
           store_pay_balance_usd: remaining70USD,
         });
@@ -1194,7 +1279,89 @@ export default function ProductBottomSheet({
                       Este pequeño arancel congela el precio en sistema y custodia tu turno durante los 7 días de apartado.
                     </p>
 
-                    {userWalletCredit >= auraUnlockFeeUSD && (
+                    {/* ESTADO: YA PAGADO VIA SPIDI */}
+                    {spidiPaid ? (
+                      <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl space-y-2 text-center animate-in zoom-in-95">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center mx-auto">
+                          <CheckCircle2 size={24} />
+                        </div>
+                        <p className="text-xs font-bold text-emerald-300">¡Pago Bancario Confirmado Automáticamente!</p>
+                        <p className="text-[11px] text-slate-300 font-mono">Ref. Bancaria: #{spidiBankRef}</p>
+                        <p className="text-[10px] text-slate-400">Avanzando automáticamente al paso 2...</p>
+                      </div>
+                    ) : spidiSession ? (
+                      /* ESTADO: SESIÓN SPIDI ACTIVA (QR + ENLACE) */
+                      <div className="p-3 bg-[#020508] border border-slate-800 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <QrCode size={15} className="text-[#00ffb2]" />
+                            Escanea o paga en línea
+                          </span>
+                          <span className="text-xs font-black text-[#00ffb2]">${auraUnlockFeeUSD.toFixed(2)} USD</span>
+                        </div>
+
+                        {spidiSession.paymentQr && (
+                          <div className="flex flex-col items-center py-1">
+                            <img
+                              src={spidiSession.paymentQr}
+                              alt="QR de Pago SPIDI"
+                              className="w-40 h-40 rounded-xl bg-white p-2 border border-slate-700 shadow-md"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-1 font-light">
+                              Escanea con tu banco o app móvil
+                            </span>
+                          </div>
+                        )}
+
+                        <a
+                          href={spidiSession.paymentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                        >
+                          <ExternalLink size={14} />
+                          <span>Pagar en este teléfono (Pago Móvil / Débito)</span>
+                        </a>
+
+                        <div className="flex items-center justify-center gap-2 text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-2.5">
+                          <Loader2 size={13} className="animate-spin text-[#00ffb2]" />
+                          <span>Esperando confirmación bancaria en tiempo real...</span>
+                        </div>
+
+                        <div className="text-center pt-1">
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            Desarrollado por SPIDI • Pagos Inmediatos
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ESTADO: BOTÓN PRINCIPAL SPIDI */
+                      <div className="space-y-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleCreateSpidiPayment}
+                          disabled={spidiLoading}
+                          className="w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm transition shadow-lg shadow-emerald-500/25 flex flex-col items-center justify-center gap-0.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            {spidiLoading ? (
+                              <Loader2 size={16} className="animate-spin text-slate-950" />
+                            ) : (
+                              <Smartphone size={16} className="text-slate-950" />
+                            )}
+                            <span className="font-black text-sm">
+                              {spidiLoading ? 'Generando pago seguro...' : 'Pagar con Pago Móvil o Débito'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-semibold text-slate-900/80">
+                            Desarrollado por SPIDI • Confirmación automática
+                          </span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Billetera Aura si tiene saldo */}
+                    {!spidiPaid && userWalletCredit >= auraUnlockFeeUSD && (
                       <label className="flex items-center gap-2 p-2.5 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer">
                         <input
                           type="checkbox"
@@ -1208,37 +1375,49 @@ export default function ProductBottomSheet({
                       </label>
                     )}
 
-                    {!payAuraWithWallet && (
-                      <div className="space-y-3 pt-2 border-t border-slate-800/80">
-                        <div className="p-3 bg-[#020508] border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-400">Banco / Teléfono Aura:</span>
-                            <span className="text-white font-mono font-bold">0102 BDV • 04140857379</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-400">RIF / Monto en Bs:</span>
-                            <span className="text-[#00ffb2] font-mono font-black text-xs">J-50348291-0 • Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
-                          </div>
-                        </div>
+                    {/* Alternativa de pago manual desplegable */}
+                    {!spidiPaid && !payAuraWithWallet && (
+                      <div className="pt-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setShowManualAuraPay(!showManualAuraPay)}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
+                        >
+                          {showManualAuraPay ? 'Ocultar pago manual' : '¿Prefieres transferir manualmente por Pago Móvil?'}
+                        </button>
 
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <button
-                            type="button"
-                            onClick={handleCopyAuraBankData}
-                            className="py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer border border-slate-700"
-                          >
-                            <Copy size={13} />
-                            <span>{copiedAuraBankData ? '¡Datos Copiados!' : 'Copiar Pago Móvil Aura'}</span>
-                          </button>
-                          <input
-                            type="text"
-                            required
-                            placeholder="Nº Referencia Aura (últimos 4-6 dígitos)"
-                            value={pagoMovilAuraRef}
-                            onChange={(e) => setPagoMovilAuraRef(e.target.value)}
-                            className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-slate-600"
-                          />
-                        </div>
+                        {showManualAuraPay && (
+                          <div className="space-y-3 pt-3 text-left animate-in fade-in">
+                            <div className="p-3 bg-[#020508] border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-400">Banco / Teléfono Aura:</span>
+                                <span className="text-white font-mono font-bold">0102 BDV • 04140857379</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-400">RIF / Monto en Bs:</span>
+                                <span className="text-[#00ffb2] font-mono font-black text-xs">J-50348291-0 • Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <button
+                                type="button"
+                                onClick={handleCopyAuraBankData}
+                                className="py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer border border-slate-700"
+                              >
+                                <Copy size={13} />
+                                <span>{copiedAuraBankData ? '¡Datos Copiados!' : 'Copiar Pago Móvil Aura'}</span>
+                              </button>
+                              <input
+                                type="text"
+                                placeholder="Nº Referencia Aura (últimos 4-6 dígitos)"
+                                value={pagoMovilAuraRef}
+                                onChange={(e) => setPagoMovilAuraRef(e.target.value)}
+                                className="flex-1 p-2.5 bg-[#020508] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono outline-none focus:border-slate-600"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1247,14 +1426,14 @@ export default function ProductBottomSheet({
                   <button
                     type="button"
                     onClick={() => {
-                      if (!payAuraWithWallet && !pagoMovilAuraRef.trim()) {
-                        alert('Ingresa el número de referencia del Pago Móvil a Aura o activa el pago con Billetera.');
+                      if (!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()) {
+                        alert('Completa el pago del arancel con SPIDI, tu Billetera o ingresa la referencia de transferencia.');
                         return;
                       }
                       playTap();
                       setLayawaySubStep(2);
                     }}
-                    disabled={!payAuraWithWallet && !pagoMovilAuraRef.trim()}
+                    disabled={!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()}
                     className="cursor-pointer w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-40"
                   >
                     <span>Continuar al Paso 2: Abono 30% a la Tienda</span>

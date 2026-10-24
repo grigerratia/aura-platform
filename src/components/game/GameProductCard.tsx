@@ -55,7 +55,7 @@ export default function GameProductCard({
   const unlockFee =
     product.unlock_fee_usd !== undefined && product.unlock_fee_usd !== null
       ? product.unlock_fee_usd
-      : Number((auraPrice * 0.1).toFixed(2));
+      : Number((auraPrice * 0.05).toFixed(2));
 
   // Determinar badge visual
   const renderBadge = () => {
@@ -247,7 +247,15 @@ export default function GameProductCard({
         className="game-sweep w-full cursor-pointer bg-gradient-to-r from-emerald-900/90 via-emerald-700/80 to-teal-800 text-slate-100 font-bold py-1.5 sm:py-2 px-2 rounded-xl text-[11px] sm:text-xs transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
       >
         <ArrowRight size={13} className="text-[#00ffb2]" />
-        <span className="truncate">Ir por este producto</span>
+        <span className="truncate">
+          {hideDiscounts
+            ? 'Ir por este producto'
+            : product.discount_percent && product.discount_percent > 0
+            ? `Desbloquear (-${product.discount_percent}%)`
+            : unlockFee > 0
+            ? `Desbloquear $${unlockFee.toFixed(2)}`
+            : 'Desbloquear'}
+        </span>
       </button>
     </div>
   );

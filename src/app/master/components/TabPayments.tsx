@@ -36,9 +36,12 @@ interface PaymentItem {
   unlock_fee_usd?: number;
   initial_deposit?: number;
   aura_fee_reference?: string;
-  aura_fee_status?: 'pending' | 'approved' | 'rejected';
+  aura_fee_status?: 'pending' | 'approved' | 'rejected' | 'paid';
   aura_fee_mode?: 'radar' | 'relampago' | 'manadas';
   aura_fee_verified_at?: string;
+  spidi_session_id?: string;
+  spidi_status?: string;
+  spidi_bank_reference?: string;
   payment_reference?: string;
   payment_type?: string;
   created_at?: string;
@@ -75,7 +78,7 @@ export default function TabPayments({ onBlockUser }: { onBlockUser?: (userId: st
           const mode: 'radar' | 'relampago' | 'manadas' = r.aura_fee_mode || 
             (r.payment_type?.includes('relampago') ? 'relampago' : r.payment_type?.includes('manada') ? 'manadas' : 'radar');
           
-          let status: 'pending' | 'approved' | 'rejected' = r.aura_fee_status || 'pending';
+          let status: 'pending' | 'approved' | 'rejected' | 'paid' = r.aura_fee_status || 'pending';
           if (!r.aura_fee_status && (r.status === 'completed' || r.status === 'entregada')) {
             status = 'approved';
           }
@@ -175,7 +178,7 @@ export default function TabPayments({ onBlockUser }: { onBlockUser?: (userId: st
   // Cálculos de métricas financieras ejecutivas
   const stats = useMemo(() => {
     const totalCollected = payments
-      .filter(p => p.aura_fee_status === 'approved')
+      .filter(p => p.aura_fee_status === 'approved' || p.aura_fee_status === 'paid')
       .reduce((acc, p) => acc + (p.unlock_fee_usd || 0), 0);
 
     const totalPending = payments
@@ -183,7 +186,7 @@ export default function TabPayments({ onBlockUser }: { onBlockUser?: (userId: st
       .reduce((acc, p) => acc + (p.unlock_fee_usd || 0), 0);
 
     const pendingCount = payments.filter(p => p.aura_fee_status === 'pending').length;
-    const approvedCount = payments.filter(p => p.aura_fee_status === 'approved').length;
+    const approvedCount = payments.filter(p => p.aura_fee_status === 'approved' || p.aura_fee_status === 'paid').length;
 
     const radarCount = payments.filter(p => p.aura_fee_mode === 'radar').length;
     const relampagoCount = payments.filter(p => p.aura_fee_mode === 'relampago').length;
@@ -435,7 +438,7 @@ export default function TabPayments({ onBlockUser }: { onBlockUser?: (userId: st
               <tbody className="divide-y divide-slate-100 text-xs">
                 {filtered.map(p => {
                   const isPending = p.aura_fee_status === 'pending';
-                  const isApproved = p.aura_fee_status === 'approved';
+                  const isApproved = p.aura_fee_status === 'approved' || p.aura_fee_status === 'paid';
                   const isRejected = p.aura_fee_status === 'rejected';
 
                   return (
@@ -533,7 +536,7 @@ export default function TabPayments({ onBlockUser }: { onBlockUser?: (userId: st
                           {isApproved && <CheckCircle2 size={12} className="text-emerald-600" />}
                           {isRejected && <XCircle size={12} className="text-red-600" />}
                           {isPending && <Clock size={12} className="text-amber-600" />}
-                          {isApproved ? 'Aprobado' : isRejected ? 'Rechazado' : 'Por Conciliar'}
+                          {isApproved ? (p.aura_fee_status === 'paid' ? 'SPIDI Bancos' : 'Aprobado') : isRejected ? 'Rechazado' : 'Por Conciliar'}
                         </span>
                       </td>
 
