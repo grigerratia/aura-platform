@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
     // consultar directamente al API de SPIDI (comprobación activa del servidor)
     const activeSessionId = sessionId || localTx?.session_id || localRes?.spidi_session_id;
 
-    if (activeSessionId) {
+    if (activeSessionId && !activeSessionId.startsWith('sim_')) {
       try {
         const remoteStatus = await getSpidiSessionStatus(activeSessionId);
         const remoteState = remoteStatus?.status;

@@ -1084,7 +1084,7 @@ export default function OwnerDashboard() {
   const storeUrl = typeof window !== 'undefined' ? `${window.location.origin}/${storeSlug}` : `https://aura.lat/${storeSlug}`;
 
   const completedReservations = reservations.filter(
-    r => r.status === 'completed' || r.status === 'completada' || r.status === 'COMPLETED_IN_STORE' || r.payment_reference
+    r => r.status === 'completed' || r.status === 'completada' || r.status === 'COMPLETED_IN_STORE'
   );
   const totalSalesUSD = completedReservations.reduce((sum, r) => sum + (r.price_usd || 0), 0);
   const tasaUsed = reservations[0]?.tasa || 55;
@@ -1471,9 +1471,19 @@ export default function OwnerDashboard() {
                                 {archetype.name.split(',')[0]}
                               </span>
                             </div>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-900/40">
-                              {res.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
-                            </span>
+                            {res.status === 'confirmed' || res.status === 'confirmada' || res.status === 'QR_ACTIVE' ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-900/40">
+                                Listo para Entrega
+                              </span>
+                            ) : res.status === 'STOCK_VERIFIED' || res.status === 'ultimo_par' ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-900/40">
+                                Esperando Selección
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900 text-slate-400 border border-slate-800">
+                                Verificar Estante
+                              </span>
+                            )}
                           </div>
 
                           <h4 className="font-bold text-white text-sm leading-snug">
@@ -1514,9 +1524,7 @@ export default function OwnerDashboard() {
                             res.status === 'confirmada' ||
                             res.status === 'QR_ACTIVE' ||
                             res.current_step === 'OPTION_A_TICKET' ||
-                            res.current_step === 'OPTION_B_CONFIRMED' ||
-                            Boolean(res.payment_reference) ||
-                            hasPagoMovil;
+                            res.current_step === 'OPTION_B_CONFIRMED';
 
                           // B. Stock verificado por tienda, pero el cliente está eligiendo 3h o 7d
                           const isWaitingCustomer =

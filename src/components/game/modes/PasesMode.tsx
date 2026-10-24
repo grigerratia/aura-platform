@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useReservations, getCleanCompletedTickets, recordCompletedPurchase } from '@/store/useReservations';
+import { useReservations, getCleanCompletedTickets, recordCompletedPurchase, getCleanTicketKey } from '@/store/useReservations';
 import { useGameSound } from '@/hooks/useGameSound';
 import { supabase } from '@/lib/supabase';
 import {
@@ -89,28 +89,23 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
           const seen = new Set<string>();
           const clean: any[] = [];
 
-          // Local primero
-          for (const t of prev) {
-            const pin = String(t.pin_code || t.pin || t.id || '').trim();
-            if (!pin || seen.has(pin)) continue;
-            seen.add(pin);
-            clean.push({
-              ...t,
-              pin: t.pin_code || t.pin || pin,
-              pin_code: t.pin_code || t.pin || pin,
-            });
-          }
+          // Procesar candidatos combinando historial previo y remoto de Supabase con deduplicación estricta por PIN canónico
+          const candidateList = [...(Array.isArray(prev) ? prev : []), ...(Array.isArray(dbCompleted) ? dbCompleted : [])];
 
-          // Remoto de Supabase después
-          for (const r of dbCompleted) {
-            const pin = String(r.pin_code || r.pin || r.id || '').trim();
-            if (!pin || seen.has(pin)) continue;
-            seen.add(pin);
+          for (const item of candidateList) {
+            if (!item) continue;
+            const key = getCleanTicketKey(item);
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+
+            const rawPin = String(item.pin_code || item.pin || '').replace(/[^0-9]/g, '');
+            const cleanPin = rawPin.length >= 4 ? rawPin.slice(-4) : (item.pin || item.pin_code || '0000');
+
             clean.push({
-              ...r,
-              product_name: r.product_name || 'Producto Retirado',
-              pin: r.pin_code || r.pin || pin,
-              pin_code: r.pin_code || r.pin || pin,
+              ...item,
+              pin: cleanPin,
+              pin_code: cleanPin,
+              product_name: item.product_name || 'Producto Retirado',
             });
           }
 

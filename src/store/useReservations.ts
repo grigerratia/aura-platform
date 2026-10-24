@@ -24,6 +24,16 @@ export const isSameReservation = (a: Partial<Reservation>, b: Partial<Reservatio
   return false;
 };
 
+// Helper para obtener una clave canónica única por compra completada (PIN de 4 dígitos o ID)
+export const getCleanTicketKey = (t: any): string => {
+  if (!t) return '';
+  const rawPin = String(t.pin_code || t.pin || '').replace(/[^0-9]/g, '');
+  if (rawPin.length >= 4) return `pin_${rawPin.slice(-4)}`;
+  if (t.id && String(t.id).length > 8) return `id_${String(t.id).trim()}`;
+  if (t.product_name) return `prod_${String(t.product_name).trim().toLowerCase()}_${String(t.store_id || t.store_name || '')}`;
+  return '';
+};
+
 // Helper para leer y autolimpiar el historial de compras concretadas sin duplicados
 export const getCleanCompletedTickets = (): any[] => {
   if (typeof window === 'undefined') return [];
@@ -37,13 +47,18 @@ export const getCleanCompletedTickets = (): any[] => {
     const clean: any[] = [];
 
     for (const item of list) {
-      const pin = String(item.pin_code || item.pin || item.id || '').trim();
-      if (!pin || seen.has(pin)) continue;
-      seen.add(pin);
+      if (!item) continue;
+      const key = getCleanTicketKey(item);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+
+      const rawPin = String(item.pin_code || item.pin || '').replace(/[^0-9]/g, '');
+      const cleanPin = rawPin.length >= 4 ? rawPin.slice(-4) : (item.pin || item.pin_code || '0000');
+
       clean.push({
         ...item,
-        pin: item.pin_code || item.pin || pin,
-        pin_code: item.pin_code || item.pin || pin,
+        pin: cleanPin,
+        pin_code: cleanPin,
       });
     }
 
@@ -59,21 +74,24 @@ export const recordCompletedPurchase = (res: any) => {
   if (typeof window === 'undefined' || !res) return;
   try {
     const list = getCleanCompletedTickets();
-    const targetPin = String(res.pin_code || res.pin || res.id || '').trim();
-    if (!targetPin) return;
+    const targetKey = getCleanTicketKey(res);
+    if (!targetKey) return;
 
-    // Remover cualquier versión previa del mismo ticket
+    const rawPin = String(res.pin_code || res.pin || '').replace(/[^0-9]/g, '');
+    const cleanPin = rawPin.length >= 4 ? rawPin.slice(-4) : (res.pin || res.pin_code || '0000');
+
+    // Remover cualquier versión previa del mismo ticket con la misma clave
     const filtered = list.filter((item: any) => {
-      const p = String(item.pin_code || item.pin || item.id || '').trim();
-      if (p === targetPin) return false;
+      const itemKey = getCleanTicketKey(item);
+      if (itemKey === targetKey) return false;
       if (res.id && item.id && item.id === res.id) return false;
       return true;
     });
 
     filtered.unshift({
       ...res,
-      pin: targetPin,
-      pin_code: targetPin,
+      pin: cleanPin,
+      pin_code: cleanPin,
       status: 'COMPLETED_IN_STORE',
       completed_at: res.completed_at || new Date().toISOString(),
     });

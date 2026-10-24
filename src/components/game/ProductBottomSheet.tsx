@@ -294,8 +294,9 @@ export default function ProductBottomSheet({
       localStorage.setItem('aura_customer_phone', customerPhone.trim());
     }
 
-    // No se genera PIN todavía. El PIN oficial solo se genera cuando el cliente elija 3h o confirme el pago de 7d.
-    setGeneratedPin('');
+    // PIN interno de trazabilidad para cumplir con restricción NOT NULL en BD y permitir seguimiento en mostrador
+    const trackingPin = Math.floor(1000 + Math.random() * 9000).toString();
+    setGeneratedPin(trackingPin);
 
     const expiresAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
 
@@ -327,8 +328,8 @@ export default function ProductBottomSheet({
     const newReservation: Reservation = {
       id: `res-${Date.now()}`,
       user_id: uid || undefined,
-      pin: '',
-      pin_code: '',
+      pin: trackingPin,
+      pin_code: trackingPin,
       store_id: effectiveStoreId || 'store-cumana',
       store_name: storeName,
       store_whatsapp: storePhoneRaw,
@@ -354,14 +355,16 @@ export default function ProductBottomSheet({
     setActiveRes(newReservation);
     setActiveReservation(newReservation);
 
-    // 1. Guardar la solicitud en Supabase para que llegue a Mostrador y Dashboard (sin PIN todavía)
+    // 1. Guardar la solicitud en Supabase para que llegue a Mostrador y Dashboard
     try {
       const { data: dbRes, error: insertError } = await supabase
         .from('reservations')
         .insert([{
-          pin_code: null,
+          pin_code: trackingPin,
           store_id: effectiveStoreId,
           product_id: effectiveProductId,
+          product_name: product.name,
+          image_url: product.imageUrl || product.image_url,
           customer_name: fullCustomerName,
           customer_phone: customerPhone.trim(),
           selected_size: selectedVariant || 'Estándar',
@@ -381,8 +384,8 @@ export default function ProductBottomSheet({
         const finalReservation: Reservation = {
           ...newReservation,
           id: dbRes.id,
-          pin: '',
-          pin_code: '',
+          pin: dbRes.pin_code || trackingPin,
+          pin_code: dbRes.pin_code || trackingPin,
           status: dbRes.status || 'pending',
           requested_modality: selectedModality,
         };
