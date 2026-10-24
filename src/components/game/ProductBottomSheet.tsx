@@ -583,9 +583,6 @@ export default function ProductBottomSheet({
             setSpidiBankRef(ref);
             setPagoMovilAuraRef(ref);
             playUnlockSuccess();
-            setTimeout(() => {
-              setLayawaySubStep(2);
-            }, 1200);
           }
         }
       } catch {}
@@ -1279,15 +1276,52 @@ export default function ProductBottomSheet({
                       Este pequeño arancel congela el precio en sistema y custodia tu turno durante los 7 días de apartado.
                     </p>
 
-                    {/* ESTADO: YA PAGADO VIA SPIDI */}
+                    {/* ESTADO: YA PAGADO VIA SPIDI (COMPROBANTE OFICIAL) */}
                     {spidiPaid ? (
-                      <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl space-y-2 text-center animate-in zoom-in-95">
-                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center mx-auto">
-                          <CheckCircle2 size={24} />
+                      <div className="p-4 bg-[#020508] border border-emerald-500/40 rounded-2xl space-y-3 animate-in zoom-in-95">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-[#00ffb2] flex items-center justify-center">
+                              <CheckCircle2 size={18} />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black text-white block">Comprobante de Pago Bancario</span>
+                              <span className="text-[10px] text-emerald-400 font-medium">Aprobado en Red Bancaria SPIDI</span>
+                            </div>
+                          </div>
+                          <span className="text-sm font-black text-[#00ffb2]">${auraUnlockFeeUSD.toFixed(2)} USD</span>
                         </div>
-                        <p className="text-xs font-bold text-emerald-300">¡Pago Bancario Confirmado Automáticamente!</p>
-                        <p className="text-[11px] text-slate-300 font-mono">Ref. Bancaria: #{spidiBankRef}</p>
-                        <p className="text-[10px] text-slate-400">Avanzando automáticamente al paso 2...</p>
+
+                        <div className="space-y-1.5 text-[11px] bg-slate-900/70 p-3 rounded-xl border border-slate-800 font-mono">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Referencia Bancaria:</span>
+                            <span className="text-white font-bold">#{spidiBankRef}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Concepto:</span>
+                            <span className="text-slate-200">Desbloqueo y Custodia Aura (5%)</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Monto en Bolívares:</span>
+                            <span className="text-emerald-400 font-bold">Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Estado:</span>
+                            <span className="text-[#00ffb2] font-bold">Liquidado • Turno Protegido</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTap();
+                            setLayawaySubStep(2);
+                          }}
+                          className="cursor-pointer w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3 rounded-xl text-xs transition shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 active:scale-95"
+                        >
+                          <span>Continuar al Paso 2: Abono para la Tienda</span>
+                          <ArrowRight size={14} />
+                        </button>
                       </div>
                     ) : spidiSession ? (
                       /* ESTADO: SESIÓN SPIDI ACTIVA (QR + ENLACE) */
@@ -1445,6 +1479,19 @@ export default function ProductBottomSheet({
               {/* SUB-PASO 2: ABONO 30% INICIAL AL COMERCIO */}
               {layawaySubStep === 2 && (
                 <form onSubmit={handleConfirmApartadoPagoMovil} className="space-y-4 animate-in fade-in duration-150">
+                  {/* Comprobante de Respaldo Paso 1 */}
+                  {(spidiPaid || pagoMovilAuraRef.trim() || payAuraWithWallet) && (
+                    <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between text-xs text-emerald-300">
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <CheckCircle2 size={14} className="text-[#00ffb2]" />
+                        Paso 1: Desbloqueo Aura Pagado
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-300">
+                        {spidiBankRef ? `Ref #${spidiBankRef}` : payAuraWithWallet ? 'Billetera' : `Ref #${pagoMovilAuraRef}`}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="bg-[#030812] border border-indigo-500/40 rounded-2xl p-4 space-y-3 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs sm:text-sm">
