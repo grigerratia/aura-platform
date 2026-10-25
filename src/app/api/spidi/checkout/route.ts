@@ -28,6 +28,10 @@ export async function POST(req: NextRequest) {
       : `Desbloqueo Aura (5%): ${productName || 'Reserva de producto'}`.slice(0, 100);
 
     const config = getSpidiConfig();
+    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://aura-platform.vercel.app').replace(/\/+$/, '');
+    const targetId = cleanPin || String(reservationId || Date.now()).slice(0, 12);
+    const successUrl = `${baseUrl}/pago-exitoso?target_id=${encodeURIComponent(targetId)}&pin=${encodeURIComponent(cleanPin)}&fee_type=${encodeURIComponent(feeType)}&payment_status=success`;
+    const failureUrl = `${baseUrl}/pago-fallido?target_id=${encodeURIComponent(targetId)}&pin=${encodeURIComponent(cleanPin)}&fee_type=${encodeURIComponent(feeType)}`;
 
     // Crear sesión oficial en SPIDI (con fallback seguro en caso de que SPIDI esté caído o las credenciales no estén configuradas en Vercel)
     let sessionData: any = null;
@@ -39,6 +43,8 @@ export async function POST(req: NextRequest) {
           identifier,
           description,
           durationMinutes: 20, // 20 minutos máximo de sesión botón
+          successUrl,
+          failureUrl,
         });
         sessionData = spidiRes?.data;
       } catch (spidiErr: any) {
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest) {
       sessionData = {
         session_id: simSessionId,
         session_origin: 'simulation',
-        payment_url: `https://sim.mispidi.com/checkout/${simSessionId}`,
+        payment_url: `${baseUrl}/pago-exitoso?paid_session=${simSessionId}&target_id=${encodeURIComponent(targetId)}&pin=${encodeURIComponent(cleanPin)}&fee_type=${encodeURIComponent(feeType)}&payment_status=success`,
         currency_reference: 'USD',
         amount_reference: Number(amountUsd),
         identifier_label: isStoreDeposit ? 'Abono 30% Tienda' : 'Desbloqueo Aura',

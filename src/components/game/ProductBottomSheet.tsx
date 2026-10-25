@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Product, Store, Reservation } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { useReservations, recordCompletedPurchase } from '@/store/useReservations';
@@ -95,12 +95,60 @@ export default function ProductBottomSheet({
   // Contador regresivo para ticket de 3 horas
   const [timeLeft, setTimeLeft] = useState({ hours: 3, minutes: 0, seconds: 0 });
 
+  // REGLA CIRUJANO: Limpieza estricta de estado al cambiar de modalidad o cerrar modal
+  const resetPaymentStates = useCallback(() => {
+    setSpidiLoading(false);
+    setSpidiSession(null);
+    setSpidiPaid(false);
+    setSpidiBankRef('');
+    setShowManualAuraPay(false);
+
+    setSpidiStoreLoading(false);
+    setSpidiStoreSession(null);
+    setSpidiStorePaid(false);
+    setSpidiStoreBankRef('');
+    setShowManualStorePay(false);
+
+    setPagoMovilRef('');
+    setPagoMovilAuraRef('');
+    setPayAuraWithWallet(false);
+    setLayawaySubStep(1);
+  }, []);
+
   // Inicializar variantes y precargar datos del cliente
   useEffect(() => {
     if (!product) {
       setStep('SELECTION');
       setActiveRes(null);
+      resetPaymentStates();
       return;
+    }
+
+    // Verificar si regresamos desde la pasarela con parámetros de pago exitoso en la URL
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const paymentStatus = urlParams.get('payment_status');
+      const paidSession = urlParams.get('paid_session');
+      const feeType = urlParams.get('fee_type');
+
+      if (paymentStatus === 'success') {
+        const ref = paidSession ? `SPIDI-${paidSession.slice(-6).toUpperCase()}` : 'SPIDI-CONFIRMADO';
+        if (feeType === 'store_deposit') {
+          setSpidiStorePaid(true);
+          setSpidiStoreBankRef(ref);
+          setPagoMovilRef(ref);
+          setStep('OPTION_B_CONFIRMED');
+        } else {
+          setSpidiPaid(true);
+          setSpidiBankRef(ref);
+          setPagoMovilAuraRef(ref);
+          setLayawaySubStep(2);
+          setStep('OPTION_B_LAYAWAY');
+        }
+        try {
+          window.history.replaceState({}, '', window.location.pathname);
+        } catch {}
+      }
     }
 
     // Variantes dinámicas universales (Color, Modelo, Capacidad, etc.)
@@ -215,9 +263,10 @@ export default function ProductBottomSheet({
     loadAuthUser();
   }, [product, activeReservation]);
 
-  // Manejar cierre con sonido Thanos suave
+  // Manejar cierre con sonido Thanos suave y limpieza estricta de estado
   const handleClose = () => {
     playDustSnap('fast');
+    resetPaymentStates();
     onClose();
   };
 
@@ -587,70 +636,64 @@ export default function ProductBottomSheet({
     }
   };
 
-  // Comprobación manual o simulación para Paso 1 (5% Desbloqueo Aura)
-  const handleCheckSpidiStatusManual = async (simulate = false) => {
+  // ==============================================================================
+  // SINCRONIZACIÓN CROSS-TAB Y MULTI-VÍA (BROADCAST, STORAGE, REALTIME Y FOCO)
+  // ==============================================================================
+  const handlePaymentCompletedSignal = useCallback((sessionId?: string, bankRef?: string, feeType?: string) => {
+    const ref = bankRef || (sessionId ? `SPIDI-${sessionId.slice(-6).toUpperCase()}` : 'SPIDI-CONFIRMADO');
+
+    // Comprobar si corresponde a Paso 2 (Abono 30% Tienda)
+    const isStep2 =
+      feeType === 'store_deposit' ||
+      (spidiStoreSession?.sessionId && sessionId === spidiStoreSession.sessionId) ||
+      (sessionId && sessionId.includes('TIENDA')) ||
+      layawaySubStep === 2;
+
+    if (isStep2) {
+      if (!spidiStorePaid) {
+        setSpidiStorePaid(true);
+        setSpidiStoreBankRef(ref);
+        setPagoMovilRef(ref);
+        playUnlockSuccess();
+        setTimeout(() => {
+          setStep('OPTION_B_CONFIRMED');
+        }, 1000);
+      }
+      return;
+    }
+
+    // Corresponde a Paso 1 (5% Desbloqueo Aura)
+    if (!spidiPaid) {
+      setSpidiPaid(true);
+      setSpidiBankRef(ref);
+      setPagoMovilAuraRef(ref);
+      playUnlockSuccess();
+      setLayawaySubStep(2);
+    }
+  }, [spidiSession?.sessionId, spidiStoreSession?.sessionId, layawaySubStep, spidiPaid, spidiStorePaid, playUnlockSuccess]);
+
+  // Comprobación manual de estado para Paso 1 (5% Desbloqueo Aura) - 100% Producción Real
+  const handleCheckSpidiStatusManual = async () => {
     if (!spidiSession?.sessionId || spidiPaid) return;
     setSpidiLoading(true);
     try {
-      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiSession.sessionId)}${simulate ? '&simulate=true' : ''}`;
+      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiSession.sessionId)}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.isPaid) {
-          setSpidiPaid(true);
           const ref = data.bankReferenceId || `SPIDI-${spidiSession.sessionId.slice(-6).toUpperCase()}`;
-          setSpidiBankRef(ref);
-          setPagoMovilAuraRef(ref);
-          playUnlockSuccess();
-        } else if (!simulate) {
+          handlePaymentCompletedSignal(spidiSession.sessionId, ref, 'unlock_fee');
+        } else {
           alert('Aún no detectamos la transferencia en la red bancaria. Si acabas de pagar, espera unos segundos y vuelve a presionar comprobar.');
         }
       }
     } catch {
-      if (!simulate) alert('Error temporal al consultar estado bancario.');
+      alert('Error temporal al consultar estado bancario.');
     } finally {
       setSpidiLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!spidiSession?.sessionId || spidiPaid) return;
-
-    const checkSpidiStatus = async () => {
-      try {
-        const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(spidiSession.sessionId)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.isPaid) {
-            setSpidiPaid(true);
-            const ref = data.bankReferenceId || `SPIDI-${spidiSession.sessionId.slice(-6).toUpperCase()}`;
-            setSpidiBankRef(ref);
-            setPagoMovilAuraRef(ref);
-            playUnlockSuccess();
-          }
-        }
-      } catch {}
-    };
-
-    // Escuchar retorno de pestaña o aplicación de banco
-    const handleFocus = () => { checkSpidiStatus(); };
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        checkSpidiStatus();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    const pollInterval = setInterval(checkSpidiStatus, 2500);
-
-    return () => {
-      clearInterval(pollInterval);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [spidiSession?.sessionId, spidiPaid, playUnlockSuccess]);
 
   // Auto-avanzar al Paso 2 cuando el Paso 1 es aprobado con éxito
   useEffect(() => {
@@ -702,75 +745,158 @@ export default function ProductBottomSheet({
     }
   };
 
-  // Comprobación manual o simulación para Paso 2 (Abono 30% Tienda)
-  const handleCheckSpidiStoreStatusManual = async (simulate = false) => {
+  // Comprobación manual de estado para Paso 2 (Abono 30% Tienda) - 100% Producción Real
+  const handleCheckSpidiStoreStatusManual = async () => {
     if (!spidiStoreSession?.sessionId || spidiStorePaid) return;
     setSpidiStoreLoading(true);
     try {
-      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiStoreSession.sessionId)}${simulate ? '&simulate=true' : ''}`;
+      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiStoreSession.sessionId)}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.isPaid) {
-          setSpidiStorePaid(true);
           const ref = data.bankReferenceId || `SPIDI-${spidiStoreSession.sessionId.slice(-6).toUpperCase()}`;
-          setSpidiStoreBankRef(ref);
-          setPagoMovilRef(ref);
-          playUnlockSuccess();
-        } else if (!simulate) {
+          handlePaymentCompletedSignal(spidiStoreSession.sessionId, ref, 'store_deposit');
+        } else {
           alert('Aún no detectamos la transferencia del abono a la tienda. Si acabas de pagar, espera unos segundos y vuelve a comprobar.');
         }
       }
     } catch {
-      if (!simulate) alert('Error temporal al consultar abono a la tienda.');
+      alert('Error temporal al consultar abono a la tienda.');
     } finally {
       setSpidiStoreLoading(false);
     }
   };
 
+  // Listener unificado en tiempo real por 3 vías simultáneas:
+  // a) BroadcastChannel & window storage (comunicación instantánea cross-tab)
+  // b) window focus & visibilitychange (al regresar a la pestaña)
+  // c) Supabase Realtime (spidi_transactions y reservations) + sondeo de respaldo
   useEffect(() => {
-    if (!spidiStoreSession?.sessionId || spidiStorePaid) return;
+    // Vía A: BroadcastChannel
+    let broadcastChan: BroadcastChannel | null = null;
+    try {
+      broadcastChan = new BroadcastChannel('aura_payment_channel');
+      broadcastChan.onmessage = (event) => {
+        const msg = event?.data;
+        if (msg && msg.type === 'PAYMENT_COMPLETED') {
+          handlePaymentCompletedSignal(msg.sessionId, msg.bankReferenceId, msg.feeType);
+        }
+      };
+    } catch {}
 
-    const checkStoreStatus = async () => {
+    // Vía A2: Evento storage de window (detecta al instante cuando otra pestaña guarda en localStorage)
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'aura_last_paid_session' && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data && data.status === 'COMPLETED') {
+            handlePaymentCompletedSignal(data.sessionId, data.bankReferenceId, data.feeType);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+
+    // Vía B: Al recuperar el foco o cambiar visibilidad
+    const checkPaymentOnFocus = async () => {
+      // 1. Revisar localStorage inmediatamente
       try {
-        const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(spidiStoreSession.sessionId)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.isPaid) {
-            setSpidiStorePaid(true);
-            const ref = data.bankReferenceId || `SPIDI-${spidiStoreSession.sessionId.slice(-6).toUpperCase()}`;
-            setSpidiStoreBankRef(ref);
-            setPagoMovilRef(ref);
-            playUnlockSuccess();
+        const raw = localStorage.getItem('aura_last_paid_session');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.status === 'COMPLETED') {
+            const ageMs = Date.now() - (parsed.timestamp || 0);
+            if (ageMs < 10 * 60 * 1000) {
+              handlePaymentCompletedSignal(parsed.sessionId, parsed.bankReferenceId, parsed.feeType);
+            }
           }
         }
       } catch {}
+
+      // 2. Consultar al backend por la sesión en espera activa
+      const currentActiveSession = layawaySubStep === 2 ? spidiStoreSession?.sessionId : spidiSession?.sessionId;
+      if (currentActiveSession) {
+        try {
+          const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(currentActiveSession)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.isPaid) {
+              const ref = data.bankReferenceId || `SPIDI-${currentActiveSession.slice(-6).toUpperCase()}`;
+              handlePaymentCompletedSignal(currentActiveSession, ref, layawaySubStep === 2 ? 'store_deposit' : 'unlock_fee');
+            }
+          }
+        } catch {}
+      }
     };
 
-    const handleFocus = () => { checkStoreStatus(); };
+    const handleFocus = () => { checkPaymentOnFocus(); };
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        checkStoreStatus();
+        checkPaymentOnFocus();
       }
     };
 
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    const pollInterval = setInterval(checkStoreStatus, 2500);
+    // Vía C: Supabase Realtime sobre transacciones
+    const spidiWatcher = supabase
+      .channel('spidi_realtime_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'spidi_transactions' },
+        (payload: any) => {
+          const tx = payload?.new;
+          if (tx && (tx.status === 'paid' || tx.status === 'accredited')) {
+            handlePaymentCompletedSignal(tx.session_id, tx.bank_reference_id);
+          }
+        }
+      )
+      .subscribe();
+
+    // Sondeo de respaldo cada 2.5s si hay sesión activa esperando confirmación
+    const waitingSessionId =
+      (layawaySubStep === 1 && spidiSession && !spidiPaid)
+        ? spidiSession.sessionId
+        : (layawaySubStep === 2 && spidiStoreSession && !spidiStorePaid)
+        ? spidiStoreSession.sessionId
+        : null;
+
+    let pollInterval: NodeJS.Timeout | null = null;
+    if (waitingSessionId) {
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(waitingSessionId)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.isPaid) {
+              const ref = data.bankReferenceId || `SPIDI-${waitingSessionId.slice(-6).toUpperCase()}`;
+              handlePaymentCompletedSignal(waitingSessionId, ref, layawaySubStep === 2 ? 'store_deposit' : 'unlock_fee');
+            }
+          }
+        } catch {}
+      }, 2500);
+    }
 
     return () => {
-      clearInterval(pollInterval);
+      if (broadcastChan) {
+        try { broadcastChan.close(); } catch {}
+      }
+      window.removeEventListener('storage', handleStorageEvent);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
+      supabase.removeChannel(spidiWatcher);
+      if (pollInterval) clearInterval(pollInterval);
     };
-  }, [spidiStoreSession?.sessionId, spidiStorePaid, playUnlockSuccess]);
+  }, [spidiSession, spidiStoreSession, spidiPaid, spidiStorePaid, layawaySubStep, handlePaymentCompletedSignal]);
 
   // ==============================================================================
   // PASO 4A: ELECCIÓN CLIENTE -> OPCIÓN A (IR HOY MISMO - TICKET QR GRATIS 3 HORAS)
   // ==============================================================================
   const handleSelectOptionA = async () => {
     playTap();
+    resetPaymentStates();
     if (!activeRes) return;
 
     // Generar PIN oficial de retiro en este momento (no antes)
@@ -941,11 +1067,16 @@ export default function ProductBottomSheet({
   // ==============================================================================
   const handleSelectOptionB = async () => {
     playTap();
+    resetPaymentStates();
     if (activeRes) {
       const updatedRes: Reservation = {
         ...activeRes,
         payment_type: 'apartado_7d',
         current_step: 'OPTION_B_LAYAWAY',
+        payment_reference: undefined,
+        aura_fee_reference: undefined,
+        aura_fee_status: 'pending',
+        spidi_status: undefined,
       };
       setActiveRes(updatedRes);
       setActiveReservation(updatedRes);
@@ -1674,7 +1805,6 @@ export default function ProductBottomSheet({
                         <a
                           href={spidiSession.paymentUrl}
                           target="_blank"
-                          rel="noopener noreferrer"
                           className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
                         >
                           <ExternalLink size={14} />
@@ -1686,25 +1816,16 @@ export default function ProductBottomSheet({
                           <span>Esperando confirmación bancaria en tiempo real...</span>
                         </div>
 
-                        {/* Botones de Comprobación y Simulación de Pruebas */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {/* Botón de Comprobación de Estado (100% Producción Real) */}
+                        <div className="pt-1">
                           <button
                             type="button"
-                            onClick={() => handleCheckSpidiStatusManual(false)}
+                            onClick={handleCheckSpidiStatusManual}
                             disabled={spidiLoading}
-                            className="w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-[11px] font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            className="w-full py-2.5 px-3 bg-slate-900/80 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl border border-slate-700/60 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                           >
-                            <RefreshCw size={12} className={spidiLoading ? 'animate-spin text-[#00ffb2]' : ''} />
-                            <span>Comprobar estado</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleCheckSpidiStatusManual(true)}
-                            className="w-full py-2 px-3 bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-700/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <CheckCircle2 size={12} className="text-[#00ffb2]" />
-                            <span>Simular Aprobado (Pruebas)</span>
+                            <RefreshCw size={13} className={spidiLoading ? 'animate-spin text-[#00ffb2]' : ''} />
+                            <span>Comprobar estado del pago bancario</span>
                           </button>
                         </div>
 
@@ -1889,7 +2010,6 @@ export default function ProductBottomSheet({
                         <a
                           href={spidiStoreSession.paymentUrl}
                           target="_blank"
-                          rel="noopener noreferrer"
                           className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
                         >
                           <ExternalLink size={14} />
@@ -1901,25 +2021,16 @@ export default function ProductBottomSheet({
                           <span>Esperando confirmación bancaria en tiempo real...</span>
                         </div>
 
-                        {/* Botones de Comprobación y Simulación de Pruebas Tienda */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {/* Botón de Comprobación de Abono (100% Producción Real) */}
+                        <div className="pt-1">
                           <button
                             type="button"
-                            onClick={() => handleCheckSpidiStoreStatusManual(false)}
+                            onClick={handleCheckSpidiStoreStatusManual}
                             disabled={spidiStoreLoading}
-                            className="w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-[11px] font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            className="w-full py-2.5 px-3 bg-slate-900/80 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl border border-slate-700/60 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                           >
-                            <RefreshCw size={12} className={spidiStoreLoading ? 'animate-spin text-indigo-400' : ''} />
-                            <span>Comprobar abono</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleCheckSpidiStoreStatusManual(true)}
-                            className="w-full py-2 px-3 bg-indigo-950/70 hover:bg-indigo-900 text-indigo-200 text-[11px] font-bold rounded-xl border border-indigo-700/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <CheckCircle2 size={12} className="text-indigo-400" />
-                            <span>Simular Abono Aprobado (Pruebas)</span>
+                            <RefreshCw size={13} className={spidiStoreLoading ? 'animate-spin text-indigo-400' : ''} />
+                            <span>Comprobar abono a la tienda</span>
                           </button>
                         </div>
 

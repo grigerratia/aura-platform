@@ -50,10 +50,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Si ya está confirmado como pagado en DB local
-    const isLocalPaid =
-      localTx?.status === 'paid' ||
-      localTx?.status === 'accredited' ||
-      localRes?.aura_fee_status === 'paid';
+    // REGLA ESTRICTA: Si se consultó por sessionId específico (ej. Paso 2 abono), NO usar el estado de Paso 1 (aura_fee_status)
+    const isLocalPaid = sessionId
+      ? (localTx?.status === 'paid' || localTx?.status === 'accredited')
+      : (localTx?.status === 'paid' || localTx?.status === 'accredited' || localRes?.aura_fee_status === 'paid');
 
     if (isLocalPaid) {
       return NextResponse.json({
@@ -70,14 +70,32 @@ export async function GET(req: NextRequest) {
     const isSimulateRequested = searchParams.get('simulate') === 'true';
 
     // 2. Soporte nativo para modo simulado o test de pasarela
+    // REGLA CIRUJANO: PROHIBIDO auto-confirmar por tiempo transcurrido (elapsedMs >= 3000 eliminado).
+    // Solo se confirma si se solicitó explícitamente simulación o si la sesión ya fue marcada como pagada.
     if (activeSessionId && activeSessionId.startsWith('sim_')) {
-      const parts = activeSessionId.split('_');
-      const createdAtMs = Number(parts[1]) || Date.now();
-      const elapsedMs = Date.now() - createdAtMs;
+      if (localTx?.status === 'paid' || localTx?.status === 'accredited') {
+        const simRef = localTx?.bank_reference_id || `SIM-${activeSessionId.slice(-6).toUpperCase()}`;
+        return NextResponse.json({
+          isPaid: true,
+          status: 'paid',
+          bankReferenceId: simRef,
+          amountUsd: localTx?.amount_usd || 0.5,
+        });
+      }
 
-      // Auto-confirmar en simulación si pasaron más de 3 segundos o se solicitó simulación
-      if (isSimulateRequested || elapsedMs >= 3000) {
+      if (isSimulateRequested) {
         const simRef = `SIM-${activeSessionId.slice(-6).toUpperCase()}`;
+        try {
+          await supabase
+            .from('spidi_transactions')
+            .update({
+              status: 'paid',
+              bank_reference_id: simRef,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('session_id', activeSessionId);
+        } catch {}
+
         return NextResponse.json({
           isPaid: true,
           status: 'paid',
@@ -88,7 +106,7 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         isPaid: false,
-        status: 'pending',
+        status: localTx?.status || 'pending',
         bankReferenceId: null,
       });
     }
@@ -162,4 +180,80 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+/**
+ * Confirmación explícita de pago desde el simulador o callback de pasarela
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { sessionId, pin, feeType, status = 'paid', bankReferenceId } = body;
+
+    const ref = bankReferenceId || (sessionId ? `SPIDI-${sessionId.slice(-6).toUpperCase()}` : 'SPIDI-CONFIRMADO');
+    const cleanPin = pin ? String(pin).trim() : '';
+    const isStoreDeposit = feeType === 'store_deposit' || (sessionId && String(sessionId).includes('TIENDA'));
+
+    // 1. Actualizar spidi_transactions
+    if (sessionId) {
+      try {
+        await supabase
+          .from('spidi_transactions')
+          .update({
+            status: 'paid',
+            bank_reference_id: ref,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('session_id', sessionId);
+      } catch (txErr) {
+        console.warn('[SPIDI Status POST] Error actualizando spidi_transactions:', txErr);
+      }
+    }
+
+    // 2. Actualizar reservations si tenemos pin o sessionId
+    const resUpdate: Record<string, any> = isStoreDeposit
+      ? {
+          status: 'confirmed',
+          payment_method: 'pago_movil',
+          payment_reference: ref,
+          spidi_status: 'paid',
+          spidi_bank_reference: ref,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          aura_fee_status: 'paid',
+          aura_fee_verified_at: new Date().toISOString(),
+          aura_fee_reference: ref,
+          spidi_status: 'paid',
+          spidi_bank_reference: ref,
+          updated_at: new Date().toISOString(),
+        };
+
+    if (sessionId) {
+      try {
+        await supabase.from('reservations').update(resUpdate).eq('spidi_session_id', sessionId);
+      } catch {}
+    }
+
+    if (cleanPin) {
+      try {
+        await supabase.from('reservations').update(resUpdate).eq('pin_code', cleanPin);
+      } catch {}
+    }
+
+    return NextResponse.json({
+      success: true,
+      isPaid: true,
+      status: 'paid',
+      bankReferenceId: ref,
+      sessionId,
+    });
+  } catch (err: any) {
+    console.error('[SPIDI Status POST Error]', err);
+    return NextResponse.json(
+      { error: err.message || 'Error al actualizar sesión de pago.' },
+      { status: 500 }
+    );
+  }
+}
+
 
