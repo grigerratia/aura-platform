@@ -722,44 +722,61 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
       </div>
 
       {/* ==============================================================================
-          3. HISTORIAL DE COMPRAS CONCRETADAS EN TIENDA
+          3. HISTORIAL DE COMPRAS CONCRETADAS EN TIENDA (DEDUPLICACIÓN GARANTIZADA POR PIN)
           ============================================================================== */}
-      {completedTickets.length > 0 && (
-        <div className="relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-5 space-y-3 shadow-xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-300">
-              <CheckCircle2 size={15} className="text-[#00ffb2]" />
-              <span>Historial de Compras Concretadas ({completedTickets.length})</span>
-            </div>
-            <span className="text-[10px] text-emerald-400 font-bold">✓ Verificados</span>
-          </div>
+      {(() => {
+        const uniqueCompletedTickets = completedTickets.filter((t, idx, arr) => {
+          const pin = String(t.pin || t.pin_code || '').replace(/[^0-9]/g, '');
+          const cleanPin = pin.length >= 4 ? pin.slice(-4) : (pin || String(t.id || ''));
+          if (cleanPin) {
+            return idx === arr.findIndex((other) => {
+              const oPin = String(other.pin || other.pin_code || '').replace(/[^0-9]/g, '');
+              const otherClean = oPin.length >= 4 ? oPin.slice(-4) : (oPin || String(other.id || ''));
+              return otherClean === cleanPin;
+            });
+          }
+          return idx === arr.findIndex((other) => other.product_name === t.product_name && other.store_name === t.store_name);
+        });
 
-          <div className="divide-y divide-slate-800/60">
-            {completedTickets.map((t, idx) => (
-              <div key={idx} className="py-3 flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-slate-950 flex items-center justify-center font-mono font-bold text-emerald-400 border border-slate-800 shrink-0">
-                    #{t.pin}
-                  </div>
-                  <div className="min-w-0">
-                    <h5 className="font-bold text-white truncate text-xs">{t.product_name}</h5>
-                    <p className="text-[10px] text-slate-400 truncate">{t.store_name}</p>
-                  </div>
-                </div>
+        if (uniqueCompletedTickets.length === 0) return null;
 
-                <div className="text-right shrink-0">
-                  <span className="font-bold text-[#00ffb2] block text-xs">
-                    +10 pts ganados
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    ${(t.store_pay_balance_usd || t.price_usd || 0).toFixed(2)} USD
-                  </span>
-                </div>
+        return (
+          <div className="relative overflow-hidden bg-[#050b16]/85 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-300">
+                <CheckCircle2 size={15} className="text-[#00ffb2]" />
+                <span>Historial de Compras Concretadas ({uniqueCompletedTickets.length})</span>
               </div>
-            ))}
+              <span className="text-[10px] text-emerald-400 font-bold">✓ Verificados</span>
+            </div>
+
+            <div className="divide-y divide-slate-800/60">
+              {uniqueCompletedTickets.map((t, idx) => (
+                <div key={idx} className="py-3 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-slate-950 flex items-center justify-center font-mono font-bold text-emerald-400 border border-slate-800 shrink-0">
+                      #{t.pin}
+                    </div>
+                    <div className="min-w-0">
+                      <h5 className="font-bold text-white truncate text-xs">{t.product_name}</h5>
+                      <p className="text-[10px] text-slate-400 truncate">{t.store_name}</p>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="font-bold text-[#00ffb2] block text-xs">
+                      +10 pts ganados
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      ${(t.store_pay_balance_usd || t.price_usd || 0).toFixed(2)} USD
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ==============================================================================
           4. ACCESO DIRECTO A BILLETERA DE PROTECCIÓN

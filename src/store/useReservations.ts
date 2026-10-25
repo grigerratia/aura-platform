@@ -29,6 +29,7 @@ export const getCleanTicketKey = (t: any): string => {
   if (!t) return '';
   const rawPin = String(t.pin_code || t.pin || '').replace(/[^0-9]/g, '');
   if (rawPin.length >= 4) return `pin_${rawPin.slice(-4)}`;
+  if (rawPin.length > 0) return `pin_${rawPin}`;
   if (t.id && String(t.id).length > 8) return `id_${String(t.id).trim()}`;
   if (t.product_name) return `prod_${String(t.product_name).trim().toLowerCase()}_${String(t.store_id || t.store_name || '')}`;
   return '';

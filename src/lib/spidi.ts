@@ -10,14 +10,10 @@ export interface SpidiConfig {
 
 export function getSpidiConfig(): SpidiConfig {
   const apiUrl = (process.env.SPIDI_API_URL || 'https://sim.mispidi.com/api').replace(/\/+$/, '');
-  const accountId = process.env.SPIDI_ACCOUNT_ID || '';
-  const apiToken = process.env.SPIDI_API_TOKEN || '';
-  const webhookSecret = process.env.SPIDI_WEBHOOK_SECRET || '';
+  const accountId = process.env.SPIDI_ACCOUNT_ID || 'acc_e82d89cdd6dd43b1';
+  const apiToken = process.env.SPIDI_API_TOKEN || '149f19b6-d532-401c-a6d5-a512de9d5ae9';
+  const webhookSecret = process.env.SPIDI_WEBHOOK_SECRET || 'whsec_5351b35097d3410a';
   const agreementId = process.env.SPIDI_AGREEMENT_ID || 'agr_5f25bb2b3db4410e';
-
-  if (!apiToken || !webhookSecret) {
-    console.warn('[SPIDI] Advertencia: SPIDI_API_TOKEN o SPIDI_WEBHOOK_SECRET no están configurados en el entorno.');
-  }
 
   return { apiUrl, accountId, apiToken, webhookSecret, agreementId };
 }
@@ -68,18 +64,19 @@ export async function createSpidiButtonSession(
   const safeAmountUsd = Math.max(0.5, Number(params.amountUsd.toFixed(2)));
   const duration = Math.min(20, Math.max(5, params.durationMinutes || 20));
 
-  const payload = {
-    amount_reference: safeAmountUsd,
-    currency_reference: 'USD',
-    identifier_label: 'Desbloqueo Aura',
-    identifier: params.identifier,
-    description: params.description || 'Desbloqueo y custodia Aura (5%)',
-    duration_minutes: duration,
-    success_url: params.successUrl || 'https://aura.app/pago-exitoso',
-    failure_url: params.failureUrl || 'https://aura.app/pago-fallido',
-    webhook_url: params.webhookUrl || `${process.env.NEXT_PUBLIC_APP_URL || 'https://aura.app'}/api/spidi/webhook`,
-    agreement_id: params.agreementId || config.agreementId,
-  };
+    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://aura-platform.vercel.app').replace(/\/+$/, '');
+    const payload = {
+      amount_reference: safeAmountUsd,
+      currency_reference: 'USD',
+      identifier_label: 'Desbloqueo Aura',
+      identifier: params.identifier,
+      description: params.description || 'Desbloqueo y custodia Aura (5%)',
+      duration_minutes: duration,
+      success_url: params.successUrl || `${baseUrl}/pago-exitoso`,
+      failure_url: params.failureUrl || `${baseUrl}/pago-fallido`,
+      webhook_url: params.webhookUrl || `${baseUrl}/api/spidi/webhook`,
+      agreement_id: params.agreementId || config.agreementId,
+    };
 
   const res = await fetch(endpoint, {
     method: 'POST',

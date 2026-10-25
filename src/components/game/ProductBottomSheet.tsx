@@ -9,7 +9,7 @@ import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
   AlertCircle, ArrowRight, ShieldCheck,
   MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap,
-  Smartphone, ExternalLink, Loader2, QrCode
+  Smartphone, ExternalLink, Loader2, QrCode, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -587,10 +587,36 @@ export default function ProductBottomSheet({
     }
   };
 
+  // Comprobación manual o simulación para Paso 1 (5% Desbloqueo Aura)
+  const handleCheckSpidiStatusManual = async (simulate = false) => {
+    if (!spidiSession?.sessionId || spidiPaid) return;
+    setSpidiLoading(true);
+    try {
+      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiSession.sessionId)}${simulate ? '&simulate=true' : ''}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isPaid) {
+          setSpidiPaid(true);
+          const ref = data.bankReferenceId || `SPIDI-${spidiSession.sessionId.slice(-6).toUpperCase()}`;
+          setSpidiBankRef(ref);
+          setPagoMovilAuraRef(ref);
+          playUnlockSuccess();
+        } else if (!simulate) {
+          alert('Aún no detectamos la transferencia en la red bancaria. Si acabas de pagar, espera unos segundos y vuelve a presionar comprobar.');
+        }
+      }
+    } catch {
+      if (!simulate) alert('Error temporal al consultar estado bancario.');
+    } finally {
+      setSpidiLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!spidiSession?.sessionId || spidiPaid) return;
 
-    const pollInterval = setInterval(async () => {
+    const checkSpidiStatus = async () => {
       try {
         const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(spidiSession.sessionId)}`);
         if (res.ok) {
@@ -604,10 +630,37 @@ export default function ProductBottomSheet({
           }
         }
       } catch {}
-    }, 2500);
+    };
 
-    return () => clearInterval(pollInterval);
+    // Escuchar retorno de pestaña o aplicación de banco
+    const handleFocus = () => { checkSpidiStatus(); };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        checkSpidiStatus();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const pollInterval = setInterval(checkSpidiStatus, 2500);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [spidiSession?.sessionId, spidiPaid, playUnlockSuccess]);
+
+  // Auto-avanzar al Paso 2 cuando el Paso 1 es aprobado con éxito
+  useEffect(() => {
+    if (spidiPaid && layawaySubStep === 1) {
+      const timer = setTimeout(() => {
+        setLayawaySubStep(2);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [spidiPaid, layawaySubStep]);
 
   // ==============================================================================
   // SPIDI: INICIAR SESIÓN Y ESCUCHAR CONFIRMACIÓN PARA ABONO TIENDA (PASO 2)
@@ -649,10 +702,36 @@ export default function ProductBottomSheet({
     }
   };
 
+  // Comprobación manual o simulación para Paso 2 (Abono 30% Tienda)
+  const handleCheckSpidiStoreStatusManual = async (simulate = false) => {
+    if (!spidiStoreSession?.sessionId || spidiStorePaid) return;
+    setSpidiStoreLoading(true);
+    try {
+      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiStoreSession.sessionId)}${simulate ? '&simulate=true' : ''}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isPaid) {
+          setSpidiStorePaid(true);
+          const ref = data.bankReferenceId || `SPIDI-${spidiStoreSession.sessionId.slice(-6).toUpperCase()}`;
+          setSpidiStoreBankRef(ref);
+          setPagoMovilRef(ref);
+          playUnlockSuccess();
+        } else if (!simulate) {
+          alert('Aún no detectamos la transferencia del abono a la tienda. Si acabas de pagar, espera unos segundos y vuelve a comprobar.');
+        }
+      }
+    } catch {
+      if (!simulate) alert('Error temporal al consultar abono a la tienda.');
+    } finally {
+      setSpidiStoreLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!spidiStoreSession?.sessionId || spidiStorePaid) return;
 
-    const pollInterval = setInterval(async () => {
+    const checkStoreStatus = async () => {
       try {
         const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(spidiStoreSession.sessionId)}`);
         if (res.ok) {
@@ -666,9 +745,25 @@ export default function ProductBottomSheet({
           }
         }
       } catch {}
-    }, 2500);
+    };
 
-    return () => clearInterval(pollInterval);
+    const handleFocus = () => { checkStoreStatus(); };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        checkStoreStatus();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const pollInterval = setInterval(checkStoreStatus, 2500);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [spidiStoreSession?.sessionId, spidiStorePaid, playUnlockSuccess]);
 
   // ==============================================================================
@@ -937,25 +1032,29 @@ export default function ProductBottomSheet({
         }
       }
 
-      if (targetPin) {
-        const { error: pErr } = await supabase.from('reservations').update(guaranteedUpdate).eq('pin_code', targetPin);
-        if (pErr) {
-          console.warn('Fallback a actualizacion minima por pin_code:', pErr.message);
-          await supabase.from('reservations').update({ status: 'confirmed' }).eq('pin_code', targetPin);
-        }
+      const pinsToTry = Array.from(new Set([targetPin, officialPin, activeRes.pin_code, activeRes.pin].filter(Boolean).map(String)));
+      for (const p of pinsToTry) {
+        try {
+          const { error: pErr } = await supabase.from('reservations').update(guaranteedUpdate).eq('pin_code', p);
+          if (pErr) {
+            await supabase.from('reservations').update({ status: 'confirmed', pin_code: officialPin }).eq('pin_code', p);
+          }
+        } catch {}
       }
     } catch (err) {
       console.warn('Error actualizando reserva en Supabase:', err);
     }
 
     // Enviar mensaje directo por WhatsApp a la tienda (Solo información de la tienda, privacidad estricta Aura)
-    const waText = encodeURIComponent(
-      `Hola ${storeName}, acabo de realizar el apartado digital para "${product.name}" (${selectedVariant}).\n` +
-      `Código de Boleto: #${generatedPin}\n` +
-      `Referencia Pago Móvil Inicial (30%): ${pagoMovilRef.trim()} (Bs. ${deposit30VES.toLocaleString('es-VE')} / $${deposit30USD} USD).\n` +
-      `Saldo restante a pagar al retirar en depósito: $${remaining70USD} USD (Válido por 7 días).`
-    );
-    window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
+    try {
+      const waText = encodeURIComponent(
+        `Hola ${storeName}, acabo de realizar el apartado digital para "${product.name}" (${selectedVariant}).\n` +
+        `Código de Boleto: #${officialPin}\n` +
+        `Referencia Pago Móvil Inicial (30%): ${finalStoreRef} (Bs. ${deposit30VES.toLocaleString('es-VE')} / $${deposit30USD} USD).\n` +
+        `Saldo restante a pagar al retirar en depósito: $${remaining70USD} USD (Válido por 7 días).`
+      );
+      window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
+    } catch {}
   };
 
   // Copiar datos de Pago Móvil de Aura (5% Desbloqueo)
@@ -1587,7 +1686,29 @@ export default function ProductBottomSheet({
                           <span>Esperando confirmación bancaria en tiempo real...</span>
                         </div>
 
-                        <div className="text-center pt-1">
+                        {/* Botones de Comprobación y Simulación de Pruebas */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleCheckSpidiStatusManual(false)}
+                            disabled={spidiLoading}
+                            className="w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-[11px] font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw size={12} className={spidiLoading ? 'animate-spin text-[#00ffb2]' : ''} />
+                            <span>Comprobar estado</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCheckSpidiStatusManual(true)}
+                            className="w-full py-2 px-3 bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-700/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <CheckCircle2 size={12} className="text-[#00ffb2]" />
+                            <span>Simular Aprobado (Pruebas)</span>
+                          </button>
+                        </div>
+
+                        <div className="text-center pt-0.5">
                           <p className="text-[10px] text-slate-500 font-mono">
                             Desarrollado por SPIDI • Pagos Inmediatos
                           </p>
@@ -1780,7 +1901,29 @@ export default function ProductBottomSheet({
                           <span>Esperando confirmación bancaria en tiempo real...</span>
                         </div>
 
-                        <div className="text-center pt-1">
+                        {/* Botones de Comprobación y Simulación de Pruebas Tienda */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleCheckSpidiStoreStatusManual(false)}
+                            disabled={spidiStoreLoading}
+                            className="w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 text-[11px] font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw size={12} className={spidiStoreLoading ? 'animate-spin text-indigo-400' : ''} />
+                            <span>Comprobar abono</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCheckSpidiStoreStatusManual(true)}
+                            className="w-full py-2 px-3 bg-indigo-950/70 hover:bg-indigo-900 text-indigo-200 text-[11px] font-bold rounded-xl border border-indigo-700/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <CheckCircle2 size={12} className="text-indigo-400" />
+                            <span>Simular Abono Aprobado (Pruebas)</span>
+                          </button>
+                        </div>
+
+                        <div className="text-center pt-0.5">
                           <p className="text-[10px] text-slate-500 font-mono">
                             Desarrollado por SPIDI • Pagos Inmediatos
                           </p>

@@ -571,13 +571,13 @@ export default function MostradorPage() {
 
   // 2. Stock verificado por tienda pero esperando que el cliente elija (3h o 7d)
   const waitingCustomerReservations = reservations.filter(
-    (r) => r.status === 'STOCK_VERIFIED'
+    (r) => r.status === 'STOCK_VERIFIED' || r.status === 'ultimo_par'
   );
 
   // 3. Reservas activas listas para canje en caja (Ticket oficialmente generado por el cliente)
   const activeTickets = reservations.filter((r) => {
     if (['cancelled', 'cancelada', 'completed', 'completada', 'COMPLETED_IN_STORE', 'ATTENDED_NO_SALE', 'EXPIRED_NO_SHOW'].includes(r.status)) return false;
-    if (['pending', 'pendiente', 'PENDING_STOCK_CHECK', 'STOCK_VERIFIED'].includes(r.status)) return false;
+    if (['pending', 'pendiente', 'PENDING_STOCK_CHECK', 'STOCK_VERIFIED', 'ultimo_par'].includes(r.status)) return false;
     return r.status === 'confirmed' || r.status === 'confirmada' || r.status === 'QR_ACTIVE';
   });
 
