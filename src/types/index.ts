@@ -203,6 +203,11 @@ export interface Reservation {
   spidi_session_id?: string;
   spidi_status?: string;
   spidi_bank_reference?: string;
+  spidi_aura_session_id?: string;
+  spidi_store_session_id?: string;
+  spidi_store_status?: string;
+  spidi_store_bank_reference?: string;
+  store_payment_mode?: 'deposit_30' | 'full_95';
 
   // Doble Cierre & Pagos Directos
   payment_method?: 'en_tienda' | 'pago_movil';

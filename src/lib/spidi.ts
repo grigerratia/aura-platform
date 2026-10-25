@@ -9,19 +9,72 @@ export interface SpidiConfig {
 }
 
 export function getSpidiConfig(): SpidiConfig {
-  const apiUrl = (process.env.SPIDI_API_URL || 'https://sim.mispidi.com/api').replace(/\/+$/, '');
-  const accountId = process.env.SPIDI_ACCOUNT_ID || 'acc_e82d89cdd6dd43b1';
-  const apiToken = process.env.SPIDI_API_TOKEN || '149f19b6-d532-401c-a6d5-a512de9d5ae9';
-  const webhookSecret = process.env.SPIDI_WEBHOOK_SECRET || 'whsec_5351b35097d3410a';
-  const agreementId = process.env.SPIDI_AGREEMENT_ID || 'agr_5f25bb2b3db4410e';
+  const apiUrl = (process.env.SPIDI_API_URL || '').replace(/\/+$/, '');
+  const accountId = process.env.SPIDI_ACCOUNT_ID || '';
+  const apiToken = process.env.SPIDI_API_TOKEN || '';
+  const webhookSecret = process.env.SPIDI_WEBHOOK_SECRET || '';
+  const agreementId = process.env.SPIDI_AGREEMENT_ID || '';
+
+  const missing = Object.entries({
+    SPIDI_API_URL: apiUrl,
+    SPIDI_ACCOUNT_ID: accountId,
+    SPIDI_API_TOKEN: apiToken,
+    SPIDI_WEBHOOK_SECRET: webhookSecret,
+    SPIDI_AGREEMENT_ID: agreementId,
+  })
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+
+  if (missing.length > 0) {
+    throw new Error(`[SPIDI] Faltan variables de entorno: ${missing.join(', ')}`);
+  }
 
   return { apiUrl, accountId, apiToken, webhookSecret, agreementId };
 }
 
+/**
+ * Fases de pago independientes de una reserva:
+ * - aura_fee: Pago 1, comisión de Aura (5%)
+ * - store_payment: Pago 2, inicial (30%) o total (95%) para la tienda
+ */
+export type SpidiPhase = 'aura_fee' | 'store_payment';
+export type StorePaymentMode = 'deposit_30' | 'full_95';
+
+export const AURA_FEE_RATE = 0.05;
+export const STORE_DEPOSIT_RATE = 0.3;
+export const STORE_FULL_RATE = 0.95;
+
+export function isSpidiPhase(value: unknown): value is SpidiPhase {
+  return value === 'aura_fee' || value === 'store_payment';
+}
+
+/** Monto en USD que corresponde a cada fase, calculado siempre en servidor. */
+export function computePhaseAmountUsd(
+  priceUsd: number,
+  phase: SpidiPhase,
+  storeMode: StorePaymentMode = 'deposit_30'
+): number {
+  const rate =
+    phase === 'aura_fee'
+      ? AURA_FEE_RATE
+      : storeMode === 'full_95'
+      ? STORE_FULL_RATE
+      : STORE_DEPOSIT_RATE;
+  return Number((priceUsd * rate).toFixed(2));
+}
+
+/** Identificador único por sesión: PIN-1234-AURA-x1y2 / PIN-1234-TIENDA-x1y2 */
+export function buildSpidiIdentifier(pin: string, phase: SpidiPhase): string {
+  const nonce = crypto.randomBytes(2).toString('hex');
+  const tag = phase === 'aura_fee' ? 'AURA' : 'TIENDA';
+  return `PIN-${pin}-${tag}-${nonce}`;
+}
+
 export interface CreateButtonSessionParams {
   amountUsd: number;
-  identifier: string; // e.g., "PIN-1234" o UUID
+  identifier: string; // e.g., "PIN-1234-AURA-ab12"
   description: string;
+  phase: SpidiPhase;
   durationMinutes?: number; // 5 a 20 minutos según especificación SPIDI
   successUrl?: string;
   failureUrl?: string;
@@ -64,19 +117,21 @@ export async function createSpidiButtonSession(
   const safeAmountUsd = Math.max(0.5, Number(params.amountUsd.toFixed(2)));
   const duration = Math.min(20, Math.max(5, params.durationMinutes || 20));
 
-    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://aura-platform.vercel.app').replace(/\/+$/, '');
-    const payload = {
-      amount_reference: safeAmountUsd,
-      currency_reference: 'USD',
-      identifier_label: 'Desbloqueo Aura',
-      identifier: params.identifier,
-      description: params.description || 'Desbloqueo y custodia Aura (5%)',
-      duration_minutes: duration,
-      success_url: params.successUrl || `${baseUrl}/pago-exitoso`,
-      failure_url: params.failureUrl || `${baseUrl}/pago-fallido`,
-      webhook_url: params.webhookUrl || `${baseUrl}/api/spidi/webhook`,
-      agreement_id: params.agreementId || config.agreementId,
-    };
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://aura-platform.vercel.app').replace(/\/+$/, '');
+  const isAuraFee = params.phase === 'aura_fee';
+  const payload = {
+    amount_reference: safeAmountUsd,
+    currency_reference: 'USD',
+    identifier_label: isAuraFee ? 'Desbloqueo Aura' : 'Apartado Tienda',
+    identifier: params.identifier,
+    description:
+      params.description || (isAuraFee ? 'Desbloqueo y custodia Aura' : 'Pago de apartado en tienda'),
+    duration_minutes: duration,
+    success_url: params.successUrl || `${baseUrl}/pago-exitoso`,
+    failure_url: params.failureUrl || `${baseUrl}/pago-fallido`,
+    webhook_url: params.webhookUrl || `${baseUrl}/api/spidi/webhook`,
+    agreement_id: params.agreementId || config.agreementId,
+  };
 
   const res = await fetch(endpoint, {
     method: 'POST',

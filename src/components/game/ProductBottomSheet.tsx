@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Store, Reservation } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { useReservations, recordCompletedPurchase } from '@/store/useReservations';
@@ -31,6 +31,43 @@ type SheetStep =
   | 'OPTION_B_CONFIRMED'
   | 'PURCHASE_COMPLETED'
   | 'OUT_OF_STOCK';
+
+type PayPhase = 'aura_fee' | 'store_payment';
+type StorePaymentMode = 'deposit_30' | 'full_95';
+
+interface PhaseSession {
+  sessionId: string;
+  paymentUrl: string;
+  paymentQr?: string;
+  amountUsd: number;
+  createdAt: number;
+}
+
+const SESSION_TTL_MS = 20 * 60 * 1000;
+const sessionStorageKey = (pin: string, phase: PayPhase) => `aura_spidi_session_${pin}_${phase}`;
+
+// Persiste la sesión pendiente de cada fase para sobrevivir a recargas o a la ida y vuelta a SPIDI
+function writeStoredSession(pin: string, phase: PayPhase, session: PhaseSession | null) {
+  try {
+    if (session) localStorage.setItem(sessionStorageKey(pin, phase), JSON.stringify(session));
+    else localStorage.removeItem(sessionStorageKey(pin, phase));
+  } catch {}
+}
+
+function readStoredSession(pin: string, phase: PayPhase): PhaseSession | null {
+  try {
+    const raw = localStorage.getItem(sessionStorageKey(pin, phase));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PhaseSession;
+    if (!parsed?.sessionId || Date.now() - (parsed.createdAt || 0) > SESSION_TTL_MS) {
+      localStorage.removeItem(sessionStorageKey(pin, phase));
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 export default function ProductBottomSheet({
   product,
@@ -68,35 +105,34 @@ export default function ProductBottomSheet({
   const [userWalletCredit, setUserWalletCredit] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Estados de Pago Automatizado SPIDI (Desbloqueo 5%)
+  // Estados de Pago 1 (comisión Aura) y Pago 2 (tienda): sesiones independientes
   const [spidiLoading, setSpidiLoading] = useState<boolean>(false);
-  const [spidiSession, setSpidiSession] = useState<{
-    sessionId: string;
-    paymentUrl: string;
-    paymentQr?: string;
-    amountUsd: number;
-  } | null>(null);
+  const [spidiSession, setSpidiSession] = useState<PhaseSession | null>(null);
   const [spidiPaid, setSpidiPaid] = useState<boolean>(false);
   const [spidiBankRef, setSpidiBankRef] = useState<string>('');
   const [showManualAuraPay, setShowManualAuraPay] = useState<boolean>(false);
 
-  // Estados de Pago Automatizado SPIDI (Abono 30% Tienda)
   const [spidiStoreLoading, setSpidiStoreLoading] = useState<boolean>(false);
-  const [spidiStoreSession, setSpidiStoreSession] = useState<{
-    sessionId: string;
-    paymentUrl: string;
-    paymentQr?: string;
-    amountUsd: number;
-  } | null>(null);
+  const [spidiStoreSession, setSpidiStoreSession] = useState<PhaseSession | null>(null);
   const [spidiStorePaid, setSpidiStorePaid] = useState<boolean>(false);
   const [spidiStoreBankRef, setSpidiStoreBankRef] = useState<string>('');
   const [showManualStorePay, setShowManualStorePay] = useState<boolean>(false);
+  const [storeMode, setStoreMode] = useState<StorePaymentMode>('deposit_30');
+
+  const pinRef = useRef<string>('');
+  const activeResRef = useRef<Reservation | null>(null);
+  const syncingRef = useRef<boolean>(false);
+  const auraAppliedRef = useRef<boolean>(false);
+  const storeAppliedRef = useRef<boolean>(false);
 
   // Contador regresivo para ticket de 3 horas
   const [timeLeft, setTimeLeft] = useState({ hours: 3, minutes: 0, seconds: 0 });
 
   // REGLA CIRUJANO: Limpieza estricta de estado al cambiar de modalidad o cerrar modal
   const resetPaymentStates = useCallback(() => {
+    auraAppliedRef.current = false;
+    storeAppliedRef.current = false;
+    setStoreMode('deposit_30');
     setSpidiLoading(false);
     setSpidiSession(null);
     setSpidiPaid(false);
@@ -124,31 +160,11 @@ export default function ProductBottomSheet({
       return;
     }
 
-    // Verificar si regresamos desde la pasarela con parámetros de pago exitoso en la URL
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const paymentStatus = urlParams.get('payment_status');
-      const paidSession = urlParams.get('paid_session');
-      const feeType = urlParams.get('fee_type');
-
-      if (paymentStatus === 'success') {
-        const ref = paidSession ? `SPIDI-${paidSession.slice(-6).toUpperCase()}` : 'SPIDI-CONFIRMADO';
-        if (feeType === 'store_deposit') {
-          setSpidiStorePaid(true);
-          setSpidiStoreBankRef(ref);
-          setPagoMovilRef(ref);
-          setStep('OPTION_B_CONFIRMED');
-        } else {
-          setSpidiPaid(true);
-          setSpidiBankRef(ref);
-          setPagoMovilAuraRef(ref);
-          setLayawaySubStep(2);
-          setStep('OPTION_B_LAYAWAY');
-        }
-        try {
-          window.history.replaceState({}, '', window.location.pathname);
-        } catch {}
-      }
+    // Al volver de SPIDI solo se limpia la URL: el estado de pago se restaura desde el servidor
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('payment_status')) {
+      try {
+        window.history.replaceState({}, '', window.location.pathname);
+      } catch {}
     }
 
     // Variantes dinámicas universales (Color, Modelo, Capacidad, etc.)
@@ -190,6 +206,8 @@ export default function ProductBottomSheet({
 
       if (isApartadoType) {
         if (activeReservation.payment_reference) {
+          const paidFull = Number(activeReservation.initial_deposit || 0) > Number(product.aura_price_usd || product.price || 0) * 0.5;
+          setStoreMode(paidFull ? 'full_95' : 'deposit_30');
           setStep('OPTION_B_CONFIRMED');
         } else {
           setStep('OPTION_B_LAYAWAY');
@@ -292,11 +310,8 @@ export default function ProductBottomSheet({
   const auraUnlockFeeUSD = Number((auraPrice * 0.05).toFixed(2));
   const auraUnlockFeeVES = Math.round(auraUnlockFeeUSD * (tasa || 883));
   
-  // Cálculo de apartado 30% inicial directo para el comercio
+  // Pago inicial directo para el comercio
   const deposit30USD = Number((auraPrice * 0.30).toFixed(2));
-  const remaining70USD = Number((auraPrice - deposit30USD).toFixed(2));
-  const deposit30VES = Math.round(deposit30USD * (tasa || 883));
-  const remaining70VES = Math.round(remaining70USD * (tasa || 883));
   const totalVES = Math.round(auraPrice * (tasa || 883));
 
   // Tienda asociada
@@ -449,34 +464,6 @@ export default function ProductBottomSheet({
     playRadarPing();
   };
 
-  // Verificación / Simulación inmediata de estante para pruebas en vivo
-  const handleConfirmStockSimulated = async (type: 'green' | 'yellow' = 'green') => {
-    playUnlockSuccess();
-    setStockConfirmationType(type);
-    setStep('STOCK_CONFIRMED');
-
-    if (activeRes) {
-      const updated: Reservation = {
-        ...activeRes,
-        status: type === 'yellow' ? 'ultimo_par' : 'confirmed',
-      };
-      setActiveRes(updated);
-      setActiveReservation(updated);
-
-      try {
-        const isValidUUID = Boolean(activeRes.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRes.id));
-        const query = supabase
-          .from('reservations')
-          .update({ status: type === 'yellow' ? 'ultimo_par' : 'confirmed' });
-        if (isValidUUID) {
-          await query.eq('id', activeRes.id);
-        } else if (activeRes.pin_code || activeRes.pin) {
-          await query.eq('pin_code', activeRes.pin_code || activeRes.pin);
-        }
-      } catch {}
-    }
-  };
-
   // ==============================================================================
   // PASO 3: ESCUCHA EN TIEMPO REAL DEL SEMÁFORO Y VALIDACIÓN EN CAJA
   // ==============================================================================
@@ -598,298 +585,241 @@ export default function ProductBottomSheet({
   }, [step, activeRes?.id, activeRes?.pin, activeRes?.pin_code, playUnlockSuccess, setActiveReservation, clearActiveReservation]);
 
   // ==============================================================================
-  // SPIDI: INICIAR SESIÓN Y ESCUCHAR CONFIRMACIÓN EN TIEMPO REAL
+  // SPIDI: PAGOS INDEPENDIENTES POR FASE
+  //   Pago 1 (aura_fee)      -> comisión Aura
+  //   Pago 2 (store_payment) -> inicial o total para la tienda
+  // Cada fase tiene su propia sesión. El estado SIEMPRE se lee del servidor.
   // ==============================================================================
-  const handleCreateSpidiPayment = async () => {
-    if (spidiLoading || spidiPaid || !product) return;
-    setSpidiLoading(true);
+  const currentPinForSync = generatedPin || activeRes?.pin_code || activeRes?.pin || '';
+  useEffect(() => {
+    pinRef.current = currentPinForSync;
+    activeResRef.current = activeRes;
+  }, [currentPinForSync, activeRes]);
+  const storeFullUSD = Number((auraPrice * 0.95).toFixed(2));
+  const storeAmountUSD = storeMode === 'full_95' ? storeFullUSD : deposit30USD;
+  const storeAmountVES = Math.round(storeAmountUSD * (tasa || 883));
+  // El 5% de Aura ya viene incluido en el precio: el comercio recibe el 95% restante
+  const storeBalanceUSD = Number(Math.max(0, storeFullUSD - storeAmountUSD).toFixed(2));
+  const storeBalanceVES = Math.round(storeBalanceUSD * (tasa || 883));
+
+  const createPhasePayment = async (phase: PayPhase) => {
+    const isAura = phase === 'aura_fee';
+    const pin = pinRef.current;
+    if (!product || !pin) return;
+    if (isAura ? spidiLoading || spidiPaid : spidiStoreLoading || spidiStorePaid) return;
+
+    const setLoading = isAura ? setSpidiLoading : setSpidiStoreLoading;
+    setLoading(true);
     playTap();
 
     try {
-      const pinToUse = generatedPin || activeRes?.pin_code || activeRes?.pin || '';
       const res = await fetch('/api/spidi/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reservationId: activeRes?.id,
-          pin: pinToUse,
-          amountUsd: auraUnlockFeeUSD,
+          pin,
+          phase,
+          storeMode,
           productName: product.name,
         }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'No se pudo iniciar la pasarela de pago SPIDI.');
+        throw new Error(data.error || 'No se pudo iniciar la pasarela de pago.');
       }
 
-      setSpidiSession({
+      const session: PhaseSession = {
         sessionId: data.sessionId,
         paymentUrl: data.paymentUrl,
         paymentQr: data.paymentQr,
         amountUsd: data.amountUsd,
-      });
+        createdAt: Date.now(),
+      };
+      writeStoredSession(pin, phase, session);
+      if (isAura) setSpidiSession(session);
+      else setSpidiStoreSession(session);
     } catch (err: any) {
-      alert(err.message || 'Error al conectar con la pasarela de pagos SPIDI.');
+      alert(err.message || 'Error al conectar con la pasarela de pagos.');
     } finally {
-      setSpidiLoading(false);
+      setLoading(false);
     }
   };
 
-  // ==============================================================================
-  // SINCRONIZACIÓN CROSS-TAB Y MULTI-VÍA (BROADCAST, STORAGE, REALTIME Y FOCO)
-  // ==============================================================================
-  const handlePaymentCompletedSignal = useCallback((sessionId?: string, bankRef?: string, feeType?: string) => {
-    const ref = bankRef || (sessionId ? `SPIDI-${sessionId.slice(-6).toUpperCase()}` : 'SPIDI-CONFIRMADO');
+  const handleCreateSpidiPayment = () => createPhasePayment('aura_fee');
+  const handleCreateSpidiStorePayment = () => createPhasePayment('store_payment');
 
-    // Comprobar si corresponde a Paso 2 (Abono 30% Tienda)
-    const isStep2 =
-      feeType === 'store_deposit' ||
-      (spidiStoreSession?.sessionId && sessionId === spidiStoreSession.sessionId) ||
-      (sessionId && sessionId.includes('TIENDA')) ||
-      layawaySubStep === 2;
+  // Sincroniza el estado de AMBAS fases desde el servidor (webhook firmado / API SPIDI).
+  // Cualquier señal externa (otra pestaña, foco, realtime) solo dispara esta verificación.
+  const syncPaymentState = async () => {
+    const pin = pinRef.current;
+    if (!pin || syncingRef.current) return;
+    syncingRef.current = true;
 
-    if (isStep2) {
-      if (!spidiStorePaid) {
-        setSpidiStorePaid(true);
-        setSpidiStoreBankRef(ref);
-        setPagoMovilRef(ref);
-        playUnlockSuccess();
-        setTimeout(() => {
-          setStep('OPTION_B_CONFIRMED');
-        }, 1000);
-      }
-      return;
-    }
-
-    // Corresponde a Paso 1 (5% Desbloqueo Aura)
-    if (!spidiPaid) {
-      setSpidiPaid(true);
-      setSpidiBankRef(ref);
-      setPagoMovilAuraRef(ref);
-      playUnlockSuccess();
-      setLayawaySubStep(2);
-    }
-  }, [spidiSession?.sessionId, spidiStoreSession?.sessionId, layawaySubStep, spidiPaid, spidiStorePaid, playUnlockSuccess]);
-
-  // Comprobación manual de estado para Paso 1 (5% Desbloqueo Aura) - 100% Producción Real
-  const handleCheckSpidiStatusManual = async () => {
-    if (!spidiSession?.sessionId || spidiPaid) return;
-    setSpidiLoading(true);
     try {
-      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiSession.sessionId)}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.isPaid) {
-          const ref = data.bankReferenceId || `SPIDI-${spidiSession.sessionId.slice(-6).toUpperCase()}`;
-          handlePaymentCompletedSignal(spidiSession.sessionId, ref, 'unlock_fee');
-        } else {
-          alert('Aún no detectamos la transferencia en la red bancaria. Si acabas de pagar, espera unos segundos y vuelve a presionar comprobar.');
+      const res = await fetch(`/api/spidi/status?pin=${encodeURIComponent(pin)}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const { aura, store } = await res.json();
+
+      // Restaurar enlace/QR de sesiones aún pendientes tras recargar la app
+      if (aura && !aura.isPaid && aura.status === 'created') {
+        const saved = readStoredSession(pin, 'aura_fee');
+        if (saved && saved.sessionId === aura.sessionId) setSpidiSession((prev) => prev ?? saved);
+      }
+      if (store && !store.isPaid && store.status === 'created') {
+        const saved = readStoredSession(pin, 'store_payment');
+        if (saved && saved.sessionId === store.sessionId) setSpidiStoreSession((prev) => prev ?? saved);
+      }
+
+      // Pago 1: solo depende de la sesión aura_fee
+      let auraRef: string = aura?.bankReferenceId || '';
+      if (aura?.isPaid) {
+        auraRef = auraRef || `SPIDI-${String(aura.sessionId).slice(-6).toUpperCase()}`;
+        if (!auraAppliedRef.current) {
+          auraAppliedRef.current = true;
+          setSpidiPaid(true);
+          setSpidiBankRef(auraRef);
+          setPagoMovilAuraRef(auraRef);
+          writeStoredSession(pin, 'aura_fee', null);
+          playUnlockSuccess();
+          setLayawaySubStep((prev) => (prev === 1 ? 2 : prev));
         }
       }
+
+      // Pago 2: solo cuenta si su propia sesión está pagada Y el Pago 1 está verificado
+      if (aura?.isPaid && store?.isPaid && !storeAppliedRef.current) {
+        storeAppliedRef.current = true;
+        const storeRef: string =
+          store.bankReferenceId || `SPIDI-${String(store.sessionId).slice(-6).toUpperCase()}`;
+        const mode: StorePaymentMode =
+          store.amountUsd && Math.abs(Number(store.amountUsd) - storeFullUSD) < 0.02 ? 'full_95' : 'deposit_30';
+
+        setSpidiStorePaid(true);
+        setSpidiStoreBankRef(storeRef);
+        setPagoMovilRef(storeRef);
+        setStoreMode(mode);
+        setLayawaySubStep(2);
+        writeStoredSession(pin, 'store_payment', null);
+
+        const base = activeResRef.current;
+        if (base) {
+          const confirmedRes: Reservation = {
+            ...base,
+            pin,
+            pin_code: pin,
+            status: 'confirmed',
+            payment_method: 'pago_movil',
+            payment_type: 'apartado_7d',
+            payment_reference: storeRef,
+            unlock_fee_usd: auraUnlockFeeUSD,
+            aura_fee_status: 'paid',
+            aura_fee_reference: auraRef,
+            spidi_status: 'paid',
+            spidi_bank_reference: auraRef,
+            initial_deposit: Number(store.amountUsd) || undefined,
+            store_pay_balance_usd: Number((auraPrice - (Number(store.amountUsd) || 0)).toFixed(2)),
+            current_step: 'OPTION_B_CONFIRMED',
+          };
+          setActiveRes(confirmedRes);
+          setActiveReservation(confirmedRes);
+        }
+        setGeneratedPin(pin);
+        playUnlockSuccess();
+        setStep('OPTION_B_CONFIRMED');
+      }
     } catch {
-      alert('Error temporal al consultar estado bancario.');
+      // Error de red transitorio: el próximo ciclo de sondeo reintenta
     } finally {
-      setSpidiLoading(false);
+      syncingRef.current = false;
     }
   };
 
-  // Auto-avanzar al Paso 2 cuando el Paso 1 es aprobado con éxito
+  // Los listeners externos siempre invocan la versión más reciente
+  const syncRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    syncRef.current = syncPaymentState;
+  });
+
+  const handleCheckSpidiStatusManual = async () => {
+    setSpidiLoading(true);
+    await syncPaymentState();
+    setSpidiLoading(false);
+    if (!auraAppliedRef.current) {
+      alert('Aún no detectamos el pago en la red bancaria. Si acabas de pagar, espera unos segundos y vuelve a comprobar.');
+    }
+  };
+
+  const handleCheckSpidiStoreStatusManual = async () => {
+    setSpidiStoreLoading(true);
+    await syncPaymentState();
+    setSpidiStoreLoading(false);
+    if (!storeAppliedRef.current) {
+      alert('Aún no detectamos el pago a la tienda. Si acabas de pagar, espera unos segundos y vuelve a comprobar.');
+    }
+  };
+
+  // Auto-avanzar al Pago 2 cuando el Pago 1 es aprobado
   useEffect(() => {
     if (spidiPaid && layawaySubStep === 1) {
-      const timer = setTimeout(() => {
-        setLayawaySubStep(2);
-      }, 1500);
+      const timer = setTimeout(() => setLayawaySubStep(2), 1500);
       return () => clearTimeout(timer);
     }
   }, [spidiPaid, layawaySubStep]);
 
-  // ==============================================================================
-  // SPIDI: INICIAR SESIÓN Y ESCUCHAR CONFIRMACIÓN PARA ABONO TIENDA (PASO 2)
-  // ==============================================================================
-  const handleCreateSpidiStorePayment = async () => {
-    if (spidiStoreLoading || spidiStorePaid || !product) return;
-    setSpidiStoreLoading(true);
-    playTap();
-
-    try {
-      const pinToUse = generatedPin || activeRes?.pin_code || activeRes?.pin || '';
-      const res = await fetch('/api/spidi/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reservationId: activeRes?.id,
-          pin: pinToUse,
-          amountUsd: deposit30USD,
-          productName: product.name,
-          feeType: 'store_deposit',
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'No se pudo iniciar la pasarela de pago para la tienda.');
-      }
-
-      setSpidiStoreSession({
-        sessionId: data.sessionId,
-        paymentUrl: data.paymentUrl,
-        paymentQr: data.paymentQr,
-        amountUsd: data.amountUsd,
-      });
-    } catch (err: any) {
-      alert(err.message || 'Error al conectar con la pasarela de pagos.');
-    } finally {
-      setSpidiStoreLoading(false);
-    }
-  };
-
-  // Comprobación manual de estado para Paso 2 (Abono 30% Tienda) - 100% Producción Real
-  const handleCheckSpidiStoreStatusManual = async () => {
-    if (!spidiStoreSession?.sessionId || spidiStorePaid) return;
-    setSpidiStoreLoading(true);
-    try {
-      const url = `/api/spidi/status?sessionId=${encodeURIComponent(spidiStoreSession.sessionId)}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.isPaid) {
-          const ref = data.bankReferenceId || `SPIDI-${spidiStoreSession.sessionId.slice(-6).toUpperCase()}`;
-          handlePaymentCompletedSignal(spidiStoreSession.sessionId, ref, 'store_deposit');
-        } else {
-          alert('Aún no detectamos la transferencia del abono a la tienda. Si acabas de pagar, espera unos segundos y vuelve a comprobar.');
-        }
-      }
-    } catch {
-      alert('Error temporal al consultar abono a la tienda.');
-    } finally {
-      setSpidiStoreLoading(false);
-    }
-  };
-
-  // Listener unificado en tiempo real por 3 vías simultáneas:
-  // a) BroadcastChannel & window storage (comunicación instantánea cross-tab)
-  // b) window focus & visibilitychange (al regresar a la pestaña)
-  // c) Supabase Realtime (spidi_transactions y reservations) + sondeo de respaldo
+  // Restauración y escucha: al abrir el apartado y al volver de la pestaña de SPIDI
+  // (foco, visibilidad, storage, broadcast), por Realtime y con sondeo de respaldo.
   useEffect(() => {
-    // Vía A: BroadcastChannel
+    if ((step !== 'OPTION_B_LAYAWAY' && step !== 'WAITING_VERIFICATION') || !currentPinForSync) return;
+    const pin = currentPinForSync;
+
+    syncRef.current();
+
+    const trigger = () => { syncRef.current(); };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') trigger();
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'aura_last_paid_session' && e.newValue) trigger();
+    };
+
     let broadcastChan: BroadcastChannel | null = null;
     try {
       broadcastChan = new BroadcastChannel('aura_payment_channel');
       broadcastChan.onmessage = (event) => {
-        const msg = event?.data;
-        if (msg && msg.type === 'PAYMENT_COMPLETED') {
-          handlePaymentCompletedSignal(msg.sessionId, msg.bankReferenceId, msg.feeType);
-        }
+        if (event?.data?.type === 'PAYMENT_COMPLETED') trigger();
       };
     } catch {}
 
-    // Vía A2: Evento storage de window (detecta al instante cuando otra pestaña guarda en localStorage)
-    const handleStorageEvent = (e: StorageEvent) => {
-      if (e.key === 'aura_last_paid_session' && e.newValue) {
-        try {
-          const data = JSON.parse(e.newValue);
-          if (data && data.status === 'COMPLETED') {
-            handlePaymentCompletedSignal(data.sessionId, data.bankReferenceId, data.feeType);
-          }
-        } catch {}
-      }
-    };
-    window.addEventListener('storage', handleStorageEvent);
-
-    // Vía B: Al recuperar el foco o cambiar visibilidad
-    const checkPaymentOnFocus = async () => {
-      // 1. Revisar localStorage inmediatamente
-      try {
-        const raw = localStorage.getItem('aura_last_paid_session');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && parsed.status === 'COMPLETED') {
-            const ageMs = Date.now() - (parsed.timestamp || 0);
-            if (ageMs < 10 * 60 * 1000) {
-              handlePaymentCompletedSignal(parsed.sessionId, parsed.bankReferenceId, parsed.feeType);
-            }
-          }
-        }
-      } catch {}
-
-      // 2. Consultar al backend por la sesión en espera activa
-      const currentActiveSession = layawaySubStep === 2 ? spidiStoreSession?.sessionId : spidiSession?.sessionId;
-      if (currentActiveSession) {
-        try {
-          const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(currentActiveSession)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.isPaid) {
-              const ref = data.bankReferenceId || `SPIDI-${currentActiveSession.slice(-6).toUpperCase()}`;
-              handlePaymentCompletedSignal(currentActiveSession, ref, layawaySubStep === 2 ? 'store_deposit' : 'unlock_fee');
-            }
-          }
-        } catch {}
-      }
-    };
-
-    const handleFocus = () => { checkPaymentOnFocus(); };
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        checkPaymentOnFocus();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
+    window.addEventListener('focus', trigger);
+    window.addEventListener('storage', handleStorage);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Vía C: Supabase Realtime sobre transacciones
-    const spidiWatcher = supabase
-      .channel('spidi_realtime_sync')
+    const watcher = supabase
+      .channel(`spidi_sync_${pin}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'spidi_transactions' },
         (payload: any) => {
-          const tx = payload?.new;
-          if (tx && (tx.status === 'paid' || tx.status === 'accredited')) {
-            handlePaymentCompletedSignal(tx.session_id, tx.bank_reference_id);
-          }
+          if (payload?.new?.reservation_pin === pin) trigger();
         }
       )
       .subscribe();
 
-    // Sondeo de respaldo cada 2.5s si hay sesión activa esperando confirmación
-    const waitingSessionId =
-      (layawaySubStep === 1 && spidiSession && !spidiPaid)
-        ? spidiSession.sessionId
-        : (layawaySubStep === 2 && spidiStoreSession && !spidiStorePaid)
-        ? spidiStoreSession.sessionId
-        : null;
-
-    let pollInterval: NodeJS.Timeout | null = null;
-    if (waitingSessionId) {
-      pollInterval = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/spidi/status?sessionId=${encodeURIComponent(waitingSessionId)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.isPaid) {
-              const ref = data.bankReferenceId || `SPIDI-${waitingSessionId.slice(-6).toUpperCase()}`;
-              handlePaymentCompletedSignal(waitingSessionId, ref, layawaySubStep === 2 ? 'store_deposit' : 'unlock_fee');
-            }
-          }
-        } catch {}
-      }, 2500);
-    }
+    const waiting = Boolean((spidiSession && !spidiPaid) || (spidiStoreSession && !spidiStorePaid));
+    const pollInterval = waiting ? setInterval(trigger, 3000) : null;
 
     return () => {
       if (broadcastChan) {
         try { broadcastChan.close(); } catch {}
       }
-      window.removeEventListener('storage', handleStorageEvent);
-      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('focus', trigger);
+      window.removeEventListener('storage', handleStorage);
       document.removeEventListener('visibilitychange', handleVisibility);
-      supabase.removeChannel(spidiWatcher);
+      supabase.removeChannel(watcher);
       if (pollInterval) clearInterval(pollInterval);
     };
-  }, [spidiSession, spidiStoreSession, spidiPaid, spidiStorePaid, layawaySubStep, handlePaymentCompletedSignal]);
+  }, [step, currentPinForSync, spidiSession, spidiStoreSession, spidiPaid, spidiStorePaid]);
 
   // ==============================================================================
   // PASO 4A: ELECCIÓN CLIENTE -> OPCIÓN A (IR HOY MISMO - TICKET QR GRATIS 3 HORAS)
@@ -975,7 +905,7 @@ export default function ProductBottomSheet({
       Boolean(activeRes.aura_fee_reference && activeRes.aura_fee_reference !== 'Pendiente');
 
     const promptMessage = isStep1Paid
-      ? `¿Deseas cancelar este apartado? La tarifa del 5% pagada ($${auraUnlockFeeUSD.toFixed(2)} USD) se acreditará de inmediato a tu Billetera Aura.`
+      ? `¿Deseas cancelar este apartado? La tarifa de desbloqueo pagada ($${auraUnlockFeeUSD.toFixed(2)} USD) se acreditará de inmediato a tu Billetera Aura.`
       : '¿Deseas cancelar esta solicitud? El producto será liberado para la tienda.';
 
     if (!confirm(promptMessage)) return;
@@ -1093,7 +1023,7 @@ export default function ProductBottomSheet({
       return;
     }
     if (!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()) {
-      alert('Por favor completa el arancel de desbloqueo a Aura (5%).');
+      alert('Por favor completa el arancel de desbloqueo a Aura.');
       return;
     }
 
@@ -1122,8 +1052,8 @@ export default function ProductBottomSheet({
       spidi_session_id: spidiSession?.sessionId || undefined,
       spidi_status: spidiPaid ? 'paid' : undefined,
       spidi_bank_reference: spidiBankRef || undefined,
-      initial_deposit: deposit30USD,
-      store_pay_balance_usd: remaining70USD,
+      initial_deposit: storeAmountUSD,
+      store_pay_balance_usd: storeBalanceUSD,
       current_step: 'OPTION_B_CONFIRMED',
     };
 
@@ -1152,7 +1082,7 @@ export default function ProductBottomSheet({
         pin_code: officialPin,
         customer_phone: `${customerPhone.trim()} [REF: #${finalStoreRef}]`,
         unlock_fee_usd: auraUnlockFeeUSD,
-        store_pay_balance_usd: remaining70USD,
+        store_pay_balance_usd: storeBalanceUSD,
       };
 
       if (isValidUUID) {
@@ -1181,8 +1111,8 @@ export default function ProductBottomSheet({
       const waText = encodeURIComponent(
         `Hola ${storeName}, acabo de realizar el apartado digital para "${product.name}" (${selectedVariant}).\n` +
         `Código de Boleto: #${officialPin}\n` +
-        `Referencia Pago Móvil Inicial (30%): ${finalStoreRef} (Bs. ${deposit30VES.toLocaleString('es-VE')} / $${deposit30USD} USD).\n` +
-        `Saldo restante a pagar al retirar en depósito: $${remaining70USD} USD (Válido por 7 días).`
+        `Referencia de pago: ${finalStoreRef} (Bs. ${storeAmountVES.toLocaleString('es-VE')} / $${storeAmountUSD} USD).\n` +
+        `Saldo restante a pagar al retirar en depósito: $${storeBalanceUSD} USD (Válido por 7 días).`
       );
       window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
     } catch {}
@@ -1200,7 +1130,7 @@ export default function ProductBottomSheet({
   // Copiar datos de Pago Móvil de la tienda
   const handleCopyBankData = () => {
     playTap();
-    const text = `Pago Móvil ${storeName}:\nBanco: 0102 Banco de Venezuela\nTeléfono: ${storePhoneClean}\nRIF: J-40812345-0\nMonto Inicial (30%): Bs. ${deposit30VES.toLocaleString('es-VE')} ($${deposit30USD} USD)`;
+    const text = `Pago Móvil ${storeName}:\nBanco: 0102 Banco de Venezuela\nTeléfono: ${storePhoneClean}\nRIF: J-40812345-0\nMonto: Bs. ${storeAmountVES.toLocaleString('es-VE')} ($${storeAmountUSD} USD)`;
     navigator.clipboard.writeText(text);
     setCopiedBankData(true);
     setTimeout(() => setCopiedBankData(false), 2500);
@@ -1565,11 +1495,11 @@ export default function ProductBottomSheet({
                         <span className="text-xs font-bold text-white">Apartado Digital (Cashea Inverso)</span>
                       </div>
                       <p className="text-xs text-slate-300 font-light leading-relaxed">
-                        Asegúralo con el <strong>5% de desbloqueo Aura (${auraUnlockFeeUSD})</strong> y el <strong>30% inicial (${deposit30USD})</strong> al comercio. La tienda lo resguarda en depósito por <strong>7 días</strong> hasta que retires y pagues el 70% restante.
+                        Asegúralo con el <strong>desbloqueo Aura (${auraUnlockFeeUSD})</strong> y un <strong>pago inicial (${deposit30USD})</strong> al comercio. La tienda lo resguarda en depósito por <strong>7 días</strong> hasta que retires y pagues el saldo.
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="text-sm font-black text-indigo-300 block">30% Inicial</span>
+                      <span className="text-sm font-black text-indigo-300 block">Pago Inicial</span>
                       <span className="text-[10px] text-slate-400 block">${deposit30USD} USD</span>
                     </div>
                   </div>
@@ -1704,7 +1634,7 @@ export default function ProductBottomSheet({
                   }`}
                 >
                   <span className="text-[9px] uppercase font-bold text-emerald-400 block">Paso 1</span>
-                  <span className="text-xs font-bold block truncate">1. Desbloqueo Aura (5%)</span>
+                  <span className="text-xs font-bold block truncate">1. Desbloqueo Aura</span>
                   <span className="text-[10px] font-mono text-emerald-300">${auraUnlockFeeUSD.toFixed(2)} USD</span>
                 </button>
 
@@ -1722,8 +1652,8 @@ export default function ProductBottomSheet({
                   }`}
                 >
                   <span className="text-[9px] uppercase font-bold text-indigo-400 block">Paso 2</span>
-                  <span className="text-xs font-bold block truncate">2. Inicial Tienda (30%)</span>
-                  <span className="text-[10px] font-mono text-indigo-300">${deposit30USD.toFixed(2)} USD</span>
+                  <span className="text-xs font-bold block truncate">2. Pago a la Tienda</span>
+                  <span className="text-[10px] font-mono text-indigo-300">${storeAmountUSD.toFixed(2)} USD</span>
                 </button>
               </div>
 
@@ -1734,7 +1664,7 @@ export default function ProductBottomSheet({
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-white flex items-center gap-1.5 text-xs sm:text-sm">
                         <Sparkles size={15} className="text-emerald-400" />
-                        Paso 1: Desbloqueo y Custodia Aura (5%)
+                        Paso 1: Desbloqueo y Custodia Aura
                       </span>
                       <span className="font-black text-white text-sm sm:text-base">${auraUnlockFeeUSD.toFixed(2)} USD</span>
                     </div>
@@ -1766,7 +1696,7 @@ export default function ProductBottomSheet({
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-400">Concepto:</span>
-                            <span className="text-slate-200">Desbloqueo y Custodia Aura (5%)</span>
+                            <span className="text-slate-200">Desbloqueo y Custodia Aura</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-400">Monto en Bolívares:</span>
@@ -1938,7 +1868,7 @@ export default function ProductBottomSheet({
                       disabled={!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()}
                       className="cursor-pointer w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-40"
                     >
-                      <span>Continuar al Paso 2: Abono 30% a la Tienda</span>
+                      <span>Continuar al Paso 2: Pago a la Tienda</span>
                       <ArrowRight size={14} />
                     </button>
                   )}
@@ -1965,13 +1895,36 @@ export default function ProductBottomSheet({
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs sm:text-sm">
                         <StoreIcon size={15} />
-                        Paso 2: Abono 30% Inicial para {storeName}
+                        Paso 2: Pago para {storeName}
                       </span>
-                      <span className="font-black text-white text-sm sm:text-base">${deposit30USD.toFixed(2)} USD</span>
+                      <span className="font-black text-white text-sm sm:text-base">${storeAmountUSD.toFixed(2)} USD</span>
                     </div>
 
+                    {!spidiStorePaid && !spidiStoreSession && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setStoreMode('deposit_30')}
+                          className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${storeMode === 'deposit_30' ? 'bg-indigo-950/60 border-indigo-400 text-white' : 'bg-[#020508] border-slate-800 text-slate-400'}`}
+                        >
+                          <span className="text-xs font-bold block">Apartar con inicial</span>
+                          <span className="text-[10px] font-mono text-indigo-300">${deposit30USD.toFixed(2)} USD</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStoreMode('full_95')}
+                          className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${storeMode === 'full_95' ? 'bg-indigo-950/60 border-indigo-400 text-white' : 'bg-[#020508] border-slate-800 text-slate-400'}`}
+                        >
+                          <span className="text-xs font-bold block">Pagar todo ahora</span>
+                          <span className="text-[10px] font-mono text-indigo-300">${storeFullUSD.toFixed(2)} USD</span>
+                        </button>
+                      </div>
+                    )}
+
                     <p className="text-[11px] text-slate-300 font-light leading-relaxed">
-                      Transfiere el 30% directo al comercio para apartar tu producto en su depósito. El 70% restante (${remaining70USD.toFixed(2)} USD) se liquida en caja al retirar dentro de los 7 días.
+                      {storeMode === 'full_95'
+                        ? 'Pagas el saldo completo de tu producto y solo pasas a retirarlo dentro de los 7 días.'
+                        : `Pagas la inicial para apartar tu producto en el depósito. El saldo restante se liquida en caja al retirar dentro de los 7 días.`}
                     </p>
 
                     {/* ESTADO SPIDI TIENDA: YA PAGADO */}
@@ -1991,7 +1944,7 @@ export default function ProductBottomSheet({
                             <QrCode size={15} className="text-indigo-400" />
                             Escanea o paga en línea
                           </span>
-                          <span className="text-xs font-black text-indigo-300">${deposit30USD.toFixed(2)} USD</span>
+                          <span className="text-xs font-black text-indigo-300">${Number(spidiStoreSession?.amountUsd ?? storeAmountUSD).toFixed(2)} USD</span>
                         </div>
 
                         {spidiStoreSession.paymentQr && (
@@ -2056,7 +2009,7 @@ export default function ProductBottomSheet({
                               <Smartphone size={16} className="text-white" />
                             )}
                             <span className="font-black text-sm">
-                              {spidiStoreLoading ? 'Generando pago seguro...' : 'Pagar Abono 30% con Pago Móvil o Débito'}
+                              {spidiStoreLoading ? 'Generando pago seguro...' : 'Pagar con Pago Móvil o Débito'}
                             </span>
                           </div>
                           <span className="text-[10px] font-semibold text-indigo-200">
@@ -2086,7 +2039,7 @@ export default function ProductBottomSheet({
                               </div>
                               <div className="flex justify-between items-center">
                                 <span className="text-slate-400">RIF / Monto Inicial en Bs:</span>
-                                <span className="text-[#00ffb2] font-mono font-black text-xs">J-40812345-0 • Bs. {deposit30VES.toLocaleString('es-VE')}</span>
+                                <span className="text-[#00ffb2] font-mono font-black text-xs">J-40812345-0 • Bs. {storeAmountVES.toLocaleString('es-VE')}</span>
                               </div>
                             </div>
 
@@ -2234,16 +2187,16 @@ export default function ProductBottomSheet({
               {/* RESUMEN FINANCIERO */}
               <div className="bg-[#020508] border border-slate-800 rounded-2xl p-3 text-xs space-y-1.5 text-left">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Desbloqueo Aura (5%):</span>
+                  <span className="text-slate-400">Desbloqueo Aura:</span>
                   <span className="text-[#00ffb2] font-bold">${auraUnlockFeeUSD.toFixed(2)} USD</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">30% Inicial Tienda:</span>
-                  <span className="text-indigo-300 font-bold">${deposit30USD.toFixed(2)} USD (Ref: #{pagoMovilRef})</span>
+                  <span className="text-slate-400">{storeMode === 'full_95' ? 'Pago a la Tienda:' : 'Inicial Tienda:'}</span>
+                  <span className="text-indigo-300 font-bold">${storeAmountUSD.toFixed(2)} USD (Ref: #{pagoMovilRef})</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t border-slate-800">
-                  <span className="text-white font-bold">70% Restante a Pagar al Retirar:</span>
-                  <span className="text-white font-black">${remaining70USD.toFixed(2)} USD (Bs. {remaining70VES.toLocaleString('es-VE')})</span>
+                  <span className="text-white font-bold">Saldo a Pagar al Retirar:</span>
+                  <span className="text-white font-black">${storeBalanceUSD.toFixed(2)} USD (Bs. {storeBalanceVES.toLocaleString('es-VE')})</span>
                 </div>
               </div>
 
@@ -2256,9 +2209,9 @@ export default function ProductBottomSheet({
                     const waText = encodeURIComponent(
                       `Hola ${storeName}, acabo de realizar el apartado digital en Aura para "${product?.name}" (${selectedVariant}).\n` +
                       `Código de Boleto: #${generatedPin}\n` +
-                      `Referencia Pago Móvil Tienda (30%): ${pagoMovilRef.trim()}\n` +
-                      `Monto 30% Inicial: Bs. ${deposit30VES.toLocaleString('es-VE')} ($${deposit30USD} USD).\n` +
-                      `Saldo restante al retirar: $${remaining70USD} USD (Válido por 7 días).`
+                      `Referencia de pago: ${pagoMovilRef.trim()}\n` +
+                      `Monto pagado: Bs. ${storeAmountVES.toLocaleString('es-VE')} ($${storeAmountUSD} USD).\n` +
+                      `Saldo restante al retirar: $${storeBalanceUSD} USD (Válido por 7 días).`
                     );
                     window.open(`https://wa.me/${storePhoneRaw.startsWith('58') ? storePhoneRaw : `58${storePhoneRaw}`}?text=${waText}`, '_blank');
                   }}

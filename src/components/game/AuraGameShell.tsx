@@ -161,6 +161,22 @@ export default function AuraGameShell({
     });
   }, [playUnlockSuccess]);
 
+  // Retorno desde la pasarela SPIDI: reabrir el producto de la reserva activa.
+  // El BottomSheet restaura el paso correcto consultando el estado real al servidor.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeReservation) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment_status') !== 'success') return;
+
+    const target = productsList.find(
+      (p) => p.id === activeReservation.product_id || p.name === activeReservation.product_name
+    );
+    if (target) {
+      setActiveMode('pases');
+      setSelectedProduct(target);
+    }
+  }, [activeReservation, productsList]);
+
   // Escuchar evento para abrir detalle de producto / reanudar reserva
   useEffect(() => {
     const handleOpenProduct = (e: any) => {
