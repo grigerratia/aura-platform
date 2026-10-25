@@ -45,23 +45,26 @@ export default function MostradorPage() {
 
   // Cargar IDs de alertas canceladas descartadas previamente
   useEffect(() => {
-    if (typeof window !== 'undefined' && storeId) {
+    if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem(`aura_dismissed_cancelled_${storeId}`);
-        if (saved) {
-          setDismissedCancelledIds(JSON.parse(saved));
-        }
+        const key = storeId ? `aura_dismissed_cancelled_${storeId}` : 'aura_dismissed_cancelled';
+        const saved = localStorage.getItem(key);
+        const globalSaved = localStorage.getItem('aura_dismissed_cancelled');
+        const list1 = saved ? JSON.parse(saved) : [];
+        const list2 = globalSaved ? JSON.parse(globalSaved) : [];
+        setDismissedCancelledIds(Array.from(new Set([...list1, ...list2].map(String))));
       } catch {}
     }
   }, [storeId]);
 
-  const handleDismissCancelled = useCallback((id: string, pin?: string) => {
+  const handleDismissCancelled = useCallback((id: string, pin?: string, pinCode?: string) => {
     setDismissedCancelledIds((prev) => {
-      const itemsToAdd = [id, pin].filter(Boolean) as string[];
+      const itemsToAdd = [id, pin, pinCode].filter(Boolean).map(String);
       const next = Array.from(new Set([...prev, ...itemsToAdd]));
-      if (typeof window !== 'undefined' && storeId) {
+      if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem(`aura_dismissed_cancelled_${storeId}`, JSON.stringify(next));
+          if (storeId) localStorage.setItem(`aura_dismissed_cancelled_${storeId}`, JSON.stringify(next));
+          localStorage.setItem('aura_dismissed_cancelled', JSON.stringify(next));
         } catch {}
       }
       return next;
@@ -582,7 +585,13 @@ export default function MostradorPage() {
   const cancelledAlerts = reservations.filter((r) => {
     if (r.status !== 'cancelled' && r.status !== 'cancelada') return false;
     const pin = r.pin || r.pin_code;
-    if (dismissedCancelledIds.includes(r.id) || (pin && dismissedCancelledIds.includes(pin))) {
+    const isDismissed = dismissedCancelledIds.some(
+      (d) =>
+        String(d) === String(r.id) ||
+        (pin && String(d) === String(pin)) ||
+        (r.pin_code && String(d) === String(r.pin_code))
+    );
+    if (isDismissed) {
       return false;
     }
     // Solo alertar de cancelaciones ocurridas en las últimas 2 horas
@@ -733,7 +742,7 @@ export default function MostradorPage() {
             <div className="flex items-center gap-3 min-w-0">
               <button
                 type="button"
-                onClick={() => handleDismissCancelled(res.id, res.pin)}
+                onClick={() => handleDismissCancelled(res.id, res.pin, res.pin_code)}
                 className="w-8 h-8 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-300 hover:text-white flex items-center justify-center font-bold shrink-0 cursor-pointer transition"
                 title="Descartar aviso"
               >
@@ -751,14 +760,14 @@ export default function MostradorPage() {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => handleDismissCancelled(res.id, res.pin)}
+                onClick={() => handleDismissCancelled(res.id, res.pin, res.pin_code)}
                 className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-[11px] font-bold border border-slate-700 cursor-pointer shrink-0 transition"
               >
                 Entendido
               </button>
               <button
                 type="button"
-                onClick={() => handleDismissCancelled(res.id, res.pin)}
+                onClick={() => handleDismissCancelled(res.id, res.pin, res.pin_code)}
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg cursor-pointer transition"
                 title="Descartar"
               >
@@ -942,58 +951,99 @@ export default function MostradorPage() {
             </div>
 
             {/* TARJETA DE RESERVA ENCONTRADA */}
-            {foundReservation && (
-              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border-2 border-teal-500/80 rounded-3xl p-6 shadow-2xl space-y-6 animate-in zoom-in-95">
-                <div className="flex items-start justify-between gap-3 border-b border-indigo-900/60 pb-4">
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-teal-400 bg-teal-950 border border-teal-800 px-2 py-0.5 rounded-full inline-block mb-1">
-                      Boleto #{foundReservation.pin} Verificado
-                    </span>
-                    <h3 className="text-xl font-black text-white">{foundReservation.product_name}</h3>
-                    <p className="text-xs text-slate-300 mt-1">
-                      Cliente: <strong>{foundReservation.customer_name}</strong> • {foundReservation.customer_phone}
-                    </p>
-                    {foundReservation.selected_size && (
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Talla / Opción: <strong className="text-white">{foundReservation.selected_size}</strong>
+            {foundReservation && (() => {
+              const isTicketConfirmed =
+                foundReservation.status === 'confirmed' ||
+                foundReservation.status === 'confirmada' ||
+                foundReservation.status === 'QR_ACTIVE';
+
+              const isWaitingClient =
+                foundReservation.status === 'STOCK_VERIFIED' ||
+                foundReservation.status === 'pending' ||
+                foundReservation.status === 'pendiente' ||
+                foundReservation.status === 'PENDING_STOCK_CHECK';
+
+              const isCancelled =
+                foundReservation.status === 'cancelled' ||
+                foundReservation.status === 'cancelada';
+
+              return (
+                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border-2 border-teal-500/80 rounded-3xl p-6 shadow-2xl space-y-6 animate-in zoom-in-95">
+                  <div className="flex items-start justify-between gap-3 border-b border-indigo-900/60 pb-4">
+                    <div>
+                      {isTicketConfirmed ? (
+                        <span className="text-[10px] font-black uppercase text-teal-400 bg-teal-950 border border-teal-800 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Boleto #{foundReservation.pin} Verificado • Listo para Retiro
+                        </span>
+                      ) : isWaitingClient ? (
+                        <span className="text-[10px] font-black uppercase text-amber-400 bg-amber-950 border border-amber-800 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Stock Confirmado • Esperando que el cliente elija (3h o 7d)
+                        </span>
+                      ) : isCancelled ? (
+                        <span className="text-[10px] font-black uppercase text-rose-400 bg-rose-950 border border-rose-800 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Pedido Cancelado por el Cliente
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-black uppercase text-slate-400 bg-slate-900 border border-slate-700 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Estado: {foundReservation.status}
+                        </span>
+                      )}
+                      <h3 className="text-xl font-black text-white">{foundReservation.product_name}</h3>
+                      <p className="text-xs text-slate-300 mt-1">
+                        Cliente: <strong>{foundReservation.customer_name}</strong> • {foundReservation.customer_phone}
                       </p>
-                    )}
+                      {foundReservation.selected_size && (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Talla / Opción: <strong className="text-white">{foundReservation.selected_size}</strong>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* MONTO A COBRAR EN CAJA FÍSICA */}
+                    <div className="text-right bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Cobrar en Mostrador</span>
+                      <span className="text-2xl font-black text-teal-400">
+                        ${foundReservation.store_pay_balance_usd?.toFixed(2) || foundReservation.price_usd?.toFixed(2)}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">USD en caja física</span>
+                    </div>
                   </div>
 
-                  {/* MONTO A COBRAR EN CAJA FÍSICA */}
-                  <div className="text-right bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Cobrar en Mostrador</span>
-                    <span className="text-2xl font-black text-teal-400">
-                      ${foundReservation.store_pay_balance_usd?.toFixed(2) || foundReservation.price_usd?.toFixed(2)}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">USD en caja física</span>
-                  </div>
-                </div>
+                  {/* ACCIONES DE COBRO: SOLO SI EL BOLETO ESTÁ CONFIRMADO */}
+                  {isTicketConfirmed ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      {/* ACCIÓN 1: COBRO EXITOSO */}
+                      <button
+                        onClick={() => handleCompleteSale(foundReservation)}
+                        disabled={actionLoading}
+                        className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black p-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 active:scale-98 disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={20} />
+                        <span>✓ Cobrar en Caja y Entregar</span>
+                      </button>
 
-                {/* ACCIONES DE COBRO Y CANDADO DE CONFIANZA */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  {/* ACCIÓN 1: COBRO EXITOSO */}
-                  <button
-                    onClick={() => handleCompleteSale(foundReservation)}
-                    disabled={actionLoading}
-                    className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black p-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 active:scale-98 disabled:opacity-50"
-                  >
-                    <CheckCircle2 size={20} />
-                    <span>✓ Cobrar en Caja y Entregar</span>
-                  </button>
-
-                  {/* ACCIÓN 2: CLIENTE ASISTIÓ PERO NO LLEVÓ (CANDADO DE CONFIANZA) */}
-                  <button
-                    onClick={() => handleAttendedNoSale(foundReservation)}
-                    disabled={actionLoading}
-                    className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-600/40 font-bold p-4 rounded-2xl text-xs flex items-center justify-center gap-2 transition active:scale-98 disabled:opacity-50"
-                  >
-                    <X size={18} />
-                    <span>Cliente vino pero no llevó (Liberar a Billetera)</span>
-                  </button>
+                      {/* ACCIÓN 2: CLIENTE ASISTIÓ PERO NO LLEVÓ (CANDADO DE CONFIANZA) */}
+                      <button
+                        onClick={() => handleAttendedNoSale(foundReservation)}
+                        disabled={actionLoading}
+                        className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-600/40 font-bold p-4 rounded-2xl text-xs flex items-center justify-center gap-2 transition active:scale-98 disabled:opacity-50"
+                      >
+                        <X size={18} />
+                        <span>Cliente vino pero no llevó (Liberar a Billetera)</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-amber-950/30 border border-amber-800/50 rounded-2xl text-xs text-amber-300 text-center">
+                      {isWaitingClient
+                        ? 'El cliente aún no ha completado su opción de retiro ni el pago inicial. Debes esperar a que el cliente confirme su boleto en la app.'
+                        : isCancelled
+                        ? 'Este pedido fue cancelado. La unidad queda disponible para la venta general.'
+                        : 'El boleto aún no está disponible para canje en caja física.'}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* LISTA RÁPIDA DE BOLETOS ACTIVOS HOY */}
             <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 space-y-3">

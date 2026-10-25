@@ -703,34 +703,29 @@ export default function ProductBottomSheet({
     playUnlockSuccess();
     onSuccessUnlock();
 
-    // Actualizar en Supabase de forma segura y con fallback garantizado
+    // Actualizar en Supabase de forma segura con columnas nativas garantizadas
     const resId = activeRes.id;
     const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
 
     try {
-      const fullUpdate = {
+      const guaranteedUpdate = {
         status: 'confirmed',
         pin_code: officialPin,
-        payment_method: 'en_tienda',
-        payment_type: 'reserva_3h',
-        current_step: 'OPTION_A_TICKET',
         unlock_fee_usd: 0,
         store_pay_balance_usd: auraPrice,
       };
 
       const query = isValidUUID
-        ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
-        : supabase.from('reservations').update(fullUpdate).eq('pin_code', officialPin);
+        ? supabase.from('reservations').update(guaranteedUpdate).eq('id', resId)
+        : supabase.from('reservations').update(guaranteedUpdate).eq('pin_code', officialPin);
 
-      const { error: fullError } = await query;
+      const { error: gErr } = await query;
 
-      if (fullError) {
-        console.warn('Fallback a actualizacion core de status confirmed:', fullError.message);
+      if (gErr) {
+        console.warn('Fallback a actualizacion core de status confirmed:', gErr.message);
         const coreUpdate = {
           status: 'confirmed',
           pin_code: officialPin,
-          unlock_fee_usd: 0,
-          store_pay_balance_usd: auraPrice,
         };
         if (isValidUUID) {
           await supabase.from('reservations').update(coreUpdate).eq('id', resId);
@@ -803,12 +798,11 @@ export default function ProductBottomSheet({
         if (cancelErr) {
           const coreUpdate = {
             status: 'cancelled',
-            aura_fee_status: 'refunded_to_wallet',
           };
           if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
           if (targetPin) await supabase.from('reservations').update(coreUpdate).eq('pin_code', targetPin);
         } else if (isValidUUID && targetPin) {
-          await supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
+          await supabase.from('reservations').update({ status: 'cancelled' }).eq('pin_code', targetPin);
         }
 
         if (typeof window !== 'undefined') {
@@ -860,23 +854,6 @@ export default function ProductBottomSheet({
       };
       setActiveRes(updatedRes);
       setActiveReservation(updatedRes);
-
-      // Persistir de inmediato en Supabase de forma segura
-      try {
-        const resId = activeRes.id;
-        const targetPin = activeRes.pin_code || activeRes.pin;
-        const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
-        
-        const fullUpdate = {
-          payment_type: 'apartado_7d',
-          current_step: 'OPTION_B_LAYAWAY',
-        };
-        const query = isValidUUID
-          ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
-          : supabase.from('reservations').update(fullUpdate).eq('pin_code', targetPin);
-        
-        await query;
-      } catch {}
     }
     setLayawaySubStep(1);
     setStep('OPTION_B_LAYAWAY');
@@ -938,52 +915,34 @@ export default function ProductBottomSheet({
       } catch {}
     }
 
-    // Actualizar en Supabase de forma segura y con fallback garantizado
+    // Actualizar en Supabase de forma segura con columnas nativas garantizadas
     try {
       const resId = activeRes.id;
+      const targetPin = activeRes.pin_code || activeRes.pin || officialPin;
       const isValidUUID = Boolean(resId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resId));
 
-      const fullUpdate = {
+      const guaranteedUpdate: Record<string, any> = {
         status: 'confirmed',
         pin_code: officialPin,
-        payment_method: 'pago_movil',
-        payment_type: 'apartado_7d',
-        payment_reference: finalStoreRef,
-        customer_phone: customerPhone.trim(),
+        customer_phone: `${customerPhone.trim()} [REF: #${finalStoreRef}]`,
         unlock_fee_usd: auraUnlockFeeUSD,
-        aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
-        aura_fee_status: spidiPaid || payAuraWithWallet ? 'paid' : 'pending',
-        aura_fee_mode: 'radar',
-        spidi_session_id: spidiSession?.sessionId || null,
-        spidi_status: spidiPaid ? 'paid' : null,
-        spidi_bank_reference: spidiBankRef || null,
-        initial_deposit: deposit30USD,
         store_pay_balance_usd: remaining70USD,
       };
 
-      const query = isValidUUID
-        ? supabase.from('reservations').update(fullUpdate).eq('id', resId)
-        : supabase.from('reservations').update(fullUpdate).eq('pin_code', officialPin);
+      if (isValidUUID) {
+        const { error: gErr } = await supabase.from('reservations').update(guaranteedUpdate).eq('id', resId);
+        if (gErr) {
+          console.warn('Fallback a actualizacion minima por id en handleConfirmApartadoPagoMovil:', gErr.message);
+          await supabase.from('reservations').update({ status: 'confirmed', pin_code: officialPin }).eq('id', resId);
+        }
+      }
 
-      const { error: fullError } = await query;
-
-      if (fullError) {
-        console.warn('Fallback a actualizacion base en handleConfirmApartadoPagoMovil:', fullError.message);
-        const coreUpdate: Record<string, any> = {
-          status: 'confirmed',
-          pin_code: officialPin,
-          customer_phone: `${customerPhone.trim()} | REF: #${finalStoreRef} (Pago Móvil 30%)`,
-          unlock_fee_usd: auraUnlockFeeUSD,
-          aura_fee_reference: pagoMovilAuraRef.trim() || (payAuraWithWallet ? 'BILLETERA' : ''),
-          aura_fee_status: spidiPaid || payAuraWithWallet ? 'paid' : 'pending',
-          aura_fee_mode: 'radar',
-          store_pay_balance_usd: remaining70USD,
-        };
-        if (spidiSession?.sessionId) coreUpdate.spidi_session_id = spidiSession.sessionId;
-        if (spidiPaid) coreUpdate.spidi_status = 'paid';
-        if (spidiBankRef) coreUpdate.spidi_bank_reference = spidiBankRef;
-
-        if (isValidUUID) await supabase.from('reservations').update(coreUpdate).eq('id', resId);
+      if (targetPin) {
+        const { error: pErr } = await supabase.from('reservations').update(guaranteedUpdate).eq('pin_code', targetPin);
+        if (pErr) {
+          console.warn('Fallback a actualizacion minima por pin_code:', pErr.message);
+          await supabase.from('reservations').update({ status: 'confirmed' }).eq('pin_code', targetPin);
+        }
       }
     } catch (err) {
       console.warn('Error actualizando reserva en Supabase:', err);
@@ -1588,18 +1547,6 @@ export default function ProductBottomSheet({
                             <span className="text-[#00ffb2] font-bold">Liquidado • Turno Protegido</span>
                           </div>
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            playTap();
-                            setLayawaySubStep(2);
-                          }}
-                          className="cursor-pointer w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3 rounded-xl text-xs transition shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 active:scale-95"
-                        >
-                          <span>Continuar al Paso 2: Abono para la Tienda</span>
-                          <ArrowRight size={14} />
-                        </button>
                       </div>
                     ) : spidiSession ? (
                       /* ESTADO: SESIÓN SPIDI ACTIVA (QR + ENLACE) */
@@ -1734,23 +1681,25 @@ export default function ProductBottomSheet({
                     )}
                   </div>
 
-                  {/* Botón avanzar al paso 2 */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()) {
-                        alert('Completa el pago del arancel con SPIDI, tu Billetera o ingresa la referencia de transferencia.');
-                        return;
-                      }
-                      playTap();
-                      setLayawaySubStep(2);
-                    }}
-                    disabled={!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()}
-                    className="cursor-pointer w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-40"
-                  >
-                    <span>Continuar al Paso 2: Abono 30% a la Tienda</span>
-                    <ArrowRight size={14} />
-                  </button>
+                  {/* Botón avanzar al paso 2 (solo visible cuando ya pagó o está ingresando datos manuales/billetera) */}
+                  {(spidiPaid || payAuraWithWallet || Boolean(pagoMovilAuraRef.trim()) || showManualAuraPay || !spidiSession) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()) {
+                          alert('Completa el pago del arancel con SPIDI, tu Billetera o ingresa la referencia de transferencia.');
+                          return;
+                        }
+                        playTap();
+                        setLayawaySubStep(2);
+                      }}
+                      disabled={!spidiPaid && !payAuraWithWallet && !pagoMovilAuraRef.trim()}
+                      className="cursor-pointer w-full bg-gradient-to-r from-emerald-500 via-[#00ffb2] to-teal-400 hover:brightness-110 text-slate-950 font-black py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-40"
+                    >
+                      <span>Continuar al Paso 2: Abono 30% a la Tienda</span>
+                      <ArrowRight size={14} />
+                    </button>
+                  )}
                 </div>
               )}
 

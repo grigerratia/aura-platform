@@ -286,11 +286,11 @@ export default function PasesMode({ onOpenWallet, onExploreRadar }: Props) {
           : await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
 
         if (dbResult?.error) {
-          const coreData = { status: 'cancelled', aura_fee_status: 'refunded_to_wallet' };
+          const coreData = { status: 'cancelled' };
           if (isValidUUID) await supabase.from('reservations').update(coreData).eq('id', targetId);
           if (targetPin) await supabase.from('reservations').update(coreData).eq('pin_code', targetPin);
         } else if (isValidUUID && targetPin) {
-          await supabase.from('reservations').update(updateData).eq('pin_code', targetPin);
+          await supabase.from('reservations').update({ status: 'cancelled' }).eq('pin_code', targetPin);
         }
 
         window.dispatchEvent(new CustomEvent('aura_wallet_updated'));
