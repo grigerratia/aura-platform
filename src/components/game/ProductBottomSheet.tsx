@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Product, Store, Reservation } from '@/types';
+import { Product, Store, Reservation, ReservationStatus } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { useReservations, recordCompletedPurchase } from '@/store/useReservations';
 import { supabase } from '@/lib/supabase';
@@ -227,11 +227,16 @@ export default function ProductBottomSheet({
         }
       } else if (activeReservation.payment_type === 'reserva_3h') {
         setStep('OPTION_A_TICKET');
-      } else if (activeReservation.status === 'confirmed' || activeReservation.status === 'confirmada') {
-        setStockConfirmationType('green');
-        setStep('STOCK_CONFIRMED');
-      } else if (activeReservation.status === 'ultimo_par') {
-        setStockConfirmationType('yellow');
+      } else if (
+        activeReservation.status === 'confirmed' ||
+        activeReservation.status === 'confirmada' ||
+        activeReservation.status === 'STOCK_VERIFIED' ||
+        activeReservation.status === 'ultimo_par'
+      ) {
+        const isYellow =
+          activeReservation.status === 'ultimo_par' ||
+          activeReservation.payment_type === 'ultimo_par';
+        setStockConfirmationType(isYellow ? 'yellow' : 'green');
         setStep('STOCK_CONFIRMED');
       } else if (activeReservation.status === 'pending' || activeReservation.status === 'PENDING_STOCK_CHECK') {
         setStep('WAITING_VERIFICATION');
@@ -512,23 +517,27 @@ export default function ProductBottomSheet({
 
       // 2. SI ESTÁBAMOS ESPERANDO EL SEMÁFORO DE DISPONIBILIDAD
       else if (step === 'WAITING_VERIFICATION') {
-        if (status === 'confirmed' || status === 'confirmada' || status === 'STOCK_VERIFIED') {
+        const isYellow =
+          status === 'ultimo_par' ||
+          dbData?.payment_type === 'ultimo_par' ||
+          activeRes?.payment_type === 'ultimo_par';
+
+        if (
+          status === 'confirmed' ||
+          status === 'confirmada' ||
+          status === 'STOCK_VERIFIED' ||
+          status === 'ultimo_par'
+        ) {
           playUnlockSuccess();
-          setStockConfirmationType('green');
+          setStockConfirmationType(isYellow ? 'yellow' : 'green');
           setStep('STOCK_CONFIRMED');
           setActiveRes((prev) => {
             if (!prev) return null;
-            const updated = { ...prev, status: 'confirmed' as const };
-            setActiveReservation(updated);
-            return updated;
-          });
-        } else if (status === 'ultimo_par') {
-          playUnlockSuccess();
-          setStockConfirmationType('yellow');
-          setStep('STOCK_CONFIRMED');
-          setActiveRes((prev) => {
-            if (!prev) return null;
-            const updated = { ...prev, status: 'ultimo_par' as const };
+            const updated: Reservation = {
+              ...prev,
+              status: (isYellow ? 'ultimo_par' : 'confirmed') as ReservationStatus,
+              payment_type: isYellow ? 'ultimo_par' : prev.payment_type,
+            };
             setActiveReservation(updated);
             return updated;
           });

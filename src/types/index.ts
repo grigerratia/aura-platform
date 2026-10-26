@@ -156,7 +156,7 @@ export type ReservationStatus =
   | 'completada'
   | 'expirada';
 
-export type PaymentOption = 'reserva_3h' | 'reserva_48h' | 'delivery' | 'apartado_7d' | 'apartado_15d';
+export type PaymentOption = 'reserva_3h' | 'reserva_48h' | 'delivery' | 'apartado_7d' | 'apartado_15d' | 'ultimo_par';
 
 // Ticket de Reserva Digital
 export interface Reservation {

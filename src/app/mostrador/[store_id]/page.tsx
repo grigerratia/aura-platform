@@ -244,17 +244,41 @@ export default function MostradorPage() {
   ) => {
     setActionLoading(true);
     try {
-      // Preservar exactamente el estado elegido: Verde ('STOCK_VERIFIED'), Amarillo ('ultimo_par'), Rojo ('cancelled')
+      // En la BD el estado válido en el check constraint es 'STOCK_VERIFIED' tanto para verde como para amarillo
       const targetDbStatus = newStatus === 'cancelled'
         ? 'cancelled'
-        : newStatus === 'ultimo_par'
-        ? 'ultimo_par'
         : 'STOCK_VERIFIED';
 
-      await supabase
-        .from('reservations')
-        .update({ status: targetDbStatus })
-        .eq('id', reservation.id);
+      const updatePayload: any = { status: targetDbStatus };
+      if (newStatus === 'ultimo_par') {
+        updatePayload.payment_type = 'ultimo_par';
+      }
+
+      const isValidUUID = Boolean(reservation.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reservation.id));
+      const targetPin = reservation.pin_code || reservation.pin;
+
+      // Actualización optimista inmediata en la UI local para ocultar de inmediato el semáforo de 3 botones
+      setReservations((prev) =>
+        prev.map((r) =>
+          (isValidUUID && r.id === reservation.id) || (targetPin && (r.pin === targetPin || r.pin_code === targetPin))
+            ? { ...r, status: targetDbStatus, ...(newStatus === 'ultimo_par' ? { payment_type: 'ultimo_par' } : {}) }
+            : r
+        )
+      );
+
+      if (isValidUUID) {
+        await supabase
+          .from('reservations')
+          .update(updatePayload)
+          .eq('id', reservation.id);
+      }
+
+      if (targetPin) {
+        await supabase
+          .from('reservations')
+          .update(updatePayload)
+          .eq('pin_code', targetPin);
+      }
 
       // Apagar producto en el catálogo si es Amarillo (último par tomado por el cliente) o Rojo (agotado)
       if (newStatus === 'ultimo_par' || newStatus === 'cancelled') {
