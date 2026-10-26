@@ -47,10 +47,11 @@ export async function settleSession(
     .eq('session_id', tx.session_id);
   if (txErr) throw new Error(`No se pudo actualizar spidi_transactions: ${txErr.message}`);
 
-  if (tx.phase === 'aura_fee') {
+ if (tx.phase === 'aura_fee' && tx.reservation_pin) {
     const { error } = await supabase
       .from('reservations')
       .update({
+        spidi_aura_session_id: tx.session_id,
         aura_fee_status: 'paid',
         aura_fee_verified_at: now,
         aura_fee_reference: ref,
@@ -58,12 +59,13 @@ export async function settleSession(
         spidi_bank_reference: ref,
         updated_at: now,
       })
-      .eq('spidi_aura_session_id', tx.session_id);
+      .eq('pin_code', tx.reservation_pin);
     if (error) console.warn('[SPIDI Settlement] reservations (aura_fee):', error.message);
-  } else if (tx.phase === 'store_payment') {
+  } else if (tx.phase === 'store_payment' && tx.reservation_pin) {
     const { error } = await supabase
       .from('reservations')
       .update({
+        spidi_store_session_id: tx.session_id,
         status: 'confirmed',
         payment_method: 'pago_movil',
         payment_reference: ref,
@@ -71,7 +73,7 @@ export async function settleSession(
         spidi_store_bank_reference: ref,
         updated_at: now,
       })
-      .eq('spidi_store_session_id', tx.session_id);
+      .eq('pin_code', tx.reservation_pin);
     if (error) console.warn('[SPIDI Settlement] reservations (store_payment):', error.message);
   }
 

@@ -70,6 +70,17 @@ export async function POST(req: NextRequest) {
           .maybeSingle();
         auraPaid = isPaidStatus(auraTx?.status);
       }
+      if (!auraPaid) {
+        const { data: auraByPin } = await supabase
+          .from('spidi_transactions')
+          .select('status')
+          .eq('reservation_pin', cleanPin)
+          .eq('phase', 'aura_fee')
+          .in('status', ['paid', 'accredited'])
+          .limit(1)
+          .maybeSingle();
+        auraPaid = Boolean(auraByPin);
+      }
       if (!auraPaid && reservation.aura_fee_status !== 'paid') {
         return NextResponse.json(
           { error: 'Primero debes completar el desbloqueo de Aura (Pago 1).' },
@@ -100,7 +111,8 @@ export async function POST(req: NextRequest) {
         : `Apartado en tienda: ${productName || reservation.product_name || 'Producto'}`.slice(0, 100);
 
     const config = getSpidiConfig();
-    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://aura-platform.vercel.app').replace(/\/+$/, '');
+    // const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://aura-platform.vercel.app').replace(/\/+$/, '');
+    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/+$/, '');
 
     // 3. Marcar como reemplazadas las sesiones activas previas de ESTA fase (índice único parcial)
     await supabase
