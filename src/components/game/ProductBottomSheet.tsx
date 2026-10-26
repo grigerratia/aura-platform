@@ -9,7 +9,7 @@ import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
   AlertCircle, ArrowRight, ShieldCheck,
   MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap,
-  Smartphone, Loader2, QrCode, RefreshCw
+  Smartphone, Loader2, QrCode, RefreshCw, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -1789,6 +1789,22 @@ export default function ProductBottomSheet({
                           </button>
                         </div>
 
+                        {/* ⚠️ Nota para dev: Eliminar este bloque al desplegar a producción */}
+                        <div className="pt-1.5 border-t border-amber-500/20 text-center space-y-1">
+                          <span className="text-[9px] text-amber-400/90 font-mono block">
+                            ⚠️ Nota para dev: Eliminar este bloque al desplegar a producción
+                          </span>
+                          <a
+                            href={spidiSession.paymentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-lg text-[11px] font-medium transition cursor-pointer"
+                          >
+                            <ExternalLink size={12} />
+                            <span>Simular Pago en Sandbox SPIDI</span>
+                          </a>
+                        </div>
+
                         <div className="text-center pt-0.5">
                           <p className="text-[10px] text-slate-500 font-mono">
                             Desarrollado por SPIDI • Pagos Inmediatos
@@ -2045,6 +2061,22 @@ export default function ProductBottomSheet({
                             <RefreshCw size={13} className={spidiStoreLoading ? 'animate-spin text-indigo-400' : ''} />
                             <span>Comprobar abono a la tienda</span>
                           </button>
+                        </div>
+
+                        {/* ⚠️ Nota para dev: Eliminar este bloque al desplegar a producción */}
+                        <div className="pt-1.5 border-t border-amber-500/20 text-center space-y-1">
+                          <span className="text-[9px] text-amber-400/90 font-mono block">
+                            ⚠️ Nota para dev: Eliminar este bloque al desplegar a producción
+                          </span>
+                          <a
+                            href={spidiStoreSession.paymentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-lg text-[11px] font-medium transition cursor-pointer"
+                          >
+                            <ExternalLink size={12} />
+                            <span>Simular Pago Tienda en Sandbox SPIDI</span>
+                          </a>
                         </div>
 
                         <div className="text-center pt-0.5">
