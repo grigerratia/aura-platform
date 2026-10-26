@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No se encontró la reserva asociada al pago.' }, { status: 404 });
     }
 
-    const priceUsd = Number(reservation.price_usd);
+    const priceUsd = Number(reservation.total_price || reservation.price_usd);
     if (!priceUsd || isNaN(priceUsd) || priceUsd <= 0) {
       return NextResponse.json({ error: 'La reserva no tiene un precio válido.' }, { status: 400 });
     }
