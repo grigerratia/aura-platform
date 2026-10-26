@@ -1389,9 +1389,10 @@ export default function ProductBottomSheet({
                 <button
                   type="button"
                   onClick={handleCancelOrder}
-                  className="flex items-center justify-center gap-1.5 text-xs text-rose-400/90 hover:text-rose-300 transition py-2 px-4 rounded-xl border border-rose-950/60 bg-rose-950/20 hover:bg-rose-950/40 cursor-pointer"
+                  disabled={isSubmitting}
+                  className="w-full max-w-xs flex items-center justify-center gap-2 text-xs text-rose-300 hover:text-rose-200 font-semibold transition py-2.5 px-4 rounded-xl border border-rose-500/30 bg-rose-950/20 hover:bg-rose-950/40 cursor-pointer active:scale-98 disabled:opacity-50"
                 >
-                  <X size={14} />
+                  <X size={14} className="text-rose-400 shrink-0" />
                   <span>Cancelar solicitud</span>
                 </button>
 
@@ -1514,13 +1515,14 @@ export default function ProductBottomSheet({
                 </div>
 
                 {/* BOTÓN CANCELAR SOLICITUD ANTES DE ELEGIR */}
-                <div className="pt-2 text-center">
+                <div className="pt-3 border-t border-slate-850">
                   <button
                     type="button"
                     onClick={handleCancelOrder}
-                    className="text-xs text-slate-500 hover:text-rose-400 underline transition cursor-pointer font-light inline-flex items-center gap-1"
+                    disabled={isSubmitting}
+                    className="w-full py-2.5 px-4 rounded-xl border border-rose-500/30 bg-rose-950/20 hover:bg-rose-950/40 text-rose-300 hover:text-rose-200 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer active:scale-98 disabled:opacity-50"
                   >
-                    <X size={13} />
+                    <X size={14} className="text-rose-400 shrink-0" />
                     <span>Cancelar solicitud y liberar este producto</span>
                   </button>
                 </div>
@@ -2182,20 +2184,24 @@ export default function ProductBottomSheet({
                 </form>
               )}
 
-              {/* BOTÓN CANCELAR APARTADO CON REEMBOLSO A BILLETERA */}
-              <div className="pt-2 text-center border-t border-slate-800/60">
+              {/* BOTÓN DE CANCELACIÓN CON ALTA VISIBILIDAD */}
+              <div className="pt-3 border-t border-slate-850 space-y-1.5">
                 <button
                   type="button"
                   onClick={handleCancelOrder}
-                  className="text-xs text-slate-500 hover:text-rose-400 underline transition cursor-pointer font-light inline-flex items-center gap-1"
+                  disabled={isSubmitting}
+                  className="w-full py-3 px-4 rounded-xl border border-rose-500/30 bg-rose-950/20 hover:bg-rose-950/40 text-rose-300 hover:text-rose-200 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer shadow-sm active:scale-98 disabled:opacity-50"
                 >
-                  <X size={13} />
+                  <X size={14} className="text-rose-400 shrink-0" />
                   <span>
                     {spidiPaid || activeRes?.aura_fee_status === 'paid'
                       ? `Cancelar apartado (Reembolsar $${auraUnlockFeeUSD.toFixed(2)} USD a Billetera)`
-                      : 'Cancelar este apartado'}
+                      : 'Cancelar este apartado y liberar producto'}
                   </span>
                 </button>
+                <p className="text-[10px] text-slate-500 text-center font-light">
+                  Puedes cancelar en cualquier momento si decides no completar el pago.
+                </p>
               </div>
             </div>
           )}
