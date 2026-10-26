@@ -1503,13 +1503,18 @@ export default function OwnerDashboard() {
                             )}
                             <p>Cliente: <span className="text-white font-medium">{res.customer_name}</span> ({res.customer_phone})</p>
                             
-                            {res.unlock_fee_usd && res.unlock_fee_usd > 0 ? (
-                              <div className="p-2 bg-[#020508] rounded-xl border border-slate-900 mt-1.5 text-xs">
-                                <span className="text-slate-400">Cobrar en caja: </span>
-                                <strong className="text-white font-black">${(res.store_pay_balance_usd ?? res.price_usd).toFixed(2)} USD</strong>
-                                <span className="text-emerald-400 ml-1.5 font-bold">Bs. {res.price_ves}</span>
-                              </div>
-                            ) : (
+                            {res.unlock_fee_usd && res.unlock_fee_usd > 0 ? (() => {
+                              const balanceUsd = Number(res.store_pay_balance_usd ?? res.price_usd ?? 0);
+                              const rate = Number(res.bcv_rate || res.tasa || (res.price_usd > 0 ? res.price_ves / res.price_usd : 0) || tasaUsed || 55);
+                              const balanceVes = balanceUsd <= 0 ? 0 : Number((balanceUsd * rate).toFixed(2));
+                              return (
+                                <div className="p-2 bg-[#020508] rounded-xl border border-slate-900 mt-1.5 text-xs">
+                                  <span className="text-slate-400">Cobrar en caja: </span>
+                                  <strong className="text-white font-black">${balanceUsd.toFixed(2)} USD</strong>
+                                  <span className="text-emerald-400 ml-1.5 font-bold">Bs. {balanceVes}</span>
+                                </div>
+                              );
+                            })() : (
                               <p className="pt-1">Total en caja: <strong className="text-white font-black">${res.price_usd} USD</strong> (Bs. {res.price_ves})</p>
                             )}
                           </div>
@@ -1706,11 +1711,18 @@ export default function OwnerDashboard() {
                         <span className="text-lg font-black text-white">
                           ${(res.store_pay_balance_usd ?? res.price_usd).toFixed(2)} USD
                         </span>
-                        {res.price_ves && (
-                          <span className="block text-[11px] text-emerald-400 font-mono">
-                            Bs. {res.price_ves}
-                          </span>
-                        )}
+                        {(() => {
+                          const balanceUsd = Number(res.store_pay_balance_usd ?? res.price_usd ?? 0);
+                          const rate = Number(res.bcv_rate || res.tasa || (res.price_usd > 0 ? res.price_ves / res.price_usd : 0) || tasaUsed || 55);
+                          const balanceVes = res.unlock_fee_usd && res.unlock_fee_usd > 0
+                            ? (balanceUsd <= 0 ? 0 : Number((balanceUsd * rate).toFixed(2)))
+                            : res.price_ves;
+                          return (
+                            <span className="block text-[11px] text-emerald-400 font-mono">
+                              Bs. {balanceVes}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
