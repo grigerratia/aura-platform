@@ -401,25 +401,46 @@ export default function OwnerDashboard() {
           });
         }
 
-        // Apagar el producto en Radar (si es último par lo tomó este cliente; si es rojo está agotado)
-        if (reservation.store_id && reservation.product_id) {
+        const prodId = reservation.product_id || (reservation as any).products?.id;
+
+        // 1. Actualizar tabla products (inactivo y stock/inventario en 0)
+        if (prodId) {
+          const productPayloads = [
+            { is_active: false, stock: 0, status: 'inactive' },
+            { is_active: false, stock: 0 },
+            { is_active: false, stock_quota: 0 },
+            { is_active: false },
+            { status: 'inactive', stock: 0 },
+            { status: 'inactive' },
+          ];
+          for (const payload of productPayloads) {
+            const { error: pErr } = await supabase
+              .from('products')
+              .update(payload)
+              .eq('id', prodId);
+            if (!pErr) break;
+          }
+        }
+
+        // 2. Apagar el producto en Radar / store_products (si es último par lo tomó este cliente; si es rojo está agotado)
+        if (reservation.store_id && prodId) {
           await supabase
             .from('store_products')
             .update({ is_active: false, stock: 0 })
             .eq('store_id', reservation.store_id)
-            .eq('product_id', reservation.product_id);
+            .eq('product_id', prodId);
         }
 
-        if (reservation.product_id) {
+        if (prodId) {
           await supabase
             .from('store_products')
             .update({ is_active: false, stock: 0 })
-            .eq('id', reservation.product_id);
+            .eq('id', prodId);
 
           await supabase
             .from('store_products')
             .update({ is_active: false, stock: 0 })
-            .eq('product_id', reservation.product_id);
+            .eq('product_id', prodId);
         }
       }
 
