@@ -108,22 +108,25 @@ export default function MostradorPage() {
     try {
       const { data, error } = await supabase
         .from('reservations')
-        .select('*')
+        .select('*, products(name)')
         .eq('store_id', storeId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (!error && data) {
         const mapped: Reservation[] = data.map((r: any) => {
           const priceUsd = Number(r.total_price || r.price_usd || 0);
+          const hasExplicitBalance =
+            r.store_pay_balance_usd !== null && r.store_pay_balance_usd !== undefined;
           return {
             ...r,
             product_name: r.products?.name || r.product_name || 'Producto Reservado',
-            image_url: r.products?.imageUrl || r.product_image || r.image_url,
+            image_url: r.product_image || r.image_url,
             category_archetype: r.category_archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
             aura_price_usd: r.aura_price_usd ? Number(r.aura_price_usd) : priceUsd,
             unlock_fee_usd: r.unlock_fee_usd ? Number(r.unlock_fee_usd) : 0,
-            store_pay_balance_usd: r.store_pay_balance_usd
+            store_pay_balance_usd: hasExplicitBalance
               ? Number(r.store_pay_balance_usd)
               : priceUsd - (Number(r.unlock_fee_usd) || 0),
             pin: r.pin || r.pin_code || (r.id ? r.id.slice(0, 4).toUpperCase() : '0000')
@@ -331,15 +334,17 @@ export default function MostradorPage() {
 
         if (dbRes) {
           const priceUsd = Number(dbRes.total_price || dbRes.price_usd || 0);
+          const hasExplicitBalance =
+            dbRes.store_pay_balance_usd !== null && dbRes.store_pay_balance_usd !== undefined;
           found = {
             ...dbRes,
             product_name: dbRes.products?.name || dbRes.product_name || 'Producto Reservado',
-            image_url: dbRes.products?.imageUrl || dbRes.image_url,
+            image_url: dbRes.image_url,
             category_archetype: dbRes.products?.archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
             aura_price_usd: dbRes.aura_price_usd ? Number(dbRes.aura_price_usd) : priceUsd,
             unlock_fee_usd: dbRes.unlock_fee_usd ? Number(dbRes.unlock_fee_usd) : 0,
-            store_pay_balance_usd: dbRes.store_pay_balance_usd
+            store_pay_balance_usd: hasExplicitBalance
               ? Number(dbRes.store_pay_balance_usd)
               : priceUsd - (Number(dbRes.unlock_fee_usd) || 0),
             pin: dbRes.pin || dbRes.pin_code || clean
@@ -360,7 +365,12 @@ export default function MostradorPage() {
 
   // Cobro y Entrega en Mostrador: Aumenta nivel de confianza (trust_score) en Aura
   const handleCompleteSale = async (reservation: Reservation) => {
-    if (!confirm(`¿Confirmar cobro de $${reservation.store_pay_balance_usd?.toFixed(2) || reservation.price_usd?.toFixed(2)} y entrega del producto?`)) return;
+    const balanceToCharge = Number(reservation.store_pay_balance_usd ?? reservation.price_usd ?? 0);
+    const confirmMsg =
+      balanceToCharge <= 0
+        ? '¿Confirmar entrega del producto? (Ya fue pagado al 100% online)'
+        : `¿Confirmar cobro de $${balanceToCharge.toFixed(2)} y entrega del producto?`;
+    if (!confirm(confirmMsg)) return;
     setActionLoading(true);
     try {
       const targetPin = reservation.pin_code || reservation.pin;
@@ -991,11 +1001,19 @@ export default function MostradorPage() {
 
                     {/* MONTO A COBRAR EN CAJA FÍSICA */}
                     <div className="text-right bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Cobrar en Mostrador</span>
-                      <span className="text-2xl font-black text-teal-400">
-                        ${foundReservation.store_pay_balance_usd?.toFixed(2) || foundReservation.price_usd?.toFixed(2)}
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                        {Number(foundReservation.store_pay_balance_usd ?? foundReservation.price_usd ?? 0) <= 0
+                          ? 'Estado de Pago'
+                          : 'Cobrar en Mostrador'}
                       </span>
-                      <span className="text-[10px] text-slate-400 block">USD en caja física</span>
+                      <span className="text-2xl font-black text-teal-400">
+                        ${Number(foundReservation.store_pay_balance_usd ?? foundReservation.price_usd ?? 0).toFixed(2)}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        {Number(foundReservation.store_pay_balance_usd ?? foundReservation.price_usd ?? 0) <= 0
+                          ? 'PAGADO 100% ONLINE'
+                          : 'USD en caja física'}
+                      </span>
                     </div>
                   </div>
 
