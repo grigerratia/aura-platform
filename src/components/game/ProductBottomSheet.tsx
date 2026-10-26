@@ -9,7 +9,7 @@ import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
   AlertCircle, ArrowRight, ShieldCheck,
   MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap,
-  Smartphone, ExternalLink, Loader2, QrCode, RefreshCw
+  Smartphone, Loader2, QrCode, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -1709,37 +1709,67 @@ export default function ProductBottomSheet({
                         </div>
                       </div>
                     ) : spidiSession ? (
-                      /* ESTADO: SESIÓN SPIDI ACTIVA (QR + ENLACE) */
-                      <div className="p-3 bg-[#020508] border border-slate-800 rounded-2xl space-y-3">
-                        <div className="flex items-center justify-between">
+                      /* ESTADO: SESIÓN SPIDI ACTIVA (EXPERIENCIA 100% NATIVA AURA) */
+                      <div className="p-3.5 bg-[#020508] border border-emerald-500/30 rounded-2xl space-y-3 shadow-xl shadow-emerald-500/5">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                           <span className="text-xs font-bold text-white flex items-center gap-1.5">
                             <QrCode size={15} className="text-[#00ffb2]" />
-                            Escanea o paga en línea
+                            Billetera de Pago Móvil Integrada
                           </span>
-                          <span className="text-xs font-black text-[#00ffb2]">${auraUnlockFeeUSD.toFixed(2)} USD</span>
+                          <div className="text-right">
+                            <span className="text-xs font-black text-[#00ffb2] block">${auraUnlockFeeUSD.toFixed(2)} USD</span>
+                            <span className="text-[10px] font-mono text-emerald-400 font-bold">Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
+                          </div>
                         </div>
 
                         {spidiSession.paymentQr && (
                           <div className="flex flex-col items-center py-1">
-                            <img
-                              src={spidiSession.paymentQr}
-                              alt="QR de Pago SPIDI"
-                              className="w-40 h-40 rounded-xl bg-white p-2 border border-slate-700 shadow-md"
-                            />
-                            <span className="text-[10px] text-slate-400 mt-1 font-light">
-                              Escanea con tu banco o app móvil
+                            <div className="p-3 bg-white rounded-2xl border-2 border-emerald-500/30 shadow-md">
+                              <img
+                                src={spidiSession.paymentQr}
+                                alt="QR de Pago SPIDI"
+                                className="w-40 h-40 rounded-lg object-contain"
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-400 mt-2 font-medium flex items-center gap-1">
+                              <QrCode size={12} className="text-[#00ffb2]" />
+                              Escanea este código con la app de tu banco
                             </span>
                           </div>
                         )}
 
-                        <a
-                          href={spidiSession.paymentUrl}
-                          target="_blank"
-                          className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
-                        >
-                          <ExternalLink size={14} />
-                          <span>Pagar en este teléfono (Pago Móvil / Débito)</span>
-                        </a>
+                        {/* Datos directos para pagar desde este teléfono */}
+                        <div className="p-2.5 bg-slate-950/80 border border-slate-850 rounded-xl space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between pb-1 border-b border-slate-850">
+                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Pago Móvil Desbloqueo</span>
+                            <button
+                              type="button"
+                              onClick={handleCopyAuraBankData}
+                              className="text-[11px] text-[#00ffb2] hover:text-emerald-300 font-bold flex items-center gap-1 cursor-pointer transition active:scale-95"
+                            >
+                              <Copy size={12} />
+                              <span>{copiedAuraBankData ? '¡Copiado!' : 'Copiar datos'}</span>
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">Banco</span>
+                              <span className="text-slate-200 font-bold">0102 BDV</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">Teléfono</span>
+                              <span className="text-slate-200 font-bold">04140857379</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">RIF</span>
+                              <span className="text-slate-200 font-bold">J-50348291-0</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">Monto en Bs</span>
+                              <span className="text-emerald-400 font-bold">Bs. {auraUnlockFeeVES.toLocaleString('es-VE')}</span>
+                            </div>
+                          </div>
+                        </div>
 
                         <div className="flex items-center justify-center gap-2 text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-2.5">
                           <Loader2 size={13} className="animate-spin text-[#00ffb2]" />
@@ -1747,7 +1777,7 @@ export default function ProductBottomSheet({
                         </div>
 
                         {/* Botón de Comprobación de Estado (100% Producción Real) */}
-                        <div className="pt-1">
+                        <div className="pt-0.5">
                           <button
                             type="button"
                             onClick={handleCheckSpidiStatusManual}
@@ -1937,37 +1967,67 @@ export default function ProductBottomSheet({
                         <p className="text-[11px] text-slate-300 font-mono">Ref. Bancaria: #{spidiStoreBankRef}</p>
                       </div>
                     ) : spidiStoreSession ? (
-                      /* ESTADO: SESIÓN SPIDI TIENDA ACTIVA (QR + ENLACE) */
-                      <div className="p-3 bg-[#020508] border border-slate-800 rounded-2xl space-y-3">
-                        <div className="flex items-center justify-between">
+                      /* ESTADO: SESIÓN SPIDI TIENDA ACTIVA (EXPERIENCIA 100% NATIVA AURA) */
+                      <div className="p-3.5 bg-[#020508] border border-indigo-500/30 rounded-2xl space-y-3 shadow-xl shadow-indigo-500/5">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                           <span className="text-xs font-bold text-white flex items-center gap-1.5">
                             <QrCode size={15} className="text-indigo-400" />
-                            Escanea o paga en línea
+                            Billetera de Pago Móvil Integrada
                           </span>
-                          <span className="text-xs font-black text-indigo-300">${Number(spidiStoreSession?.amountUsd ?? storeAmountUSD).toFixed(2)} USD</span>
+                          <div className="text-right">
+                            <span className="text-xs font-black text-indigo-300 block">${Number(spidiStoreSession?.amountUsd ?? storeAmountUSD).toFixed(2)} USD</span>
+                            <span className="text-[10px] font-mono text-indigo-400 font-bold">Bs. {storeAmountVES.toLocaleString('es-VE')}</span>
+                          </div>
                         </div>
 
                         {spidiStoreSession.paymentQr && (
                           <div className="flex flex-col items-center py-1">
-                            <img
-                              src={spidiStoreSession.paymentQr}
-                              alt="QR de Pago SPIDI Tienda"
-                              className="w-40 h-40 rounded-xl bg-white p-2 border border-slate-700 shadow-md"
-                            />
-                            <span className="text-[10px] text-slate-400 mt-1 font-light">
-                              Escanea con tu banco o app móvil
+                            <div className="p-3 bg-white rounded-2xl border-2 border-indigo-500/30 shadow-md">
+                              <img
+                                src={spidiStoreSession.paymentQr}
+                                alt="QR de Pago SPIDI Tienda"
+                                className="w-40 h-40 rounded-lg object-contain"
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-400 mt-2 font-medium flex items-center gap-1">
+                              <QrCode size={12} className="text-indigo-400" />
+                              Escanea este código con la app de tu banco
                             </span>
                           </div>
                         )}
 
-                        <a
-                          href={spidiStoreSession.paymentUrl}
-                          target="_blank"
-                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-2.5 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
-                        >
-                          <ExternalLink size={14} />
-                          <span>Pagar abono en este teléfono</span>
-                        </a>
+                        {/* Datos directos para pagar a la tienda desde este teléfono */}
+                        <div className="p-2.5 bg-slate-950/80 border border-slate-850 rounded-xl space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between pb-1 border-b border-slate-850">
+                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Pago Móvil a {storeName}</span>
+                            <button
+                              type="button"
+                              onClick={handleCopyBankData}
+                              className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer transition active:scale-95"
+                            >
+                              <Copy size={12} />
+                              <span>{copiedBankData ? '¡Copiado!' : 'Copiar datos'}</span>
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">Banco</span>
+                              <span className="text-slate-200 font-bold">0102 BDV</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">Teléfono</span>
+                              <span className="text-slate-200 font-bold">{storePhoneClean}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">RIF</span>
+                              <span className="text-slate-200 font-bold">J-40812345-0</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px] uppercase">Monto en Bs</span>
+                              <span className="text-indigo-400 font-bold">Bs. {storeAmountVES.toLocaleString('es-VE')}</span>
+                            </div>
+                          </div>
+                        </div>
 
                         <div className="flex items-center justify-center gap-2 text-[11px] text-indigo-300 bg-indigo-950/30 border border-indigo-500/20 rounded-xl p-2.5">
                           <Loader2 size={13} className="animate-spin text-indigo-400" />
@@ -1975,7 +2035,7 @@ export default function ProductBottomSheet({
                         </div>
 
                         {/* Botón de Comprobación de Abono (100% Producción Real) */}
-                        <div className="pt-1">
+                        <div className="pt-0.5">
                           <button
                             type="button"
                             onClick={handleCheckSpidiStoreStatusManual}
