@@ -71,6 +71,7 @@ export default function MostradorPage() {
     });
   }, [storeId]);
 
+  // 1. Cargar datos básicos de la tienda para verificar PIN
   const fetchStore = useCallback(async () => {
     if (!storeId) return;
     try {
@@ -100,31 +101,46 @@ export default function MostradorPage() {
     fetchStore();
   }, [fetchStore]);
 
-  // 2. Cargar reservas en tiempo real para el mostrador (Consulta limpia y unificada)
+  // 2. Cargar reservas en tiempo real para el mostrador
   const fetchReservations = useCallback(async () => {
     if (!storeId || !isAuthenticated) return;
     setLoadingReservations(true);
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('reservations')
-        .select('*')
+        .select('*, products(name, imageUrl)')
         .eq('store_id', storeId)
         .order('created_at', { ascending: false });
 
+      if (error) {
+        const fallback = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('store_id', storeId)
+          .order('created_at', { ascending: false });
+        data = fallback.data;
+        error = fallback.error;
+      }
+
       if (!error && data) {
-        const mapped = data.map((r: any) => {
+        const mapped: Reservation[] = data.map((r: any) => {
           const priceUsd = Number(r.total_price || r.price_usd || 0);
           return {
             ...r,
+            product_name: r.products?.name || r.product_name || 'Producto Reservado',
+            image_url: r.products?.imageUrl || r.product_image || r.image_url,
+            category_archetype: r.category_archetype || 'RETAIL_STANDARD',
             price_usd: priceUsd,
-            store_pay_balance_usd: r.store_pay_balance_usd 
-              ? Number(r.store_pay_balance_usd) 
+            aura_price_usd: r.aura_price_usd ? Number(r.aura_price_usd) : priceUsd,
+            unlock_fee_usd: r.unlock_fee_usd ? Number(r.unlock_fee_usd) : 0,
+            store_pay_balance_usd: r.store_pay_balance_usd
+              ? Number(r.store_pay_balance_usd)
               : priceUsd - (Number(r.unlock_fee_usd) || 0),
             pin: r.pin || r.pin_code || (r.id ? r.id.slice(0, 4).toUpperCase() : '0000')
           };
         });
 
-        // Contar pendientes actuales
+        // Contar pendientes actuales (incluyendo tickets confirmados de megáfono)
         const currentPending = mapped.filter(
           (r) => r.status === 'pending' || r.status === 'pendiente' || r.status === 'PENDING_STOCK_CHECK' || r.status === 'confirmed' || r.status === 'confirmada'
         ).length;
@@ -144,7 +160,6 @@ export default function MostradorPage() {
     }
   }, [storeId, isAuthenticated, playAlertChime]);
 
-  // FIX: Eliminado playAlertChime y fetchReservations de las dependencias para evitar bucle infinito
   useEffect(() => {
     if (isAuthenticated) {
       fetchReservations();
@@ -160,18 +175,17 @@ export default function MostradorPage() {
         )
         .subscribe();
 
-      // Sondeo de respaldo cada 5 segundos para reducir carga innecesaria
+      // Sondeo de respaldo cada 3 segundos
       const pollInterval = setInterval(() => {
         fetchReservations();
-      }, 5000);
+      }, 3000);
 
       return () => {
         supabase.removeChannel(channel);
         clearInterval(pollInterval);
       };
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, storeId]);
+  }, [isAuthenticated, storeId, fetchReservations]);
 
   // Solicitudes abiertas del Megáfono en mostrador
   useEffect(() => {
@@ -198,7 +212,7 @@ export default function MostradorPage() {
       )
       .subscribe();
 
-    const interval = setInterval(fetchCount, 6000);
+    const interval = setInterval(fetchCount, 4000);
 
     return () => {
       supabase.removeChannel(channel);
@@ -206,45 +220,255 @@ export default function MostradorPage() {
     };
   }, []);
 
-  const handlePinLogin = (e: React.FormEvent) => {
+  // Manejar entrada de PIN de Mostrador
+  const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!store) return;
-    const correctPin = store.cashier_access_pin || '1234';
-    if (pinAttempt.trim() === correctPin) {
+    const correctPin = store?.cashier_access_pin || '1234';
+
+    if (pinAttempt.trim() === correctPin.trim()) {
       setIsAuthenticated(true);
+      sessionStorage.setItem(`aura_mostrador_${storeId}`, 'true');
       setPinError(false);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem(`aura_mostrador_${storeId}`, 'true');
-      }
+      setPinAttempt('');
     } else {
       setPinError(true);
+      setPinAttempt('');
     }
   };
 
-  const handleLogout = () => {
+  // Bloquear el mostrador
+  const handleLock = () => {
+    sessionStorage.removeItem(`aura_mostrador_${storeId}`);
     setIsAuthenticated(false);
-    setPinAttempt('');
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem(`aura_mostrador_${storeId}`);
-    }
+    setFoundReservation(null);
+    setTicketSearch('');
   };
 
-  // Acciones de actualización de stock y confirmación de estante
-  const handleUpdateStatus = async (reservationId: string, newStatus: string) => {
+  // Semáforo de Acción (Botón Verde, Amarillo, Rojo)
+  const handleUpdateStockStatus = async (
+    reservation: Reservation,
+    newStatus: 'confirmed' | 'ultimo_par' | 'cancelled'
+  ) => {
     setActionLoading(true);
     try {
-      const { error } = await supabase
-        .from('reservations')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', reservationId);
+      // Preservar exactamente el estado elegido: Verde ('STOCK_VERIFIED'), Amarillo ('ultimo_par'), Rojo ('cancelled')
+      const targetDbStatus = newStatus === 'cancelled'
+        ? 'cancelled'
+        : newStatus === 'ultimo_par'
+        ? 'ultimo_par'
+        : 'STOCK_VERIFIED';
 
-      if (error) throw error;
-      playUnlockSuccess();
-      setValidationSuccessMsg(`Estado actualizado a: ${newStatus}`);
+      await supabase
+        .from('reservations')
+        .update({ status: targetDbStatus })
+        .eq('id', reservation.id);
+
+      // Apagar producto en el catálogo si es Amarillo (último par tomado por el cliente) o Rojo (agotado)
+      if (newStatus === 'ultimo_par' || newStatus === 'cancelled') {
+        if (newStatus === 'cancelled') {
+          await logLostDemand({
+            storeId: reservation.store_id,
+            productId: reservation.product_id,
+            productName: reservation.product_name,
+            selectedVariant: reservation.selected_size,
+            customerPhone: reservation.customer_phone,
+            reason: 'OUT_OF_STOCK'
+          });
+        }
+
+        if (reservation.store_id && reservation.product_id) {
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('store_id', reservation.store_id)
+            .eq('product_id', reservation.product_id);
+        }
+
+        if (reservation.product_id) {
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('id', reservation.product_id);
+
+          await supabase
+            .from('store_products')
+            .update({ is_active: false, stock: 0 })
+            .eq('product_id', reservation.product_id);
+        }
+      }
+
       await fetchReservations();
-      setTimeout(() => setValidationSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert(`Error al actualizar: ${err.message}`);
+      alert('Error actualizando stock: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Buscar Ticket para Cobro en Caja (con fallback en vivo a Supabase)
+  const handleSearchTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticketSearch.trim()) return;
+
+    const clean = ticketSearch.trim().replace('#', '').toUpperCase();
+    let found = reservations.find(
+      (r) => (r.pin && r.pin.toUpperCase() === clean) || (r.pin_code && r.pin_code.toUpperCase() === clean)
+    );
+
+    if (!found) {
+      try {
+        let dbRes: any = null;
+        const resWithProd = await supabase
+          .from('reservations')
+          .select('*, products(name, imageUrl, archetype)')
+          .or(`pin_code.eq.${clean},pin_code.eq.${ticketSearch.trim()}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!resWithProd.error && resWithProd.data) {
+          dbRes = resWithProd.data;
+        } else {
+          const fallback = await supabase
+            .from('reservations')
+            .select('*')
+            .or(`pin_code.eq.${clean},pin_code.eq.${ticketSearch.trim()}`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (fallback.data) dbRes = fallback.data;
+        }
+
+        if (dbRes) {
+          const priceUsd = Number(dbRes.total_price || dbRes.price_usd || 0);
+          found = {
+            ...dbRes,
+            product_name: dbRes.products?.name || dbRes.product_name || 'Producto Reservado',
+            image_url: dbRes.products?.imageUrl || dbRes.image_url,
+            category_archetype: dbRes.products?.archetype || 'RETAIL_STANDARD',
+            price_usd: priceUsd,
+            aura_price_usd: dbRes.aura_price_usd ? Number(dbRes.aura_price_usd) : priceUsd,
+            unlock_fee_usd: dbRes.unlock_fee_usd ? Number(dbRes.unlock_fee_usd) : 0,
+            store_pay_balance_usd: dbRes.store_pay_balance_usd
+              ? Number(dbRes.store_pay_balance_usd)
+              : priceUsd - (Number(dbRes.unlock_fee_usd) || 0),
+            pin: dbRes.pin || dbRes.pin_code || clean
+          };
+        }
+      } catch (e) {
+        console.warn('Error buscando ticket en Supabase:', e);
+      }
+    }
+
+    if (found) {
+      setFoundReservation(found);
+      setValidationSuccessMsg(null);
+    } else {
+      alert(`No se encontró ninguna reserva activa con el ticket #${clean}.`);
+    }
+  };
+
+  // Cobro y Entrega en Mostrador: Aumenta nivel de confianza (trust_score) en Aura
+  const handleCompleteSale = async (reservation: Reservation) => {
+    if (!confirm(`¿Confirmar cobro de $${reservation.store_pay_balance_usd?.toFixed(2) || reservation.price_usd?.toFixed(2)} y entrega del producto?`)) return;
+    setActionLoading(true);
+    try {
+      const targetPin = reservation.pin_code || reservation.pin;
+      const isValidUUID = Boolean(reservation.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reservation.id));
+
+      if (isValidUUID) {
+        await supabase
+          .from('reservations')
+          .update({ status: 'completed' })
+          .eq('id', reservation.id);
+      }
+      
+      if (targetPin) {
+        await supabase
+          .from('reservations')
+          .update({ status: 'completed' })
+          .eq('pin_code', targetPin);
+      }
+
+      // Si el cliente tiene cuenta de usuario o teléfono registrado en Aura, incrementar su nivel de confianza (+10 puntos)
+      let targetUserId = reservation.user_id;
+      if (!targetUserId && reservation.customer_phone) {
+        try {
+          const rawPhone = reservation.customer_phone.replace(/[^0-9]/g, '');
+          const { data: matchedProfile } = await supabase
+            .from('profiles')
+            .select('id, trust_score')
+            .or(`phone.eq.${reservation.customer_phone},phone.eq.${rawPhone}`)
+            .limit(1)
+            .maybeSingle();
+          if (matchedProfile) {
+            targetUserId = matchedProfile.id;
+          }
+        } catch {}
+      }
+
+      if (targetUserId) {
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('trust_score')
+            .eq('id', targetUserId)
+            .maybeSingle();
+          if (profile) {
+            const newScore = Math.min(200, (profile.trust_score || 100) + 10);
+            await supabase
+              .from('profiles')
+              .update({ trust_score: newScore })
+              .eq('id', targetUserId);
+          }
+        } catch {
+          // No romper si el perfil no existe
+        }
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aura_ticket_completed', { detail: { reservation: { ...reservation, status: 'completed' } } }));
+      }
+      playUnlockSuccess();
+      setValidationSuccessMsg(`✓ Venta completada con éxito. Producto entregado a ${reservation.customer_name}. ¡Nivel de confianza en Aura actualizado!`);
+      setFoundReservation(null);
+      setTicketSearch('');
+      await fetchReservations();
+    } catch (err: any) {
+      alert('Error completando venta: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Candado de Confianza: Cliente asistió pero no llevó (Liberar Stock a Billetera)
+  const handleAttendedNoSale = async (reservation: Reservation) => {
+    if (!confirm("¿El cliente asistió pero no llevó el producto? Se liberará el stock al estante y su abono se acreditará a su Billetera Aura.")) return;
+    setActionLoading(true);
+    try {
+      await supabase
+        .from('reservations')
+        .update({
+          status: 'ATTENDED_NO_SALE',
+          cancellation_reason: 'CLIENT_ATTENDED_DID_NOT_BUY'
+        })
+        .eq('id', reservation.id);
+
+      // Reembolsar fee a billetera interna si existió
+      if (reservation.unlock_fee_usd && reservation.unlock_fee_usd > 0 && reservation.user_id) {
+        await refundFeeToWallet({
+          userId: reservation.user_id,
+          reservationId: reservation.id,
+          amountUsd: reservation.unlock_fee_usd,
+        });
+      }
+
+      setValidationSuccessMsg(`✓ Stock liberado al estante. El saldo fue reintegrado a la Billetera del cliente.`);
+      setFoundReservation(null);
+      setTicketSearch('');
+      await fetchReservations();
+    } catch (err: any) {
+      alert('Error al liberar stock: ' + err.message);
     } finally {
       setActionLoading(false);
     }
@@ -252,168 +476,686 @@ export default function MostradorPage() {
 
   if (loadingStore) {
     return (
-      <div className="min-h-screen bg-[#0d0f18] flex items-center justify-center text-white">
-        <RefreshCw className="w-8 h-8 animate-spin text-[#00ffb2]" />
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 text-white">
+        <RefreshCw className="animate-spin text-teal-400" size={36} />
       </div>
     );
   }
 
   if (!store) {
     return (
-      <div className="min-h-screen bg-[#0d0f18] flex flex-col items-center justify-center text-white p-4">
-        <AlertCircle className="w-12 h-12 text-rose-500 mb-2" />
-        <h1 className="text-xl font-bold">Tienda no encontrada</h1>
-        <p className="text-gray-400 mt-1">El enlace de la caja es incorrecto o ya no existe.</p>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white text-center">
+        <div className="max-w-md bg-slate-900 border border-slate-800 p-8 rounded-3xl">
+          <AlertCircle size={40} className="text-red-400 mx-auto mb-3" />
+          <h2 className="text-xl font-bold">Tienda no encontrada</h2>
+          <p className="text-xs text-slate-400 mt-2">El enlace de mostrador no es válido o la tienda no existe.</p>
+        </div>
       </div>
     );
   }
 
-  // Pantalla de bloqueo por PIN de acceso a caja
+  // ==============================================================================
+  // PANTALLA 1: BLOQUEO POR PIN DE MOSTRADOR
+  // ==============================================================================
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#0d0f18] flex items-center justify-center p-4">
-        <div className="bg-[#16192b] border border-gray-800 rounded-2xl p-8 max-w-md w-full shadow-2xl">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-12 h-12 bg-[#00ffb2]/10 rounded-xl flex items-center justify-center text-[#00ffb2]">
-              StoreIcon ? <StoreIcon className="w-6 h-6" /> : <Lock className="w-6 h-6" />
+      <div className="min-h-screen bg-slate-950 text-white font-sans flex flex-col justify-between p-4 sm:p-6">
+        <header className="flex justify-between items-center max-w-md mx-auto w-full pt-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center text-slate-950 font-black text-sm">
+              A
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-white">Caja / Mostrador</h1>
-              <p className="text-sm text-gray-400">{store.name}</p>
-            </div>
+            <span className="font-black text-sm tracking-tight text-white">AURA MOSTRADOR</span>
+          </div>
+          <span className="text-[10px] font-bold text-teal-400 bg-teal-950 border border-teal-800 px-2 py-0.5 rounded-full">
+            Caja Rápida
+          </span>
+        </header>
+
+        <main className="max-w-sm w-full mx-auto my-auto bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center">
+          <div className="w-16 h-16 bg-slate-800 border border-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4 text-teal-400">
+            <Lock size={28} />
           </div>
 
-          <form onSubmit={handlePinLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                PIN de Acceso a Caja
+          <h1 className="text-xl font-black text-white">{store.name}</h1>
+          <p className="text-xs text-slate-400 mt-1">Terminal de Mostrador para Empleados</p>
+
+          <form onSubmit={handlePinSubmit} className="mt-6 space-y-4">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Ingresa el PIN de Acceso Rápido
               </label>
               <input
                 type="password"
                 maxLength={6}
+                autoFocus
+                placeholder="••••"
                 value={pinAttempt}
                 onChange={(e) => setPinAttempt(e.target.value)}
-                placeholder="••••"
-                className="w-full bg-[#0d0f18] border border-gray-700 rounded-xl px-4 py-3 text-center text-2xl font-mono text-white tracking-widest focus:outline-none focus:border-[#00ffb2]"
-                autoFocus
+                className={`w-full p-4 bg-slate-950 border rounded-2xl text-center text-2xl font-mono tracking-widest text-teal-400 outline-none focus:ring-2 focus:ring-teal-500 ${
+                  pinError ? 'border-red-500 bg-red-950/20' : 'border-slate-800'
+                }`}
               />
-              {pinError && <p className="text-rose-500 text-xs mt-2 text-center">PIN incorrecto. Intenta de nuevo.</p>}
             </div>
+
+            {pinError && (
+              <p className="text-xs text-red-400 font-bold animate-shake">
+                PIN incorrecto. Consulta al dueño del local.
+              </p>
+            )}
+
             <button
               type="submit"
-              className="w-full bg-[#00ffb2] hover:bg-[#00cc8e] text-gray-950 font-bold py-3 rounded-xl transition-all shadow-lg shadow-[#00ffb2]/10"
+              className="cursor-pointer w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-4 rounded-xl transition shadow-lg shadow-teal-500/20 active:scale-98"
             >
-              Acceder al Mostrador
+              Abrir Mostrador
             </button>
           </form>
-        </div>
+
+          <p className="text-[11px] text-slate-500 mt-6">
+            Este modo no tiene acceso a métricas financieras, configuración ni eliminación de catálogo.
+          </p>
+        </main>
+
+        <footer className="text-center text-xs text-slate-600 pb-2">
+          Aura Business • Cumaná, Sucre
+        </footer>
       </div>
     );
   }
 
+  // 1. Filtrar reservas pendientes que requieren semáforo del personal
+  const pendingReservations = reservations.filter(
+    (r) => r.status === 'pending' || r.status === 'pendiente' || r.status === 'PENDING_STOCK_CHECK'
+  );
+
+  // 2. Stock verificado por tienda pero esperando que el cliente elija (3h o 7d)
+  const waitingCustomerReservations = reservations.filter(
+    (r) => r.status === 'STOCK_VERIFIED' || r.status === 'ultimo_par'
+  );
+
+  // 3. Reservas activas listas para canje en caja (Ticket oficialmente generado por el cliente)
+  const activeTickets = reservations.filter((r) => {
+    if (['cancelled', 'cancelada', 'completed', 'completada', 'COMPLETED_IN_STORE', 'ATTENDED_NO_SALE', 'EXPIRED_NO_SHOW'].includes(r.status)) return false;
+    if (['pending', 'pendiente', 'PENDING_STOCK_CHECK', 'STOCK_VERIFIED', 'ultimo_par'].includes(r.status)) return false;
+    return r.status === 'confirmed' || r.status === 'confirmada' || r.status === 'QR_ACTIVE';
+  });
+
+  // 4. Canceladas recientemente para alertar al comercio y liberar stock
+  const cancelledAlerts = reservations.filter((r) => {
+    if (r.status !== 'cancelled' && r.status !== 'cancelada') return false;
+    const pin = r.pin || r.pin_code;
+    const isDismissed = dismissedCancelledIds.some(
+      (d) =>
+        String(d) === String(r.id) ||
+        (pin && String(d) === String(pin)) ||
+        (r.pin_code && String(d) === String(r.pin_code))
+    );
+    if (isDismissed) {
+      return false;
+    }
+    // Solo alertar de cancelaciones ocurridas en las últimas 2 horas
+    const refDate = (r as any).updated_at || r.created_at;
+    if (refDate) {
+      const diffMs = Date.now() - new Date(refDate).getTime();
+      if (!isNaN(diffMs) && diffMs > 2 * 60 * 60 * 1000) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Historial de canjes completados en mostrador
+  const completedToday = reservations.filter(
+    (r) =>
+      r.status === 'completed' ||
+      r.status === 'completada' ||
+      r.status === 'COMPLETED_IN_STORE'
+  );
+
+  // ==============================================================================
+  // PANTALLA 2: TERMINAL ACTIVA DE MOSTRADOR
+  // ==============================================================================
   return (
-    <div className="min-h-screen bg-[#0d0f18] text-white">
-      {/* Barra superior de navegación del Mostrador */}
-      <header className="border-b border-gray-800 bg-[#121522] px-6 py-4 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center space-x-4">
-          <div className="w-10 h-10 bg-[#00ffb2]/10 rounded-xl flex items-center justify-center text-[#00ffb2]">
-            <StoreIcon className="w-5 h-5" />
+    <div className="min-h-screen bg-slate-950 text-white font-sans flex flex-col">
+      
+      {/* HEADER SUPERIOR DE MOSTRADOR */}
+      <header className="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-black text-slate-950 text-sm">
+              A
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-black text-white text-sm sm:text-base leading-none truncate max-w-[160px] sm:max-w-xs">
+                  {store.name}
+                </h1>
+                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Mostrador Activo
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">{store.zone || 'Cumaná'}</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-white">{store.name}</h1>
-            <p className="text-xs text-gray-400">Panel de Control y Caja Registradora</p>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchReservations}
+              className="cursor-pointer p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition"
+              title="Refrescar"
+            >
+              <RefreshCw size={16} className={loadingReservations ? 'animate-spin' : ''} />
+            </button>
+            <button
+              onClick={handleLock}
+              className="cursor-pointer flex items-center gap-1.5 text-xs font-bold bg-slate-800 hover:bg-red-950 hover:text-red-300 text-slate-400 px-3 py-2 rounded-xl transition border border-slate-700"
+            >
+              <LogOut size={14} />
+              <span className="hidden sm:inline">Bloquear</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        {/* NAVEGACIÓN RÁPIDA DE PESTAÑAS */}
+        <div className="max-w-4xl mx-auto px-4 flex border-t border-slate-800">
           <button
-            onClick={() => fetchReservations()}
-            disabled={loadingReservations}
-            className="flex items-center space-x-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+            onClick={() => { setActiveTab('semaphore'); setValidationSuccessMsg(null); }}
+            className={`cursor-pointer flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition ${
+              activeTab === 'semaphore'
+                ? 'border-teal-400 text-teal-400 bg-teal-950/20'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingReservations ? 'animate-spin' : ''}`} />
-            <span>Actualizar</span>
+            <Clock size={16} />
+            <span>Semáforo de Stock</span>
+            {pendingReservations.length > 0 && (
+              <span className="bg-amber-500 text-slate-950 px-2 py-0.2 rounded-full text-[10px] font-black">
+                {pendingReservations.length}
+              </span>
+            )}
           </button>
+
           <button
-            onClick={handleLogout}
-            className="flex items-center space-x-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+            onClick={() => { setActiveTab('validate'); setValidationSuccessMsg(null); }}
+            className={`cursor-pointer flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition ${
+              activeTab === 'validate'
+                ? 'border-teal-400 text-teal-400 bg-teal-950/20'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Bloquear Caja</span>
+            <QrCode size={16} />
+            <span>Validar en Caja (Ticket / QR)</span>
+            {activeTickets.length > 0 && (
+              <span className="bg-slate-800 text-slate-300 px-2 py-0.2 rounded-full text-[10px] font-bold">
+                {activeTickets.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('history'); setValidationSuccessMsg(null); }}
+            className={`cursor-pointer flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition ${
+              activeTab === 'history'
+                ? 'border-teal-400 text-teal-400 bg-teal-950/20'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <CheckCircle2 size={16} />
+            <span>Historial ({completedToday.length})</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('megaphone'); setValidationSuccessMsg(null); }}
+            className={`cursor-pointer flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition ${
+              activeTab === 'megaphone'
+                ? 'border-[#00ffb2] text-[#00ffb2] bg-emerald-950/20'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Megaphone size={16} className={activeTab === 'megaphone' ? 'text-[#00ffb2]' : 'text-slate-400'} />
+            <span>El Megáfono</span>
+            {openMegaphoneCount > 0 && (
+              <span className="bg-emerald-500 text-slate-950 px-2 py-0.2 rounded-full text-[10px] font-black">
+                {openMegaphoneCount}
+              </span>
+            )}
           </button>
         </div>
       </header>
 
-      {/* Cuerpo del Mostrador */}
-      <main className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* CONTENIDO DE PESTAÑAS */}
+      <main className="max-w-4xl mx-auto w-full px-4 py-6 flex-1 space-y-6">
+
+        {/* ALERTA DE ÉXITO */}
         {validationSuccessMsg && (
-          <div className="bg-[#00ffb2]/10 border border-[#00ffb2]/30 text-[#00ffb2] p-4 rounded-xl flex items-center space-x-3">
-            <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm font-medium">{validationSuccessMsg}</span>
+          <div className="p-4 bg-emerald-950/80 border border-emerald-700 rounded-2xl flex items-center gap-3 text-emerald-200 text-xs shadow-lg animate-in fade-in">
+            <CheckCircle2 size={20} className="text-emerald-400 shrink-0" />
+            <span className="font-bold">{validationSuccessMsg}</span>
           </div>
         )}
 
-        {/* Sección de solicitudes pendientes de verificación */}
-        <div className="bg-[#16192b] border border-gray-800 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-white flex items-center space-x-2">
-              <Clock className="w-5 h-5 text-[#00ffb2]" />
-              <span>Solicitudes de Reserva Entrantes</span>
-            </h2>
-            <span className="bg-[#00ffb2]/20 text-[#00ffb2] text-xs font-bold px-3 py-1 rounded-full">
-              {reservations.length} total
-            </span>
+        {/* AVISOS DE PEDIDOS CANCELADOS POR CLIENTES */}
+        {cancelledAlerts.map((res) => (
+          <div key={res.id} className="p-4 bg-rose-950/60 border border-rose-800 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-lg animate-in fade-in">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => handleDismissCancelled(res.id, res.pin, res.pin_code)}
+                className="w-8 h-8 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-300 hover:text-white flex items-center justify-center font-bold shrink-0 cursor-pointer transition"
+                title="Descartar aviso"
+              >
+                <X size={16} />
+              </button>
+              <div className="min-w-0">
+                <h4 className="font-bold text-rose-200 truncate">
+                  Aviso: El cliente {res.customer_name || 'Un cliente'} canceló el pedido
+                </h4>
+                <p className="text-[11px] text-slate-300 truncate">
+                  Producto: <strong className="text-white">{res.product_name}</strong> (Ticket #{res.pin}). La unidad queda disponible para la venta.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleDismissCancelled(res.id, res.pin, res.pin_code)}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-[11px] font-bold border border-slate-700 cursor-pointer shrink-0 transition"
+              >
+                Entendido
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDismissCancelled(res.id, res.pin, res.pin_code)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg cursor-pointer transition"
+                title="Descartar"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
+        ))}
 
-          {reservations.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-gray-600" />
-              <p>No hay solicitudes pendientes en este momento.</p>
+        {/* ==============================================================================
+            PESTAÑA A: SEMÁFORO DE STOCK EN TIEMPO REAL
+            ============================================================================== */}
+        {activeTab === 'semaphore' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-black text-white">Solicitudes de Reserva Entrantes</h2>
+                <p className="text-xs text-slate-400">Verifica en estante y presiona el botón correspondiente.</p>
+              </div>
+              <span className="text-xs font-bold text-slate-500 bg-slate-900 px-3 py-1 rounded-xl border border-slate-800">
+                {pendingReservations.length} pendientes
+              </span>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {reservations.map((res) => (
-                <div key={res.id} className="bg-[#0d0f18] border border-gray-800 rounded-xl p-4 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-mono text-[#00ffb2] bg-[#00ffb2]/10 px-2 py-0.5 rounded">
-                        PIN: {res.pin || res.pin_code}
-                      </span>
-                      <h3 className="font-bold text-white mt-1">{res.product_name || 'Producto Reservado'}</h3>
+
+            {pendingReservations.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 text-center space-y-2">
+                <CheckCircle2 size={36} className="text-teal-400 mx-auto mb-2" />
+                <h3 className="font-bold text-white text-base">Al día en mostrador</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  No hay reservas esperando confirmación de stock. Las nuevas solicitudes sonarán aquí en tiempo real.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingReservations.map((res) => (
+                  <div
+                    key={res.id}
+                    className="bg-slate-900 border-2 border-indigo-900/60 rounded-3xl p-5 shadow-xl space-y-4 hover:border-indigo-600 transition"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 bg-amber-950 border border-amber-800 px-2.5 py-0.5 rounded-full inline-block mb-1.5">
+                          ⏳ Esperando Verificación en Estante
+                        </span>
+                        <h3 className="text-base font-black text-white leading-tight">
+                          {res.product_name}
+                        </h3>
+                        <p className="text-xs text-teal-300 font-bold mt-1">
+                          Cliente: {res.customer_name} • Tel: {res.customer_phone}
+                        </p>
+                        {res.selected_size && (
+                          <p className="text-xs text-slate-300 mt-0.5">
+                            Variante / Talla: <strong className="text-white underline">{res.selected_size}</strong>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-lg font-black text-white">${res.price_usd?.toFixed(2)}</span>
+                        <span className="block text-[10px] text-slate-400">Ticket #{res.pin}</span>
+                      </div>
                     </div>
-                    <span className="text-lg font-black text-white">${Number(res.price_usd).toFixed(2)}</span>
-                  </div>
 
-                  <div className="text-xs text-gray-400 space-y-1">
-                    <p>Cliente: <strong className="text-gray-200">{(res as any).client_name || (res as any).name || 'Cliente'}</strong> ({(res as any).client_phone || 'Sin teléfono'})</p>
-                    <p>Estado actual: <span className="text-amber-400 font-semibold">{res.status}</span></p>
-                  </div>
+                    {/* LOS 3 BOTONES DE SEMÁFORO */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-800">
+                      {/* BOTÓN VERDE */}
+                      <button
+                        onClick={() => handleUpdateStockStatus(res, 'confirmed')}
+                        disabled={actionLoading}
+                        className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 px-3 rounded-2xl text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-600/20 active:scale-95 disabled:opacity-50"
+                      >
+                        <Check size={16} />
+                        <span>Verde: Hay Stock</span>
+                      </button>
 
-                  {/* Botones de respuesta rápida */}
-                  <div className="flex space-x-2 pt-2 border-t border-gray-800">
-                    <button
-                      onClick={() => handleUpdateStatus(res.id, 'STOCK_VERIFIED')}
-                      disabled={actionLoading}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all flex items-center justify-center space-x-1"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>Verde: Hay Stock</span>
-                    </button>
-                    <button
-                      onClick={() => handleUpdateStatus(res.id, 'OUT_OF_STOCK')}
-                      disabled={actionLoading}
-                      className="bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 font-bold py-2 px-3 rounded-lg text-xs transition-all flex items-center justify-center space-x-1"
-                    >
-                      <X className="w-4 h-4" />
-                      <span>Agotado</span>
-                    </button>
+                      {/* BOTÓN AMARILLO */}
+                      <button
+                        onClick={() => handleUpdateStockStatus(res, 'ultimo_par')}
+                        disabled={actionLoading}
+                        className="cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 px-3 rounded-2xl text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-amber-500/20 active:scale-95 disabled:opacity-50"
+                      >
+                        <AlertCircle size={16} />
+                        <span>Amarillo: Último Par</span>
+                      </button>
+
+                      {/* BOTÓN ROJO */}
+                      <button
+                        onClick={() => handleUpdateStockStatus(res, 'cancelled')}
+                        disabled={actionLoading}
+                        className="cursor-pointer bg-red-600 hover:bg-red-500 text-white font-black py-3 px-3 rounded-2xl text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-red-600/20 active:scale-95 disabled:opacity-50"
+                      >
+                        <X size={16} />
+                        <span>Rojo: Agotado</span>
+                      </button>
+                    </div>
                   </div>
+                ))}
+              </div>
+            )}
+
+            {/* RESERVAS CON STOCK CONFIRMADO - ESPERANDO QUE EL CLIENTE SE DECIDA */}
+            {waitingCustomerReservations.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
+                      Esperando Elección del Cliente ({waitingCustomerReservations.length})
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-emerald-400 font-bold">Stock Verificado</span>
                 </div>
-              ))}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {waitingCustomerReservations.map((res) => (
+                    <div
+                      key={res.id}
+                      className="bg-slate-900/70 border border-slate-800 rounded-2xl p-3.5 space-y-2 text-xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-white truncate text-xs">{res.product_name}</h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                            Cliente: <strong className="text-slate-200">{res.customer_name}</strong>
+                          </p>
+                        </div>
+                        <span className="text-[10px] bg-amber-950/60 text-amber-400 px-2 py-0.5 rounded border border-amber-900/40 shrink-0">
+                          Sin Boleto Aún
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-emerald-950/30 border border-emerald-900/40 rounded-xl text-[10px] text-emerald-300 flex items-center gap-1.5">
+                        <Check size={12} className="text-emerald-400 shrink-0" />
+                        <span>Confirmaste stock. Esperando elección de retiro (3h o 7d).</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ==============================================================================
+            PESTAÑA B: VALIDACIÓN Y COBRO EN CAJA FÍSICA
+            ============================================================================== */}
+        {activeTab === 'validate' && (
+          <div className="space-y-6">
+            
+            {/* BUSCADOR DE TICKET */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+              <div>
+                <h2 className="text-lg font-black text-white flex items-center gap-2">
+                  <ShieldCheck size={20} className="text-teal-400" />
+                  Validador de Ticket y Cobro en Caja
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Pídele al cliente su boleto con PIN de 4 dígitos o escanea su código QR.
+                </p>
+              </div>
+
+              <form onSubmit={handleSearchTicket} className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-3.5 text-slate-500" size={18} />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ingresa PIN del boleto (ej: 4819)"
+                    value={ticketSearch}
+                    onChange={(e) => setTicketSearch(e.target.value)}
+                    className="w-full pl-10 p-3.5 bg-slate-950 border border-slate-800 rounded-2xl text-white font-mono text-sm uppercase outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="cursor-pointer bg-teal-500 hover:bg-teal-400 text-slate-950 font-black px-6 py-3.5 rounded-2xl text-xs transition"
+                >
+                  Buscar Ticket
+                </button>
+              </form>
             </div>
-          )}
-        </div>
+
+            {/* TARJETA DE RESERVA ENCONTRADA */}
+            {foundReservation && (() => {
+              const isTicketConfirmed =
+                foundReservation.status === 'confirmed' ||
+                foundReservation.status === 'confirmada' ||
+                foundReservation.status === 'QR_ACTIVE';
+
+              const isWaitingClient =
+                foundReservation.status === 'STOCK_VERIFIED' ||
+                foundReservation.status === 'pending' ||
+                foundReservation.status === 'pendiente' ||
+                foundReservation.status === 'PENDING_STOCK_CHECK';
+
+              const isCancelled =
+                foundReservation.status === 'cancelled' ||
+                foundReservation.status === 'cancelada';
+
+              return (
+                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border-2 border-teal-500/80 rounded-3xl p-6 shadow-2xl space-y-6 animate-in zoom-in-95">
+                  <div className="flex items-start justify-between gap-3 border-b border-indigo-900/60 pb-4">
+                    <div>
+                      {isTicketConfirmed ? (
+                        <span className="text-[10px] font-black uppercase text-teal-400 bg-teal-950 border border-teal-800 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Boleto #{foundReservation.pin} Verificado • Listo para Retiro
+                        </span>
+                      ) : isWaitingClient ? (
+                        <span className="text-[10px] font-black uppercase text-amber-400 bg-amber-950 border border-amber-800 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Stock Confirmado • Esperando que el cliente elija (3h o 7d)
+                        </span>
+                      ) : isCancelled ? (
+                        <span className="text-[10px] font-black uppercase text-rose-400 bg-rose-950 border border-rose-800 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Pedido Cancelado por el Cliente
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-black uppercase text-slate-400 bg-slate-900 border border-slate-700 px-2 py-0.5 rounded-full inline-block mb-1">
+                          Estado: {foundReservation.status}
+                        </span>
+                      )}
+                      <h3 className="text-xl font-black text-white">{foundReservation.product_name}</h3>
+                      <p className="text-xs text-slate-300 mt-1">
+                        Cliente: <strong>{foundReservation.customer_name}</strong> • {foundReservation.customer_phone}
+                      </p>
+                      {foundReservation.selected_size && (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Talla / Opción: <strong className="text-white">{foundReservation.selected_size}</strong>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* MONTO A COBRAR EN CAJA FÍSICA */}
+                    <div className="text-right bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Cobrar en Mostrador</span>
+                      <span className="text-2xl font-black text-teal-400">
+                        ${foundReservation.store_pay_balance_usd?.toFixed(2) || foundReservation.price_usd?.toFixed(2)}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">USD en caja física</span>
+                    </div>
+                  </div>
+
+                  {/* ACCIONES DE COBRO: SOLO SI EL BOLETO ESTÁ CONFIRMADO */}
+                  {isTicketConfirmed ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      {/* ACCIÓN 1: COBRO EXITOSO */}
+                      <button
+                        // eslint-disable-next-line react-hooks/refs
+                        onClick={() => handleCompleteSale(foundReservation)}
+                        disabled={actionLoading}
+                        className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black p-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 active:scale-98 disabled:opacity-50"
+                      >
+
+                        <CheckCircle2 size={20} />
+                        <span>✓ Cobrar en Caja y Entregar</span>
+                      </button>
+
+                      {/* ACCIÓN 2: CLIENTE ASISTIÓ PERO NO LLEVÓ (CANDADO DE CONFIANZA) */}
+                      <button
+                        onClick={() => handleAttendedNoSale(foundReservation)}
+                        disabled={actionLoading}
+                        className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-600/40 font-bold p-4 rounded-2xl text-xs flex items-center justify-center gap-2 transition active:scale-98 disabled:opacity-50"
+                      >
+                        <X size={18} />
+                        <span>Cliente vino pero no llevó (Liberar a Billetera)</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-amber-950/30 border border-amber-800/50 rounded-2xl text-xs text-amber-300 text-center">
+                      {isWaitingClient
+                        ? 'El cliente aún no ha completado su opción de retiro ni el pago inicial. Debes esperar a que el cliente confirme su boleto en la app.'
+                        : isCancelled
+                        ? 'Este pedido fue cancelado. La unidad queda disponible para la venta general.'
+                        : 'El boleto aún no está disponible para canje en caja física.'}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* LISTA RÁPIDA DE BOLETOS ACTIVOS HOY */}
+            <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                Boletos Activos para Retiro Hoy ({activeTickets.length})
+              </h3>
+
+              {activeTickets.length === 0 ? (
+                <p className="text-xs text-slate-500 py-2">No hay boletos activos pendientes por retirar.</p>
+              ) : (
+                <div className="divide-y divide-slate-800">
+                  {activeTickets.map((t) => (
+                    <div
+                      key={t.id}
+                      className="py-3 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div>
+                        <span className="font-mono font-bold text-teal-400 text-sm">#{t.pin}</span>
+                        <span className="text-white ml-2 font-bold">{t.product_name}</span>
+                        <span className="text-slate-400 ml-2">({t.customer_name})</span>
+                      </div>
+                      <button
+                        onClick={() => { setFoundReservation(t); setValidationSuccessMsg(null); }}
+                        className="cursor-pointer text-xs font-bold text-teal-400 hover:underline flex items-center gap-1"
+                      >
+                        Cobrar <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* ==============================================================================
+            PESTAÑA C: HISTORIAL DE CANJES DE HOY
+            ============================================================================== */}
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-black text-white">Canjes Validados en Mostrador ({completedToday.length})</h2>
+                <p className="text-xs text-slate-400">Ventas cobradas y entregadas a clientes en este punto de venta.</p>
+              </div>
+            </div>
+
+            {completedToday.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 text-center space-y-2">
+                <CheckCircle2 size={36} className="text-slate-600 mx-auto mb-2" />
+                <h3 className="font-bold text-white text-base">Sin canjes registrados hoy</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Cuando valides el PIN o escanees el QR de un cliente en la caja, el registro aparecerá aquí.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {completedToday.map((res) => (
+                  <div
+                    key={res.id}
+                    className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono font-bold text-teal-400 text-xs bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          PIN #{res.pin}
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                          ✓ Cobrado y Entregado
+                        </span>
+                      </div>
+                      <h4 className="text-base font-black text-white">{res.product_name}</h4>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Cliente: <strong>{res.customer_name}</strong> • {res.customer_phone}
+                      </p>
+                      {res.selected_size && (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Variante: <span className="text-white">{res.selected_size}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="sm:text-right shrink-0 bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Cobrado en Mostrador</span>
+                      <span className="text-xl font-black text-teal-400">
+                        ${(res.store_pay_balance_usd ?? res.price_usd).toFixed(2)} USD
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PESTAÑA 4: EL MEGÁFONO EN CAJA */}
+        {activeTab === 'megaphone' && store && (
+          <div className="space-y-4">
+            <MegaphoneMerchantWidget store={store} />
+          </div>
+        )}
+
       </main>
+
+      {/* FOOTER */}
+      <footer className="border-t border-slate-900 py-3 text-center text-[11px] text-slate-600">
+        Terminal Mostrador de {store.name} • Protegido por PIN
+      </footer>
+
     </div>
   );
 }
