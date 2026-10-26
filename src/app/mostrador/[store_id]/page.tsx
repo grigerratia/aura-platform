@@ -106,21 +106,11 @@ export default function MostradorPage() {
     if (!storeId || !isAuthenticated) return;
     setLoadingReservations(true);
     try {
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('reservations')
-        .select('*, products(name, imageUrl)')
+        .select('*')
         .eq('store_id', storeId)
         .order('created_at', { ascending: false });
-
-      if (error) {
-        const fallback = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('store_id', storeId)
-          .order('created_at', { ascending: false });
-        data = fallback.data;
-        error = fallback.error;
-      }
 
       if (!error && data) {
         const mapped: Reservation[] = data.map((r: any) => {
@@ -158,7 +148,7 @@ export default function MostradorPage() {
     } finally {
       setLoadingReservations(false);
     }
-  }, [storeId, isAuthenticated, playAlertChime]);
+  }, [storeId, isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -185,7 +175,7 @@ export default function MostradorPage() {
         clearInterval(pollInterval);
       };
     }
-  }, [isAuthenticated, storeId, fetchReservations]);
+  }, [isAuthenticated, storeId]);
 
   // Solicitudes abiertas del Megáfono en mostrador
   useEffect(() => {
