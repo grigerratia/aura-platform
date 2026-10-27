@@ -5,11 +5,13 @@ import { Product, Store, Reservation, ReservationStatus } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import { useReservations, recordCompletedPurchase } from '@/store/useReservations';
 import { supabase } from '@/lib/supabase';
+import Link from 'next/link';
 import {
   X, Clock, MapPin, Check, Sparkles, Store as StoreIcon,
   AlertCircle, ArrowRight, ShieldCheck,
   MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap,
-  Smartphone, Loader2, QrCode, RefreshCw, ExternalLink
+  Smartphone, Loader2, QrCode, RefreshCw, ExternalLink,
+  User, UserPlus, LogIn
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -96,6 +98,7 @@ export default function ProductBottomSheet({
   // Datos de la reserva activa generada
   const [activeRes, setActiveRes] = useState<Reservation | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [generatedPin, setGeneratedPin] = useState<string>('');
   const [pagoMovilRef, setPagoMovilRef] = useState<string>('');
   const [pagoMovilAuraRef, setPagoMovilAuraRef] = useState<string>('');
@@ -248,25 +251,24 @@ export default function ProductBottomSheet({
 
     const loadAuthUser = async () => {
       try {
+        setAuthLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           setCurrentUserId(user.id);
-          const name = user.user_metadata?.full_name || user.user_metadata?.name || '';
-          if (name && !customerName) setCustomerName(name);
-          const phone = user.phone || user.user_metadata?.phone || '';
-          if (phone && !customerPhone) setCustomerPhone(phone);
-          const cedula = user.user_metadata?.id_doc || '';
-          if (cedula && !customerCedula) setCustomerCedula(cedula);
-
           const { data: prof } = await supabase
             .from('profiles')
-            .select('wallet_credit_usd, id_doc, is_blocked, block_reason')
+            .select('full_name, phone, id_doc, wallet_credit_usd, is_blocked, block_reason')
             .eq('id', user.id)
             .maybeSingle();
 
-          if (prof?.id_doc && !customerCedula) {
-            setCustomerCedula(prof.id_doc);
-          }
+          const name = prof?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Cliente Aura';
+          setCustomerName(name);
+
+          const phone = prof?.phone || user.phone || user.user_metadata?.phone || '';
+          setCustomerPhone(phone);
+
+          const cedula = prof?.id_doc || user.user_metadata?.id_doc || '';
+          setCustomerCedula(cedula);
 
           if (prof?.is_blocked) {
             setIsUserBlocked(true);
@@ -280,8 +282,14 @@ export default function ProductBottomSheet({
               setPayAuraWithWallet(true);
             }
           }
+        } else {
+          setCurrentUserId(null);
         }
-      } catch {}
+      } catch {
+        setCurrentUserId(null);
+      } finally {
+        setAuthLoading(false);
+      }
     };
     loadAuthUser();
   }, [product, activeReservation]);
@@ -335,33 +343,18 @@ export default function ProductBottomSheet({
   // ==============================================================================
   const handleRequestAvailability = async () => {
     if (!product) return;
+    if (!currentUserId) {
+      alert('Debes registrarte o iniciar sesión para poder apartar un producto.');
+      return;
+    }
     if (isUserBlocked) {
       alert(userBlockReason || 'Tu cuenta está temporalmente suspendida por impago o retraso. Comunícate con soporte de Aura.');
-      return;
-    }
-    if (!customerName.trim()) {
-      alert('Por favor ingresa tu nombre y apellido para el mostrador.');
-      return;
-    }
-    if (!customerCedula.trim()) {
-      alert('Por favor ingresa tu cédula o documento de identidad.');
-      return;
-    }
-    if (!customerPhone.trim()) {
-      alert('Por favor ingresa tu número de WhatsApp para confirmar tu retiro.');
       return;
     }
 
     playTap();
     setIsSubmitting(true);
     setStep('WAITING_VERIFICATION');
-
-    // Guardar en localStorage para futuras visitas
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('aura_customer_name', customerName.trim());
-      localStorage.setItem('aura_customer_cedula', customerCedula.trim());
-      localStorage.setItem('aura_customer_phone', customerPhone.trim());
-    }
 
     // PIN interno de trazabilidad para cumplir con restricción NOT NULL en BD y permitir seguimiento en mostrador
     const trackingPin = Math.floor(1000 + Math.random() * 9000).toString();
@@ -384,19 +377,13 @@ export default function ProductBottomSheet({
 
     const effectiveProductId = isValidUUID(product.id) ? product.id : null;
 
-    let uid = currentUserId;
-    if (!uid) {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        uid = user?.id || null;
-      } catch {}
-    }
-
-    const fullCustomerName = `${customerName.trim()} [CI: ${customerCedula.trim()}]`;
+    const resolvedName = (customerName || 'Cliente Aura').trim();
+    const resolvedCedula = (customerCedula || 'Registrado').trim();
+    const fullCustomerName = `${resolvedName} [CI: ${resolvedCedula}]`;
 
     const newReservation: Reservation = {
       id: `res-${Date.now()}`,
-      user_id: uid || undefined,
+      user_id: currentUserId || undefined,
       pin: trackingPin,
       pin_code: trackingPin,
       store_id: effectiveStoreId || 'store-cumana',
@@ -1190,7 +1177,7 @@ export default function ProductBottomSheet({
                 
                 {/* Encabezado con imagen, tienda y título */}
                 <div className="flex gap-3.5 items-center">
-                  <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 shadow-inner flex items-center justify-center">
+                  <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-950 shrink-0 shadow-inner flex items-center justify-center">
                     {product.imageUrl || product.image_url ? (
                       <img
                         src={product.imageUrl || product.image_url || ''}
@@ -1204,164 +1191,161 @@ export default function ProductBottomSheet({
                     )}
                   </div>
 
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
-                    <StoreIcon size={13} className="text-[#00ffb2]" />
-                    <span className="truncate">{storeName}</span>
-                  </div>
-                  <h2 className="text-base sm:text-lg font-black text-white leading-tight line-clamp-2">
-                    {product.name}
-                  </h2>
-                  <div className="flex items-center gap-1 text-[11px] text-slate-400 font-light">
-                    <MapPin size={11} className="text-emerald-400 shrink-0" />
-                    <span className="truncate">{storeZone}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Selector de Variante Universal (si el producto las tiene) */}
-              {variantOptions.length > 1 && (
-                <div className="space-y-2 pt-1">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-slate-300">
-                      Elige {variantGroup?.label || 'Opción'}:
-                    </span>
-                    <span className="text-[11px] text-[#00ffb2] font-semibold">
-                      {selectedVariant}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {variantOptions.map((opt) => {
-                      const isSel = selectedVariant === opt;
-                      return (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => {
-                            playTap();
-                            setSelectedVariant(opt);
-                          }}
-                          className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-bold transition border ${
-                            isSel
-                              ? 'bg-slate-800 text-white border-slate-600 scale-105'
-                              : 'bg-[#060c18] text-slate-400 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          {opt}
-                        </button>
-                      );
-                    })}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
+                      <StoreIcon size={13} className="text-[#00ffb2]" />
+                      <span className="truncate">{storeName}</span>
+                    </div>
+                    <h2 className="text-base sm:text-lg font-black text-white leading-tight line-clamp-2">
+                      {product.name}
+                    </h2>
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400 font-light">
+                      <MapPin size={11} className="text-emerald-400 shrink-0" />
+                      <span className="truncate">{storeZone}</span>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {/* Precios: Regular o Descuento si aplica */}
-              <div className="bg-[#050b16] border border-slate-800/80 rounded-2xl p-3.5 space-y-2 shadow-inner">
-                {regularPrice > auraPrice && (product.has_discount || (product.discount_percent && product.discount_percent > 0)) ? (
-                  <>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400">Precio Regular en Tienda:</span>
-                      <span className="line-through text-slate-500 font-bold">${regularPrice.toFixed(2)} USD</span>
+                {/* Selector de Variante Universal (si el producto las tiene) */}
+                {variantOptions.length > 1 && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-300">
+                        Elige {variantGroup?.label || 'Opción'}:
+                      </span>
+                      <span className="text-[11px] text-[#00ffb2] font-semibold">
+                        {selectedVariant}
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                    <div className="flex flex-wrap gap-2">
+                      {variantOptions.map((opt) => {
+                        const isSel = selectedVariant === opt;
+                        return (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => {
+                              playTap();
+                              setSelectedVariant(opt);
+                            }}
+                            className={`cursor-pointer px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                              isSel
+                                ? 'bg-[#00ffb2] text-slate-950 font-black shadow-md'
+                                : 'bg-slate-900/90 text-slate-300 hover:bg-slate-800'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Precios: Regular o Descuento si aplica */}
+                <div className="bg-[#050b16] rounded-2xl p-4 space-y-2.5">
+                  {regularPrice > auraPrice && (product.has_discount || (product.discount_percent && product.discount_percent > 0)) ? (
+                    <>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">Precio Regular en Tienda:</span>
+                        <span className="line-through text-slate-500 font-bold">${regularPrice.toFixed(2)} USD</span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          <span className="text-xs font-bold text-slate-200 block">Precio Oferta Relámpago:</span>
+                          <span className="text-[10px] text-emerald-400">Descuento aplicado</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xl font-black text-[#00ffb2]">${auraPrice.toFixed(2)} USD</span>
+                          <span className="block text-[10px] text-slate-400 font-mono">≈ Bs. {totalVES.toLocaleString('es-VE')}</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-between">
                       <div>
-                        <span className="text-xs font-bold text-slate-200 block">Precio Oferta Relámpago:</span>
-                        <span className="text-[10px] text-emerald-400">Descuento aplicado</span>
+                        <span className="text-xs font-bold text-slate-200 block">Precio del Producto:</span>
+                        <span className="text-[10px] text-emerald-400">Precio de vitrina en tienda</span>
                       </div>
                       <div className="text-right">
                         <span className="text-xl font-black text-[#00ffb2]">${auraPrice.toFixed(2)} USD</span>
                         <span className="block text-[10px] text-slate-400 font-mono">≈ Bs. {totalVES.toLocaleString('es-VE')}</span>
                       </div>
                     </div>
-                  </>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-slate-200 block">Precio del Producto:</span>
-                      <span className="text-[10px] text-emerald-400">Precio de vitrina en tienda</span>
+                  )}
+                </div>
+
+                {/* Alerta de Usuario Bloqueado por Impago */}
+                {isUserBlocked && (
+                  <div className="p-3.5 bg-red-950/70 rounded-2xl text-left space-y-1">
+                    <div className="flex items-center gap-2 text-red-400 font-bold text-xs">
+                      <AlertTriangle size={15} />
+                      <span>Cuenta Suspendida por Aura Central</span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xl font-black text-[#00ffb2]">${auraPrice.toFixed(2)} USD</span>
-                      <span className="block text-[10px] text-slate-400 font-mono">≈ Bs. {totalVES.toLocaleString('es-VE')}</span>
-                    </div>
+                    <p className="text-[11px] text-red-200/90 leading-relaxed">
+                      {userBlockReason || 'Tienes una sanción activa por impago o retraso en apartados anteriores. Contacta a soporte para regularizar tu estatus.'}
+                    </p>
                   </div>
                 )}
-              </div>
 
-              {/* Formulario de Contacto para el Mostrador */}
-              <div className="space-y-2.5 pt-1">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                  Tus Datos para el Mostrador (Sin Registro Obligatorio):
-                </span>
-                
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Tu Nombre y Apellido"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-slate-600"
-                    />
-
-                    <input
-                      type="text"
-                      required
-                      placeholder="Cédula (ej. V-12345678)"
-                      value={customerCedula}
-                      onChange={(e) => setCustomerCedula(e.target.value)}
-                      className="p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-slate-600"
-                    />
+                {/* Control de Acceso: Requiere Registro Obligatorio */}
+                {!currentUserId && !authLoading ? (
+                  <div className="bg-[#050b16] rounded-2xl p-5 text-center space-y-3">
+                    <div className="w-10 h-10 rounded-full bg-amber-400/10 text-amber-400 flex items-center justify-center mx-auto">
+                      <User size={20} />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-white">
+                        Debes registrarte para hacer un pedido
+                      </h3>
+                      <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                        Para apartar este producto y consultar disponibilidad al estante físico, necesitas tener una cuenta en Aura.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-2.5 pt-1">
+                      <Link
+                        href="/registro"
+                        onClick={handleClose}
+                        className="cursor-pointer bg-[#00ffb2] hover:bg-emerald-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition active:scale-95 shadow-md flex items-center gap-1.5"
+                      >
+                        <UserPlus size={14} />
+                        <span>Crear Cuenta</span>
+                      </Link>
+                      <Link
+                        href="/login"
+                        onClick={handleClose}
+                        className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white font-bold px-4 py-2.5 rounded-xl text-xs transition active:scale-95 flex items-center gap-1.5"
+                      >
+                        <LogIn size={14} />
+                        <span>Iniciar Sesión</span>
+                      </Link>
+                    </div>
                   </div>
-
-                  <input
-                    type="tel"
-                    required
-                    placeholder="Teléfono / WhatsApp de Retiro (0414...)"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="w-full p-3 bg-[#030712] border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-slate-600"
-                  />
-                </div>
+                ) : (
+                  /* Botón Principal: Verificar disponibilidad en tienda */
+                  <button
+                    type="button"
+                    disabled={isSubmitting || isUserBlocked}
+                    onClick={handleRequestAvailability}
+                    className={`game-sweep w-full cursor-pointer bg-gradient-to-r ${
+                      isUserBlocked
+                        ? 'from-slate-700 to-slate-800 text-slate-400 opacity-60 cursor-not-allowed'
+                        : 'from-emerald-500 via-[#00ffb2] to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-lg shadow-emerald-500/25 active:scale-95'
+                    } font-black py-4 px-6 rounded-2xl text-sm transition flex flex-col items-center justify-center gap-0.5 mt-1`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={18} />
+                      <span>Verificar disponibilidad en tienda</span>
+                    </div>
+                    <span className="text-[10px] font-normal text-slate-900 opacity-90">
+                      Sin pagar nada todavía • Consulta en vivo al estante físico
+                    </span>
+                  </button>
+                )}
               </div>
-
-              {/* Alerta de Usuario Bloqueado por Impago */}
-              {isUserBlocked && (
-                <div className="p-3 bg-red-950/70 border border-red-500/50 rounded-xl text-left space-y-1 animate-pulse">
-                  <div className="flex items-center gap-2 text-red-400 font-bold text-xs">
-                    <AlertTriangle size={15} />
-                    <span>Cuenta Suspendida por Aura Central</span>
-                  </div>
-                  <p className="text-[11px] text-red-200/90 leading-relaxed">
-                    {userBlockReason || 'Tienes una sanción activa por impago o retraso en apartados anteriores. Contacta a soporte para regularizar tu estatus.'}
-                  </p>
-                </div>
-              )}
-
-              {/* Botón Principal: Verificar disponibilidad en tienda */}
-              <button
-                type="button"
-                disabled={isSubmitting || isUserBlocked}
-                onClick={handleRequestAvailability}
-                className={`game-sweep w-full cursor-pointer bg-gradient-to-r ${
-                  isUserBlocked
-                    ? 'from-slate-700 to-slate-800 text-slate-400 opacity-60 cursor-not-allowed'
-                    : 'from-emerald-500 via-[#00ffb2] to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-lg shadow-emerald-500/25 active:scale-95'
-                } font-black py-4 px-6 rounded-2xl text-sm transition flex flex-col items-center justify-center gap-0.5 mt-2`}
-              >
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={18} />
-                  <span>Verificar disponibilidad en tienda</span>
-                </div>
-                <span className="text-[10px] font-normal text-slate-900 opacity-90">
-                  Sin pagar nada todavía • Consulta en vivo al estante físico
-                </span>
-              </button>
-            </div>
-          )}
+            )}
 
           {/* =====================================================================
               2. PANTALLA: ESPERANDO VERIFICACIÓN EN ESTANTE (RADAR EN VIVO)
