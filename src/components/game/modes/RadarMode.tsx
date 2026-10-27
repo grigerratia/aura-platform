@@ -66,20 +66,37 @@ export default function RadarMode({
     isFavorite: isFavoriteProduct,
   } = useFavoriteProducts();
 
-  // 1. Ubicación del usuario (por defecto Centro de Cumaná, con detección GPS)
-  const [userLocation, setUserLocation] = useState<GeoPoint>(CUMANA_CENTER);
+  // 1. Ubicación del usuario (por defecto Centro de Cumaná, con detección GPS real y caché local)
+  const [userLocation, setUserLocation] = useState<GeoPoint>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('aura_user_location');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed.latitude === 'number' && typeof parsed.longitude === 'number') {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+    return CUMANA_CENTER;
+  });
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setUserLocation({
+          const loc = {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
-          });
+          };
+          setUserLocation(loc);
+          try {
+            localStorage.setItem('aura_user_location', JSON.stringify(loc));
+          } catch {}
         },
         () => {},
-        { timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
       );
     }
   }, []);
@@ -217,7 +234,7 @@ export default function RadarMode({
     if (activeFilters.rating) {
       list = list.filter((p) => {
         const store = p.store_id ? storesById.get(p.store_id) : undefined;
-        const r = store?.rating ?? 4.8;
+        const r = store?.rating !== undefined && store?.rating !== null ? Number(store.rating) : 5.0;
         return r >= 4.5;
       });
     }
@@ -228,8 +245,8 @@ export default function RadarMode({
       const distB = b.store_id ? (storeDistances.get(b.store_id)?.km ?? 999) : 999;
       const storeA = a.store_id ? storesById.get(a.store_id) : undefined;
       const storeB = b.store_id ? storesById.get(b.store_id) : undefined;
-      const ratingA = storeA?.rating ?? 4.8;
-      const ratingB = storeB?.rating ?? 4.8;
+      const ratingA = storeA?.rating !== undefined && storeA?.rating !== null ? Number(storeA.rating) : 5.0;
+      const ratingB = storeB?.rating !== undefined && storeB?.rating !== null ? Number(storeB.rating) : 5.0;
 
       if (activeFilters.near) {
         if (activeFilters.rating && Math.abs(distA - distB) < 0.3) {
@@ -427,7 +444,7 @@ export default function RadarMode({
           {filteredProducts.map((product) => {
             const store = product.store_id ? storesById.get(product.store_id) : undefined;
             const distance = product.store_id ? storeDistances.get(product.store_id)?.formatted : undefined;
-            const storeRating = store?.rating ?? 4.8;
+            const storeRating = store?.rating !== undefined && store?.rating !== null ? Number(store.rating) : 5.0;
             const isFavProduct = isFavoriteProduct(product.id);
             const isFollowing = product.store_id ? isFavoriteStore(product.store_id) : false;
 

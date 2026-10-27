@@ -71,22 +71,39 @@ export default function RelampagoMode({
     return () => clearInterval(timer);
   }, []);
 
-  // 2. Ubicación del usuario (por defecto Centro de Cumaná, con detección GPS)
-  const [userLocation, setUserLocation] = useState<GeoPoint>(CUMANA_CENTER);
+  // 2. Ubicación del usuario (por defecto Centro de Cumaná, con detección GPS real y caché local)
+  const [userLocation, setUserLocation] = useState<GeoPoint>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('aura_user_location');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed.latitude === 'number' && typeof parsed.longitude === 'number') {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+    return CUMANA_CENTER;
+  });
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setUserLocation({
+          const loc = {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
-          });
+          };
+          setUserLocation(loc);
+          try {
+            localStorage.setItem('aura_user_location', JSON.stringify(loc));
+          } catch {}
         },
         () => {
           // Si el usuario no otorga permiso, se mantiene Cumaná Centro sin romper la experiencia
         },
-        { timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
       );
     }
   }, []);
@@ -315,7 +332,7 @@ export default function RelampagoMode({
           {filteredFlashProducts.map((product) => {
             const store = product.store_id ? storesMap.get(product.store_id) : undefined;
             const distance = product.store_id ? storeDistances.get(product.store_id)?.formatted : undefined;
-            const storeRating = store?.rating ?? 4.8;
+            const storeRating = store?.rating !== undefined && store?.rating !== null ? Number(store.rating) : 5.0;
             const isFavProduct = isFavoriteProduct(product.id);
             const isFollowing = product.store_id ? isFavoriteStore(product.store_id) : false;
 

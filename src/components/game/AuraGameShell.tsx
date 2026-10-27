@@ -36,10 +36,30 @@ export default function AuraGameShell({
 
   // Lista dinámica de productos en vivo (se actualiza si un producto se agota o se surte)
   const [productsList, setProductsList] = useState<Product[]>(initialProducts);
+  // Lista dinámica de tiendas en vivo (se actualizan ratings y distancias en tiempo real)
+  const [storesList, setStoresList] = useState<Store[]>(initialStores);
 
   useEffect(() => {
     setProductsList(initialProducts);
   }, [initialProducts]);
+
+  useEffect(() => {
+    setStoresList(initialStores);
+  }, [initialStores]);
+
+  // Escuchar actualización de rating en vivo tras calificar una compra
+  useEffect(() => {
+    const handleRatingUpdate = (e: any) => {
+      const { storeId, rating, reviewsCount } = e.detail || {};
+      if (storeId && rating) {
+        setStoresList((prev) =>
+          prev.map((s) => (s.id === storeId ? { ...s, rating, reviews_count: reviewsCount } : s))
+        );
+      }
+    };
+    window.addEventListener('aura_store_rating_updated', handleRatingUpdate);
+    return () => window.removeEventListener('aura_store_rating_updated', handleRatingUpdate);
+  }, []);
 
   // Suscripción en tiempo real a inventario para apagar productos agotados al instante (Botón Rojo o Amarillo)
   useEffect(() => {
@@ -350,19 +370,19 @@ export default function AuraGameShell({
           ) : activeMode === 'radar' ? (
             <RadarMode
               products={productsList}
-              stores={initialStores}
+              stores={storesList}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
           ) : activeMode === 'relampago' ? (
             <RelampagoMode
               products={productsList}
-              stores={initialStores}
+              stores={storesList}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
           ) : activeMode === 'manadas' ? (
             <ManadasMode
               products={productsList}
-              stores={initialStores}
+              stores={storesList}
               onSelectProduct={(p) => setSelectedProduct(p)}
             />
           ) : (
@@ -388,7 +408,7 @@ export default function AuraGameShell({
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onSuccessUnlock={handleSuccessUnlock}
-        stores={initialStores}
+        stores={storesList}
         tasa={initialTasa}
       />
 

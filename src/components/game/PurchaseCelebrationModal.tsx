@@ -1,12 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { Reservation } from '@/types';
 import { useGameSound } from '@/hooks/useGameSound';
 import {
   Sparkles, CheckCircle2, ShieldCheck, ArrowRight,
-  Store, MapPin, Award, Star, Ticket, X
+  Store, MapPin, Award, Star, Ticket, X, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/lib/supabase';
 
 interface Props {
   reservation: Reservation | null;
@@ -23,7 +25,68 @@ export default function PurchaseCelebrationModal({
 }: Props) {
   const { playTap, playDustSnap } = useGameSound();
 
+  const [selectedRating, setSelectedRating] = useState<number>(0);
+  const [hoverRating, setHoverRating] = useState<number>(0);
+  const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState<boolean>(false);
+
   if (!reservation) return null;
+
+  const handleRateStore = async (rating: number) => {
+    if (ratingSubmitted || isSubmittingRating || !reservation?.store_id) return;
+    setSelectedRating(rating);
+    setIsSubmittingRating(true);
+    playTap();
+
+    try {
+      // 1. Guardar calificación individual en store_reviews
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('store_reviews').insert({
+        store_id: reservation.store_id,
+        user_id: user?.id || null,
+        rating: rating,
+        comment: `Calificación de atención para compra PIN #${reservation.pin || reservation.pin_code}`,
+      });
+
+      // 2. Obtener rating y conteo actual de la tienda para calcular nuevo promedio real
+      const { data: storeData } = await supabase
+        .from('stores')
+        .select('rating, reviews_count')
+        .eq('id', reservation.store_id)
+        .single();
+
+      const prevRating = Number(storeData?.rating || 5.0);
+      const prevCount = Number(storeData?.reviews_count || 0);
+      const newCount = prevCount + 1;
+      const newAverage = Number((((prevRating * prevCount) + rating) / newCount).toFixed(2));
+
+      // 3. Actualizar tienda con su nuevo promedio real
+      await supabase
+        .from('stores')
+        .update({
+          rating: newAverage,
+          reviews_count: newCount,
+        })
+        .eq('id', reservation.store_id);
+
+      setRatingSubmitted(true);
+
+      // 4. Notificar a la app para actualizar estrellas en vivo
+      window.dispatchEvent(
+        new CustomEvent('aura_store_rating_updated', {
+          detail: {
+            storeId: reservation.store_id,
+            rating: newAverage,
+            reviewsCount: newCount,
+          },
+        })
+      );
+    } catch (err) {
+      console.error('Error al registrar calificación:', err);
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
 
   const handleClose = () => {
     playDustSnap('fast');
@@ -180,6 +243,64 @@ export default function PurchaseCelebrationModal({
               </span>
             </div>
           </div>
+
+          {/* CALIFICACIÓN DE ATENCIÓN EN TIENDA */}
+          {reservation.store_id && (
+            <div className="bg-[#030812] border border-slate-800/80 rounded-2xl p-4 text-center space-y-2 shadow-inner">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block">
+                  {ratingSubmitted ? '¡Calificación Registrada!' : 'Califica la Atención en Tienda'}
+                </span>
+                <p className="text-xs text-slate-300 font-medium">
+                  ¿Cómo te atendieron en <strong className="text-white">{reservation.store_name}</strong>?
+                </p>
+              </div>
+
+              {ratingSubmitted ? (
+                <div className="flex items-center justify-center gap-1.5 py-1 text-xs text-emerald-400 font-bold animate-in fade-in zoom-in-95">
+                  <CheckCircle2 size={15} />
+                  <span>¡Gracias! Calificaste con {selectedRating} {selectedRating === 1 ? 'estrella' : 'estrellas'}.</span>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-center gap-2">
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const active = (hoverRating || selectedRating) >= star;
+                      return (
+                        <button
+                          key={star}
+                          type="button"
+                          disabled={isSubmittingRating}
+                          onMouseEnter={() => setHoverRating(star)}
+                          onMouseLeave={() => setHoverRating(0)}
+                          onClick={() => handleRateStore(star)}
+                          className="p-1 text-slate-600 hover:text-amber-400 transition-all hover:scale-125 active:scale-95 cursor-pointer disabled:opacity-50"
+                          title={`${star} de 5 estrellas`}
+                        >
+                          <Star
+                            size={24}
+                            className={
+                              active
+                                ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]'
+                                : 'text-slate-600'
+                            }
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span className="text-[10px] text-slate-400 block font-light">
+                    {hoverRating === 5 ? '¡Excelente atención! (5.0)' :
+                     hoverRating === 4 ? 'Muy buena atención (4.0)' :
+                     hoverRating === 3 ? 'Buena atención (3.0)' :
+                     hoverRating === 2 ? 'Regular (2.0)' :
+                     hoverRating === 1 ? 'Mala atención (1.0)' :
+                     'Toca una estrella para registrar tu voto'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* BOTONES DE ACCIÓN */}
           <div className="space-y-2 pt-1">

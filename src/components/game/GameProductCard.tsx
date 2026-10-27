@@ -157,9 +157,9 @@ export default function GameProductCard({
       <div className="space-y-1 mb-2 px-0.5">
         {/* Metadatos de Tienda: Nombre, Seguir Tienda, Distancia y Estrellas */}
         {(storeName || distanceFormatted || storeRating) && (
-          <div className="flex items-center justify-between text-[10px] text-slate-400">
+          <div className="flex items-center justify-between text-xs text-slate-400 gap-1.5 py-0.5">
             {storeName && (
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <span
                   onClick={
                     onSelectStore && product.store_id
@@ -171,7 +171,7 @@ export default function GameProductCard({
                       : undefined
                   }
                   title={onSelectStore ? `Ver vitrina de ${storeName}` : storeName}
-                  className={`truncate max-w-[75px] sm:max-w-[85px] font-medium text-slate-400 group-hover:text-slate-300 ${
+                  className={`truncate font-bold text-xs sm:text-[13px] text-slate-200 group-hover:text-white py-1 -my-1 max-w-[105px] sm:max-w-[140px] ${
                     onSelectStore ? 'hover:text-[#00ffb2] hover:underline cursor-pointer' : ''
                   }`}
                 >
@@ -188,7 +188,7 @@ export default function GameProductCard({
                       playTap();
                       onToggleFollowStore();
                     }}
-                    className={`px-1.5 py-0.5 rounded text-[8.5px] font-semibold transition-all flex items-center gap-0.5 cursor-pointer shrink-0 ${
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition-all flex items-center gap-0.5 cursor-pointer shrink-0 ${
                       isFollowingStore
                         ? 'bg-emerald-500/20 text-[#00ffb2] border border-emerald-500/30'
                         : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/60'
@@ -200,17 +200,17 @@ export default function GameProductCard({
               </div>
             )}
 
-            <div className="flex items-center gap-1.5 shrink-0 ml-auto font-light">
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto font-normal text-[11px]">
               {distanceFormatted && (
                 <span className="flex items-center gap-0.5 text-slate-400">
-                  <MapPin size={9} className="text-emerald-400 shrink-0" />
+                  <MapPin size={10} className="text-emerald-400 shrink-0" />
                   <span>{distanceFormatted}</span>
                 </span>
               )}
 
               {storeRating !== undefined && storeRating > 0 && (
                 <span className="flex items-center gap-0.5 text-amber-300 font-medium">
-                  <Star size={9} className="fill-amber-400 text-amber-400 shrink-0" />
+                  <Star size={10} className="fill-amber-400 text-amber-400 shrink-0" />
                   <span>{storeRating.toFixed(1)}</span>
                 </span>
               )}
