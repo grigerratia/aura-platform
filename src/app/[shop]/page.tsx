@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { ProductCard } from "@/components/ProductCard";
+import ShopProductGrid from "@/components/ShopProductGrid";
 import GetDolarTasa from "@/util/getDolarTasa";
 import Header from "@/components/Header";
 import { Store, Product } from "@/types";
@@ -51,18 +51,35 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
     .eq('store_id', store.id)
     .eq('is_active', true);
 
-  const products: Product[] = (inventory || []).map((item: any) => ({
-    ...item.products,
-    id: item.products?.id || item.id,
-    price: item.price,
-    store_product_id: item.id,
-    stock: item.stock,
-    discount_percent: item.discount_percent,
-    store_id: store.id,
-    sizes: item.products?.sizes || [],
-    is_clearance: (item.discount_percent && item.discount_percent >= 20) || false,
-    clearance_badge: item.discount_percent ? `${item.discount_percent}% OFF` : undefined,
-  }));
+  const products: Product[] = (inventory || []).map((item: any) => {
+    const rawProd = item.products || {};
+    const price = Number(item.price || rawProd.price || 10);
+    const regularPrice = Number(rawProd.regular_price_usd || price);
+    const discountPercent = Number(item.discount_percent || rawProd.discount_percent || rawProd.discount_percentage || 0);
+
+    let auraPrice = rawProd.aura_price_usd ? Number(rawProd.aura_price_usd) : price;
+    if (discountPercent > 0 && regularPrice <= auraPrice) {
+      auraPrice = Number((price * (1 - discountPercent / 100)).toFixed(2));
+    }
+
+    return {
+      ...rawProd,
+      id: rawProd.id || item.id,
+      name: rawProd.name || 'Producto',
+      imageUrl: rawProd.image_url || rawProd.imageUrl,
+      image_url: rawProd.image_url || rawProd.imageUrl,
+      price: price,
+      regular_price_usd: regularPrice,
+      aura_price_usd: auraPrice,
+      store_product_id: item.id,
+      stock: item.stock ?? 5,
+      discount_percent: discountPercent,
+      store_id: store.id,
+      sizes: rawProd.sizes || [],
+      is_clearance: (discountPercent >= 15) || (item.stock && item.stock <= 2),
+      clearance_badge: discountPercent ? `-${discountPercent}%` : undefined,
+    };
+  });
 
   const badges = store.badges || ['Acepta Cashea', 'Punto de Venta', 'Efectivo / Divisas', 'Garantía de Tienda'];
   const waNumber = (store.owner_whatsapp || store.whatsapp || '').toString().replace(/[^0-9]/g, '');
@@ -115,7 +132,7 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
                   </div>
 
                   <p className="text-slate-400 text-sm mt-1 max-w-xl leading-relaxed">
-                    {store.description || 'Catálogo oficial con reserva por 3 horas y pago directo en el local.'}
+                    {store.description || 'Catálogo oficial verificado con apartado de 7 días y retiro directo en tienda física.'}
                   </p>
 
                   <div className="flex items-center gap-4 text-xs text-slate-400 mt-2 font-medium flex-wrap">
@@ -159,13 +176,13 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
           </div>
         </section>
 
-        {/* AVISO DE CONFIANZA Y PRECIO CONGELADO */}
+        {/* AVISO DE CONFIANZA Y APARTADO */}
         <div className="max-w-7xl mx-auto px-4 mt-6">
           <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-300">
             <div className="flex items-center gap-2">
               <ShieldCheck size={18} className="text-[#00ffb2] shrink-0" />
               <span>
-                <strong>Garantía de Vitrina Aura:</strong> Aparta tu producto con precio congelado por 3 horas y paga en caja al retirar.
+                <strong>Garantía de Vitrina Aura:</strong> Aparta tu producto hasta por 7 días con 10% de compromiso y retira en caja física en tienda.
               </span>
             </div>
             <span className="font-black text-[#00ffb2] shrink-0">
@@ -177,16 +194,11 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
         {/* SECCIÓN DE PRODUCTOS */}
         <main className="max-w-7xl mx-auto px-4 py-8">
           {products.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {products.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  store={store}
-                  tasa={tasa}
-                />
-              ))}
-            </div>
+            <ShopProductGrid
+              products={products}
+              store={store}
+              tasa={tasa}
+            />
           ) : (
             <div className="bg-[#030910] p-12 rounded-3xl border border-emerald-950/80 text-center max-w-lg mx-auto space-y-2">
               <Sparkles size={28} className="text-emerald-500/50 mx-auto" />
