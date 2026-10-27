@@ -11,7 +11,7 @@ import {
   AlertCircle, ArrowRight, ShieldCheck,
   MessageCircle, Copy, AlertTriangle, Users, CheckCircle2, Zap,
   Smartphone, Loader2, QrCode, RefreshCw, ExternalLink,
-  User, UserPlus, LogIn
+  User, UserPlus, LogIn, Radar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCodeView from '@/components/QRCodeView';
@@ -1135,7 +1135,7 @@ export default function ProductBottomSheet({
   return (
     <AnimatePresence>
       {product && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center select-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 select-none overflow-y-auto">
           
           {/* BACKDROP BLURRED CINEMATOGRÁFICO */}
           <motion.div
@@ -1146,19 +1146,16 @@ export default function ProductBottomSheet({
             className="fixed inset-0 bg-black/85 backdrop-blur-md"
           />
 
-          {/* CONTENEDOR PRINCIPAL BOTTOM SHEET */}
+          {/* CONTENEDOR PRINCIPAL MODAL CENTRADO */}
           <motion.div
-            initial={{ y: '100%', opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: '100%', opacity: 0 }}
+            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="relative w-full max-w-lg bg-[#040913]/95 border-t border-slate-800 rounded-t-3xl sm:rounded-t-[2.5rem] shadow-[0_-20px_60px_rgba(0,0,0,0.85)] p-5 sm:p-6 max-h-[90vh] overflow-y-auto no-scrollbar z-10"
+            className="relative w-full max-w-lg bg-[#040913]/95 border border-slate-800/80 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.85)] p-5 sm:p-6 max-h-[90vh] overflow-y-auto z-10 my-auto"
           >
             {/* Reflejo especular superior fino */}
             <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
-
-            {/* Manija de arrastre */}
-            <div className="w-12 h-1 rounded-full bg-slate-700/80 mx-auto mb-4" />
 
             {/* Botón Cerrar */}
             <button
@@ -1333,15 +1330,10 @@ export default function ProductBottomSheet({
                       isUserBlocked
                         ? 'from-slate-700 to-slate-800 text-slate-400 opacity-60 cursor-not-allowed'
                         : 'from-emerald-500 via-[#00ffb2] to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-lg shadow-emerald-500/25 active:scale-95'
-                    } font-black py-4 px-6 rounded-2xl text-sm transition flex flex-col items-center justify-center gap-0.5 mt-1`}
+                    } font-black py-3.5 px-6 rounded-2xl text-sm transition flex items-center justify-center gap-2 mt-1`}
                   >
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={18} />
-                      <span>Verificar disponibilidad en tienda</span>
-                    </div>
-                    <span className="text-[10px] font-normal text-slate-900 opacity-90">
-                      Sin pagar nada todavía • Consulta en vivo al estante físico
-                    </span>
+                    <Radar size={18} className="shrink-0" />
+                    <span>Verificar disponibilidad en tienda</span>
                   </button>
                 )}
               </div>

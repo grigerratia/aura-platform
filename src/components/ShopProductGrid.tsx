@@ -83,3 +83,4 @@ export default function ShopProductGrid({ products, store, tasa }: Props) {
     </>
   );
 }
+

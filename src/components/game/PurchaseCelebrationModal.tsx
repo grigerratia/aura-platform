@@ -109,7 +109,7 @@ export default function PurchaseCelebrationModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 select-none">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 select-none overflow-y-auto">
         
         {/* Backdrop Oscuro con Desenfoque */}
         <motion.div
@@ -126,7 +126,7 @@ export default function PurchaseCelebrationModal({
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="relative w-full max-w-md bg-[#040913]/95 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-[0_25px_60px_rgba(0,0,0,0.85)] space-y-5 z-10 text-center overflow-hidden"
+          className="relative w-full max-w-md bg-[#040913]/95 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-[0_25px_60px_rgba(0,0,0,0.85)] space-y-5 z-10 text-center max-h-[90vh] overflow-y-auto my-auto"
         >
           {/* Reflejo especular superior fino */}
           <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
