@@ -14,7 +14,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Props {
-  onOpenWallet: () => void;
+  onOpenWallet?: () => void;
   walletCreditUSD?: number;
   selectedCity?: string;
   onSelectCity?: (city: string) => void;
@@ -538,7 +538,7 @@ export default function TopHUD({
                           onClick={() => {
                             playTap();
                             setShowUserDropdown(false);
-                            onOpenWallet();
+                            if (onOpenWallet) onOpenWallet();
                           }}
                           className="w-full cursor-pointer flex items-center justify-between p-3 rounded-xl bg-slate-950/70 hover:bg-emerald-950/30 border border-slate-800/70 hover:border-emerald-800/50 transition-all group text-left"
                           title="Abrir Billetera de Protección Aura"

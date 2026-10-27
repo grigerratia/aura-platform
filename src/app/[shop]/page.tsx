@@ -80,8 +80,8 @@ export default async function ShopPage({ params }: { params: Promise<{ shop: str
         <Header stores={[store]} initialTasa={tasa} />
 
         {/* CABECERA DE VITRINA DE LA TIENDA */}
-        <section className="bg-[#030910]/80 border-b border-emerald-950/70 backdrop-blur-md">
-          <div className="max-w-7xl mx-auto px-4 py-8">
+        <section className="bg-[#030910]/80 border-b border-emerald-950/70 backdrop-blur-md pt-20 sm:pt-24 pb-8">
+          <div className="max-w-7xl mx-auto px-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               
               <div className="flex items-center gap-5">

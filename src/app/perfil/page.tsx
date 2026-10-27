@@ -193,7 +193,7 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-slate-950 text-white font-sans flex flex-col justify-between">
       <Header />
 
-      <main className="max-w-4xl mx-auto w-full px-4 py-8 sm:py-12 flex-1 space-y-6">
+      <main className="max-w-4xl mx-auto w-full px-4 pt-20 sm:pt-24 pb-12 flex-1 space-y-6">
         
         {/* NAVEGACIÓN Y ENCABEZADO */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

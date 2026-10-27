@@ -110,7 +110,7 @@ export default async function ProductPage({
       <div className="relative z-10">
         <Header stores={[store]} initialTasa={tasa} />
 
-        <main className="max-w-7xl mx-auto px-4 py-8">
+        <main className="max-w-7xl mx-auto px-4 pt-20 sm:pt-24 pb-12">
           
           {/* Breadcrumb de Navegación */}
           <div className="flex items-center gap-2 text-xs text-slate-400 mb-6 font-medium">
