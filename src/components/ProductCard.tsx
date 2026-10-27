@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Product, Store } from '@/types';
 import { Clock, Eye, Sparkles, Tag, CheckCircle2, Users } from 'lucide-react';
-import ReserveProductModal from './ReserveProductModal';
+import ProductBottomSheet from './game/ProductBottomSheet';
 import { QuickViewModal } from './QuickViewModal';
 import WaitlistModal from './WaitlistModal';
 
@@ -176,13 +176,21 @@ export function ProductCard({ product, tasa, store }: Props) {
         </div>
       </div>
 
-      {/* Modal de Reserva Inmediata */}
-      <ReserveProductModal
-        product={product}
-        store={resolvedStore}
-        tasa={tasa}
-        isOpen={isReserveModalOpen}
+      {/* Modal de Reserva / Apartado Nativo */}
+      <ProductBottomSheet
+        product={
+          isReserveModalOpen
+            ? {
+                ...product,
+                store_id: product.store_id || resolvedStore?.id,
+                storeId: product.storeId || resolvedStore?.id,
+              }
+            : null
+        }
         onClose={() => setIsReserveModalOpen(false)}
+        onSuccessUnlock={() => setIsReserveModalOpen(false)}
+        stores={resolvedStore ? [resolvedStore] : []}
+        tasa={tasa}
       />
 
       {/* Modal de Fila de Espera */}

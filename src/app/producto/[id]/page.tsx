@@ -198,7 +198,7 @@ export default async function ProductPage({
 
                 <div className="text-xs text-slate-400 pt-2 border-t border-emerald-950/60 flex items-center gap-2">
                   <ShieldCheck size={16} className="text-[#00ffb2]" />
-                  <span>Congelas este precio por 3 horas al apartar. Pagas en el local al retirar.</span>
+                  <span>Apartado garantizado de hasta 7 días con 10% de compromiso. Saldo al retirar en local.</span>
                 </div>
               </div>
 

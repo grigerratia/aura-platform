@@ -5,7 +5,7 @@ import { Product, Store } from '@/types';
 import { Clock, ShieldCheck, CheckCircle2, Users, Crown, Sparkles, Lock } from 'lucide-react';
 import { checkVipEarlyAccess, getProfileWalletCredit } from '@/lib/monetization';
 import { supabase } from '@/lib/supabase';
-import ReserveProductModal from '@/components/ReserveProductModal';
+import ProductBottomSheet from '@/components/game/ProductBottomSheet';
 import WaitlistModal from '@/components/WaitlistModal';
 import SplitPaymentBreakdownCard from '@/components/SplitPaymentBreakdownCard';
 
@@ -33,6 +33,12 @@ export default function ProductActions({ product, store, tasa }: Props) {
 
   const vipAccess = checkVipEarlyAccess(product, isVipUser);
   const isOutOfStock = product.stock_status === 'sold_out' || (typeof product.stock === 'number' && product.stock <= 0);
+
+  const productWithStore: Product = {
+    ...product,
+    store_id: product.store_id || store.id,
+    storeId: product.storeId || store.id,
+  };
 
   return (
     <div className="space-y-4">
@@ -85,13 +91,15 @@ export default function ProductActions({ product, store, tasa }: Props) {
         </button>
       )}
 
-      {/* Modal de Reserva */}
-      <ReserveProductModal
-        product={product}
-        store={store}
-        tasa={tasa}
-        isOpen={isReserveModalOpen}
+      {/* Modal de Pago y Apartado Nativo de Aura */}
+      <ProductBottomSheet
+        product={isReserveModalOpen ? productWithStore : null}
         onClose={() => setIsReserveModalOpen(false)}
+        onSuccessUnlock={() => {
+          setIsReserveModalOpen(false);
+        }}
+        stores={[store]}
+        tasa={tasa}
       />
 
       {/* Modal de Fila de Espera */}
