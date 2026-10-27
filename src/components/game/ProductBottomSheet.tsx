@@ -1380,14 +1380,6 @@ export default function ProductBottomSheet({
                   <X size={14} className="text-rose-400 shrink-0" />
                   <span>Cancelar solicitud</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setStep('SELECTION')}
-                  className="text-[11px] text-slate-500 hover:text-slate-300 underline cursor-pointer transition font-light"
-                >
-                  Volver a la selección de variante
-                </button>
               </div>
             </div>
           )}
