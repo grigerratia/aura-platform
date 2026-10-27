@@ -372,12 +372,14 @@ export default function AuraGameShell({
               products={productsList}
               stores={storesList}
               onSelectProduct={(p) => setSelectedProduct(p)}
+              tasa={initialTasa}
             />
           ) : activeMode === 'relampago' ? (
             <RelampagoMode
               products={productsList}
               stores={storesList}
               onSelectProduct={(p) => setSelectedProduct(p)}
+              tasa={initialTasa}
             />
           ) : activeMode === 'manadas' ? (
             <ManadasMode

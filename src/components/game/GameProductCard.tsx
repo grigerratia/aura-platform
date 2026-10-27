@@ -27,6 +27,8 @@ interface Props {
   onToggleFavoriteStore?: () => void;
   // Ocultar descuentos (para Radar, que es exclusivamente buscador a precio normal)
   hideDiscounts?: boolean;
+  // Ver detalles del producto (abre modal con estética moderna oscura)
+  onViewDetails?: (product: Product) => void;
 }
 
 export default function GameProductCard({
@@ -47,6 +49,7 @@ export default function GameProductCard({
   isFavoriteStore,
   onToggleFavoriteStore,
   hideDiscounts = false,
+  onViewDetails,
 }: Props) {
   const { playTap } = useGameSound();
 
@@ -150,6 +153,21 @@ export default function GameProductCard({
           <div className="w-full h-full flex items-center justify-center bg-emerald-950/20 text-emerald-500 font-bold text-xs">
             Aura
           </div>
+        )}
+
+        {/* Botón de texto "Ver detalles" abajo a la derecha de la imagen con fondo casi invisible */}
+        {onViewDetails && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              playTap();
+              onViewDetails(product);
+            }}
+            className="absolute bottom-2 right-2 z-10 px-2.5 py-1 rounded-lg bg-black/35 hover:bg-black/60 backdrop-blur-xs text-[11px] sm:text-xs font-semibold text-white/95 hover:text-white transition-all active:scale-95 cursor-pointer shadow-sm border border-white/10 hover:border-white/20 tracking-tight"
+          >
+            Ver detalles
+          </button>
         )}
       </div>
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Product, Store } from '@/types';
 import GameProductCard from '../GameProductCard';
+import { QuickViewModal } from '@/components/QuickViewModal';
 import ThanosCard from '@/components/vfx/ThanosCard';
 import AuroraParticles from '../AuroraParticles';
 import GameControlBar from '../GameControlBar';
@@ -39,6 +40,7 @@ interface Props {
   products: Product[];
   stores: Store[];
   onSelectProduct: (p: Product) => void;
+  tasa?: number;
 }
 
 export interface ActiveFiltersState {
@@ -52,8 +54,10 @@ export default function RadarMode({
   products,
   stores = [],
   onSelectProduct,
+  tasa = 500,
 }: Props) {
   const { playTap } = useGameSound();
+  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const {
     favorites: favoriteStoreIds,
     toggleFavorite: toggleFavoriteStore,
@@ -456,6 +460,7 @@ export default function RadarMode({
                 <GameProductCard
                   product={product}
                   onSelect={onSelectProduct}
+                  onViewDetails={(p) => setQuickViewProduct(p)}
                   hideDiscounts={true}
                   storeName={store?.name}
                   storeRating={storeRating}
@@ -703,6 +708,19 @@ export default function RadarMode({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Modal de Vista Rápida de Detalles del Producto */}
+      <QuickViewModal
+        product={quickViewProduct}
+        isOpen={!!quickViewProduct}
+        onClose={() => setQuickViewProduct(null)}
+        store={quickViewProduct?.store_id ? storesById.get(quickViewProduct.store_id) : undefined}
+        tasa={tasa}
+        onSelectProduct={(p) => {
+          setQuickViewProduct(null);
+          onSelectProduct(p);
+        }}
+      />
 
     </div>
   );

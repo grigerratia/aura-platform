@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Product, Store } from '@/types';
 import GameProductCard from '../GameProductCard';
+import { QuickViewModal } from '@/components/QuickViewModal';
 import ThanosCard from '@/components/vfx/ThanosCard';
 import AuroraParticles from '../AuroraParticles';
 import GameControlBar from '../GameControlBar';
@@ -29,6 +30,7 @@ interface Props {
   products: Product[];
   stores?: Store[];
   onSelectProduct: (p: Product) => void;
+  tasa?: number;
 }
 
 export interface ActiveFiltersState {
@@ -42,8 +44,10 @@ export default function RelampagoMode({
   products,
   stores = [],
   onSelectProduct,
+  tasa = 500,
 }: Props) {
   const { playTap } = useGameSound();
+  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const {
     favorites: favoriteStoreIds,
     toggleFavorite: toggleFavoriteStore,
@@ -347,6 +351,7 @@ export default function RelampagoMode({
                 <GameProductCard
                   product={product}
                   onSelect={onSelectProduct}
+                  onViewDetails={(p) => setQuickViewProduct(p)}
                   badgeType="clearance"
                   customBadge={calcDiscount > 0 ? `-${calcDiscount}%` : 'Oferta'}
                   storeName={store?.name}
@@ -401,6 +406,19 @@ export default function RelampagoMode({
           </div>
         )}
       </div>
+
+      {/* Modal de Vista Rápida de Detalles del Producto */}
+      <QuickViewModal
+        product={quickViewProduct}
+        isOpen={!!quickViewProduct}
+        onClose={() => setQuickViewProduct(null)}
+        store={quickViewProduct?.store_id ? storesMap.get(quickViewProduct.store_id) : undefined}
+        tasa={tasa}
+        onSelectProduct={(p) => {
+          setQuickViewProduct(null);
+          onSelectProduct(p);
+        }}
+      />
 
     </div>
   );
