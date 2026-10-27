@@ -349,37 +349,21 @@ export default function RadarMode({
         accentColor="#00ffb2"
       />
 
-      {/* 2.2 BANNER PROACTIVO: EL MEGÁFONO */}
+      {/* 2.2 ACCESO DISCRETO: EL MEGÁFONO */}
       <div className="mx-2 sm:mx-4">
-        <div className="relative rounded-2xl overflow-hidden bg-[#050b16]/90 border border-slate-800 p-2.5 sm:p-3 backdrop-blur-xl shadow-[0_8px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-600/30 to-transparent" />
-          
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-[#00ffb2] shrink-0 shadow-inner">
-              <Megaphone size={16} />
-            </div>
-            <div className="min-w-0">
-              <span className="text-[9px] uppercase font-bold text-[#00ffb2] tracking-wider block">
-                El Megáfono
-              </span>
-              <p className="text-xs text-white font-semibold truncate">
-                ¿No consigues lo que buscas? Pregunta a las vitrinas de Cumaná
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              playTap();
-              openMegaphoneWithQuery(activeQuery || inputValue, selectedCategory !== 'all' ? selectedCategory : 'moda');
-            }}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-[#00ffb2] hover:to-emerald-400 text-slate-950 text-xs font-bold transition active:scale-95 shadow-sm cursor-pointer"
-          >
-            <Megaphone size={13} />
-            <span>Usar Megáfono</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            playTap();
+            openMegaphoneWithQuery(activeQuery || inputValue, selectedCategory !== 'all' ? selectedCategory : 'moda');
+          }}
+          className="flex items-center gap-2 py-1 px-1 text-left group cursor-pointer transition"
+        >
+          <Megaphone size={16} className="text-[#00ffb2] shrink-0 group-hover:scale-110 transition-transform" />
+          <span className="text-xs sm:text-sm font-bold text-white group-hover:text-[#00ffb2] transition-colors">
+            El Megáfono
+          </span>
+        </button>
       </div>
 
       {/* 2.5 BANNER DE VITRINA COMERCIAL ACTIVA (FILTRADO POR TIENDA) */}
